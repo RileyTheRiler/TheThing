@@ -1,7 +1,6 @@
 from enum import Enum
 import random
-import pickle
-import base64
+import json
 from src.core.event_system import event_bus, EventType, GameEvent
 from src.core.resolution import ResolutionSystem
 
@@ -46,23 +45,40 @@ class RandomnessEngine:
         return random.random()
 
     def to_dict(self):
-        # Pickle the state and encode as base64 string
+        # Save state as JSON-serializable structure instead of pickle
+        # random.getstate() returns (version, internal_state_tuple, gaussian_state)
         state = random.getstate()
-        pickled = pickle.dumps(state)
-        b64_state = base64.b64encode(pickled).decode('utf-8')
+
+        # Convert tuple to list for JSON serialization
+        # internal_state_tuple is a tuple of 624 ints, so it converts cleanly
+        serializable_state = [state[0], list(state[1]), state[2]]
         
         return {
             "seed": self.seed,
-            "state_b64": b64_state
+            "rng_state": serializable_state
         }
 
     def from_dict(self, data):
         self.seed = data.get("seed")
-        b64_state = data.get("state_b64")
-        if b64_state:
-            pickled = base64.b64decode(b64_state)
-            state = pickle.loads(pickled)
-            random.setstate(state)
+        rng_state = data.get("rng_state")
+
+        # Handle legacy pickle format (for backward compatibility if needed,
+        # but for security we should probably drop it or strictly validate.
+        # Given the instruction to fix security, we will NOT support the vulnerable format.)
+        if rng_state:
+            # Reconstruct tuple structure required by random.setstate
+            # (version, internal_state_tuple, gaussian_state)
+            try:
+                state = (
+                    rng_state[0],
+                    tuple(rng_state[1]),
+                    rng_state[2]
+                )
+                random.setstate(state)
+            except (TypeError, ValueError, IndexError) as e:
+                print(f"Warning: Failed to restore RNG state: {e}")
+                if self.seed:
+                    random.seed(self.seed)
 
 class TimeSystem:
     def __init__(self, start_temp=-40):
