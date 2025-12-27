@@ -194,6 +194,65 @@ class MissionarySystem:
             # Pick the target (should be only one if witnesses_count is 1)
             target = potential_targets[0]
             self.perform_communion(agent, target, game_state)
+            # Strict check: Must be in same 'room' (Same named room or same corridor tile)
+            if other_room == room_name:
+                if not other.is_infected:
+                    potential_targets.append(other)
+
+        # If there is EXACTLY ONE target in the immediate vicinity (same room/tile)
+        if len(potential_targets) == 1:
+            target = potential_targets[0]
+            
+            # 2. Robust Witness Check
+            # Check if any uninfected crew member (who is not the target) can see the event.
+            if not self.has_witnesses(agent, target, game_state):
+                self.perform_communion(agent, target, game_state)
+
+    def has_witnesses(self, agent, target, game_state):
+        """
+        Checks for any uninfected crew members who can see the agent.
+        """
+        for other in game_state.crew:
+            if other == agent or other == target or not other.is_alive:
+                continue
+
+            # Infected don't count as witnesses (per simplification)
+            if other.is_infected:
+                continue
+
+            if self.is_visible(agent.location, other.location, game_state.station_map):
+                return True
+        return False
+
+    def is_visible(self, loc1, loc2, station_map):
+        """
+        Determines if loc2 is visible from loc1.
+        - Named Room <-> Named Room: Visible only if same room.
+        - Named Room <-> Corridor: Not visible (Walls).
+        - Corridor <-> Corridor: Visible if within range (Sight line).
+        """
+        room1 = station_map.get_room_name(*loc1)
+        room2 = station_map.get_room_name(*loc2)
+
+        # Check if locations are in named rooms
+        # Note: station_map.rooms keys are the named rooms.
+        in_named_room1 = room1 in station_map.rooms
+        in_named_room2 = room2 in station_map.rooms
+
+        if in_named_room1:
+            # Inside a room: Only visible if other is in the same room
+            return room1 == room2
+        elif in_named_room2:
+            # Observer is in a room, Agent is in Corridor/Outside -> Blocked by wall
+            return False
+        else:
+            # Both are in corridors/outside
+            # Check Euclidean distance
+            x1, y1 = loc1
+            x2, y2 = loc2
+            dist_sq = (x1 - x2)**2 + (y1 - y2)**2
+            # Sight range of 5 tiles (squared = 25)
+            return dist_sq <= 25
 
     def perform_communion(self, agent, target, game_state):
         """
@@ -231,5 +290,16 @@ class MissionarySystem:
                 # 50% reduction in detection chance
                 inv['slip_chance'] *= 0.5
         
-        # Note: In a deeper game, this would also grant 'Knowledge Tags' or 'Memory Logs'
-        # that the NPC can use in dialogue to prove they are 'human'.
+        # Advanced Mimicry: Grant Knowledge Tags
+        # The agent learns personal details to use in social defense
+        memories = [
+            f"details about {target.name}'s life",
+            f"a story about {target.name}'s childhood",
+            f"{target.name}'s favorite song",
+            f"{target.name}'s routine in the {target.role}",
+            f"a secret {target.name} kept"
+        ]
+        new_tag = random.choice(memories)
+        if hasattr(agent, 'knowledge_tags'):
+            agent.knowledge_tags.append(new_tag)
+            print(f">>> MIMICRY UPDATE: {agent.name} learned '{new_tag}'")

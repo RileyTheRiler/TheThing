@@ -235,7 +235,15 @@ class RandomEventSystem:
         # Base chance of event (increases with paranoia)
         base_chance = 0.15 + (game_state.paranoia_level / 200)
 
-        if self.rng.random() > base_chance:
+        # Fix: RandomnessEngine wraps random but does not expose random() directly.
+        # Use random_float() if available or random.random()
+        if hasattr(self.rng, 'random_float'):
+            val = self.rng.random_float()
+        else:
+             import random
+             val = random.random()
+
+        if val > base_chance:
             return None
 
         # Filter eligible events
@@ -269,7 +277,11 @@ class RandomEventSystem:
 
         # Weighted random selection
         total_weight = sum(e.weight for e in eligible)
-        roll = self.rng.random() * total_weight
+        if hasattr(self.rng, 'random_float'):
+            roll = self.rng.random_float() * total_weight
+        else:
+            import random
+            roll = random.random() * total_weight
 
         cumulative = 0
         for event in eligible:
@@ -311,12 +323,19 @@ class RandomEventSystem:
 
     def _effect_blizzard(self, game):
         """Blizzard effect: temperature drop, visibility issues."""
-        game.weather.trigger_storm()
-        game.temperature -= 10
+        game.weather.trigger_northeasterly()
+        # Temperature is a property in GameState that reads from weather,
+        # but we might want to affect the base temp in time_system?
+        # GameState.temperature is a property: return self.weather.get_effective_temperature(self.time_system.temperature)
+        # So we can't subtract from it directly.
+        # We should modify time_system or let weather handle it.
+        # The weather system handles temp modification via intensity.
+        # But if we want an EXTRA drop:
+        game.time_system.temperature -= 10
 
     def _effect_temp_drop(self, game):
         """Temperature drop effect."""
-        game.temperature -= 5
+        game.time_system.temperature -= 5
 
     def _effect_generator_trouble(self, game):
         """Generator trouble: possible power issues next few turns."""
