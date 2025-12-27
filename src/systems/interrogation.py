@@ -173,9 +173,9 @@ class InterrogationSystem:
 
         # Select a response
         if injected_response and self.rng.random_float() < 0.5:
-             template, response_type = injected_response
+            template, response_type = injected_response
         else:
-             template, response_type = self.rng.choose(possible)
+            template, response_type = self.rng.choose(possible)
 
         # Fill in template variables
         other_crew = [m for m in game_state.crew if m != subject and m.is_alive]
