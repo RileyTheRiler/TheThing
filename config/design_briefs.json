@@ -47,6 +47,28 @@
         "event_type": "ENDING_REPORT",
         "hook": "endgame",
         "summary": "Multiple endings should surface through events so UI layers can react without being coupled to win/lose checks.",
+        "endings": [
+            {
+                "id": "helicopter_escape",
+                "result": "win",
+                "trigger": "repair_complete",
+                "status": "ESCAPED",
+                "message": "You pilot the chopper through the storm, leaving the nightmare of Outpost 31 behind."
+            },
+            {
+                "id": "radio_rescue",
+                "result": "win",
+                "trigger": "sos_sent",
+                "arrived": true,
+                "message": "Lights cut through the storm. The rescue team has arrived to extract you."
+            },
+            {
+                "id": "sole_survivor",
+                "result": "win",
+                "trigger": "population_status",
+                "message": "Silence falls over the station. You are the only one left alive. The threat is gone... you hope."
+            }
+        ],
         "states": [
             "ESCAPE",
             "RESCUE",

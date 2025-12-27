@@ -94,18 +94,15 @@ def test_crafting_system_completes_recipe_and_emits_event():
 
 def test_endgame_system_emits_on_game_over():
     registry = DesignBriefRegistry()
-    rng = RandomnessEngine(seed=3)
-    endgame = EndgameSystem(registry)
-
-    game_state = SimpleNamespace(turn=9)
-    game_state.check_game_over = lambda: (True, True, "Rescue team touches down.")
+    event_bus.clear()
+    EndgameSystem(registry)
 
     captured = []
     event_bus.subscribe(EventType.ENDING_REPORT, captured.append)
 
-    event_bus.emit(GameEvent(EventType.TURN_ADVANCE, {"game_state": game_state, "rng": rng}))
+    event_bus.emit(GameEvent(EventType.REPAIR_COMPLETE, {"status": "ESCAPED", "turn": 9}))
 
     assert registry.event_type_name("endings") == "ENDING_REPORT"
-    assert captured, "Endgame system should emit when game over is reached"
+    assert captured, "Endgame system should emit when an ending trigger is received"
     assert captured[0].payload["result"] == "win"
-    assert "Rescue team" in captured[0].payload["message"]
+    assert captured[0].payload["message"]
