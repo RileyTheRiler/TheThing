@@ -40,22 +40,22 @@ The game uses an **event-driven, multi-agent architecture** where 8+ independent
 
 ---
 
-## Tier 4: Documentation & Testing - MOSTLY COMPLETE
+## Tier 4: Documentation & Testing - COMPLETE
 
 - [x] **4.1** Complete `TruthLog.md` with all 15 mechanics documented
 - [x] **4.2** Add in-game HELP command with topic categories
 - [x] **4.3** Convert verification scripts to pytest format - `tests/test_game_systems.py`
 - [x] **4.4** Add integration test for full game loop - `tests/test_integration.py`
-- [ ] **4.5** Create player tutorial/intro sequence
+- [x] **4.5** Create player tutorial/intro sequence - `src/game_loop.py` `_show_tutorial()`
 
 ---
 
-## Tier 5: Platform & Polish
+## Tier 5: Platform & Polish - MOSTLY COMPLETE
 
-- [ ] **5.1** Replace Windows-only `winsound` with cross-platform audio
-- [ ] **5.2** Add command history/arrow key navigation
-- [ ] **5.3** Implement auto-save on turn advance
-- [ ] **5.4** Add colorblind-friendly palette option
+- [x] **5.1** Replace Windows-only `winsound` with cross-platform audio - `src/audio/audio_manager.py`
+- [ ] **5.2** Add command history/arrow key navigation (requires `readline` integration)
+- [x] **5.3** Implement auto-save on turn advance (every 5 turns) - `src/engine.py`
+- [x] **5.4** Add colorblind-friendly palette option - `src/ui/crt_effects.py` with 5 palettes
 
 ---
 
@@ -100,3 +100,15 @@ ACCUSE <NAME>      - Formal accusation triggering crew vote
 BREAK <DIRECTION>  - Break through a barricade
 BARRICADE          - Barricade current room (can be reinforced)
 ```
+
+### Color Palettes (Tier 5.4)
+Available palettes in `CRTOutput`:
+| Palette | Description |
+|---------|-------------|
+| `amber` | Classic amber CRT terminal (default) |
+| `green` | Classic green phosphor terminal |
+| `white` | Modern white terminal |
+| `colorblind` | High contrast blue/cyan (deuteranopia/protanopia safe) |
+| `high-contrast` | Maximum contrast white on black (low vision friendly) |
+
+Usage: `CRTOutput(palette="colorblind")` or `crt.set_palette("high-contrast")`

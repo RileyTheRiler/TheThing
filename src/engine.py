@@ -238,6 +238,13 @@ class GameState:
             if member != self.player:
                 member.update_ai(self)
 
+        # 6. Auto-save every 5 turns
+        if self.turn % 5 == 0 and hasattr(self, 'save_manager'):
+            try:
+                self.save_manager.save_game(self, "autosave")
+            except Exception:
+                pass  # Don't interrupt gameplay on save failure
+
     def check_win_condition(self):
         """
         WIN: All infected crew are dead/neutralized AND player is alive and human.

@@ -38,10 +38,106 @@ def _select_difficulty():
             return Difficulty.NORMAL
 
 
+def _show_tutorial():
+    """Display optional tutorial for new players."""
+    print("\n" + "=" * 60)
+    print("   TUTORIAL: SURVIVING OUTPOST 31")
+    print("=" * 60)
+
+    sections = [
+        ("""
+THE SITUATION
+-------------
+You are R.J. MacReady, helicopter pilot at U.S. Antarctic
+Research Station 31. An alien organism - "The Thing" - has
+infiltrated the base. It perfectly imitates its victims.
+
+Trust no one. The person next to you might not be human.
+""", "Continue..."),
+        ("""
+YOUR GOAL
+---------
+- Identify who is infected using observation and blood tests
+- Eliminate all infected crew members
+- Stay alive and remain human
+
+You LOSE if:
+- You are killed
+- You become infected and are revealed as a Thing
+""", "Continue..."),
+        ("""
+BASIC COMMANDS
+--------------
+MOVE <DIR>    - Move NORTH/SOUTH/EAST/WEST (or N/S/E/W)
+LOOK <NAME>   - Observe someone for suspicious behavior
+TALK          - Hear what everyone in the room is saying
+STATUS        - See all crew locations and health
+INV           - Check your inventory
+HELP          - Full command reference
+""", "Continue..."),
+        ("""
+DETECTING THE THING
+-------------------
+Watch for biological tells:
+- Missing breath vapor in cold (below 0C)
+- Strange eye movements or skin texture
+- Unusual behavior or being in wrong locations
+
+Use INTERROGATE <NAME> to question crew members.
+Their responses may reveal inconsistencies.
+""", "Continue..."),
+        ("""
+THE BLOOD TEST
+--------------
+The definitive test requires:
+1. A SCALPEL (to draw blood)
+2. COPPER WIRE (to heat)
+
+Commands: TEST <NAME>, then HEAT repeatedly, then APPLY
+
+If the blood reacts violently - they're infected!
+Warning: A revealed Thing becomes hostile.
+""", "Continue..."),
+        ("""
+COMBAT & SURVIVAL
+-----------------
+ATTACK <NAME>  - Attack someone (need weapon for damage)
+COVER          - Take cover for defense bonus
+RETREAT        - Try to escape from revealed Things
+BARRICADE      - Block a room entrance
+BREAK <DIR>    - Break through a barricade
+
+Revealed Things will hunt humans aggressively.
+""", "Begin Game..."),
+    ]
+
+    for text, prompt in sections:
+        print(text)
+        try:
+            input(f"[Press ENTER to {prompt}]")
+        except EOFError:
+            break
+        print()
+
+    print("\n" + "=" * 60)
+    print("   Good luck, MacReady. Trust no one.")
+    print("=" * 60 + "\n")
+
+
 def main():
     """Main game loop - can be called from launcher or run directly."""
     # Select difficulty before starting
     difficulty = _select_difficulty()
+
+    # Offer tutorial for new players
+    print("\nWould you like to see the tutorial? (y/N): ", end="")
+    try:
+        response = input().strip().lower()
+        if response in ['y', 'yes']:
+            _show_tutorial()
+    except EOFError:
+        pass
+
     print(f"\nStarting game on {difficulty.value} difficulty...")
 
     game = GameState(seed=None, difficulty=difficulty)
