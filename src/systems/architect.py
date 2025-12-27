@@ -4,14 +4,11 @@ Imports follow the project-level absolute pattern (`from core...`) so modules st
 importable without sys.path tweaks or `src.` prefixes.
 """
 
-import base64
-import json
-import pickle
 import random
-from enum import Enum
-
-from core.event_system import EventType, GameEvent, event_bus
+import json
+from core.event_system import event_bus, EventType, GameEvent
 from core.resolution import ResolutionSystem
+from enum import Enum
 
 
 class Difficulty(Enum):
@@ -74,15 +71,20 @@ class GameMode(Enum):
 class RandomnessEngine:
     def __init__(self, seed=None):
         self.seed = seed
-        if self.seed:
-            random.seed(self.seed)
+        self._random = random.Random(self.seed)
     
     def roll_2d6(self):
         """Standard 2d6 roll."""
-        return random.randint(1, 6) + random.randint(1, 6)
+        return self._random.randint(1, 6) + self._random.randint(1, 6)
     
     def roll_d6(self):
-        return random.randint(1, 6)
+        return self._random.randint(1, 6)
+
+    def randint(self, a, b):
+        return self._random.randint(a, b)
+
+    def sample(self, population, k):
+        return self._random.sample(population, k)
         
     def calculate_success(self, pool_size):
         """
@@ -100,18 +102,18 @@ class RandomnessEngine:
     def choose(self, collection):
         if not collection:
             return None
-        return random.choice(collection)
+        return self._random.choice(collection)
         
     def random_float(self):
-        return random.random()
+        return self._random.random()
 
     def random(self):
-        return random.random()
+        return self._random.random()
 
     def to_dict(self):
         # Save state as JSON-serializable structure instead of pickle
         # random.getstate() returns (version, internal_state_tuple, gaussian_state)
-        state = random.getstate()
+        state = self._random.getstate()
 
         # Convert tuple to list for JSON serialization
         # internal_state_tuple is a tuple of 624 ints, so it converts cleanly
@@ -124,25 +126,31 @@ class RandomnessEngine:
 
     def from_dict(self, data):
         self.seed = data.get("seed")
+        # Reinitialize the local RNG with the stored seed so state restoration is deterministic
+        self._random = random.Random(self.seed)
+        if not data:
+            return
+        self.seed = data.get("seed", self.seed)
         rng_state = data.get("rng_state")
 
-        # Handle legacy pickle format (for backward compatibility if needed,
-        # but for security we should probably drop it or strictly validate.
-        # Given the instruction to fix security, we will NOT support the vulnerable format.)
         if rng_state:
-            # Reconstruct tuple structure required by random.setstate
-            # (version, internal_state_tuple, gaussian_state)
             try:
                 state = (
                     rng_state[0],
                     tuple(rng_state[1]),
                     rng_state[2]
                 )
-                random.setstate(state)
+                self._random.setstate(state)
             except (TypeError, ValueError, IndexError) as e:
                 print(f"Warning: Failed to restore RNG state: {e}")
-                if self.seed:
-                    random.seed(self.seed)
+                if self.seed is not None:
+                    self._random.seed(self.seed)
+                random.setstate(state)
+                return
+            except (TypeError, ValueError, IndexError) as e:
+                print(f"Warning: Failed to restore RNG state: {e}")
+        if self.seed is not None:
+            random.seed(self.seed)
 
 class TimeSystem:
     def __init__(self, start_temp=-40, start_hour=19):
@@ -150,11 +158,34 @@ class TimeSystem:
         self.points_per_turn = 1
         self.turn_count = 0
         self.start_hour = start_hour % 24  # Start at 7 PM by default
+        self._start_hour = start_hour  # Reference hour for turn-based progression
+        
+        # Subscribe to Turn Advance
+        event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+
+    def cleanup(self):
+        event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+
+    def on_turn_advance(self, event: GameEvent):
+        """Handle turn advance event."""
+        self.tick()
+        game_state = event.payload.get("game_state")
+        power_on = game_state.power_on if game_state else True
+        self.update_environment(power_on)
 
     @property
     def hour(self):
-        """Calculate the in-game hour (0-23) based on turns elapsed."""
+        # Start at 19:00 (7 PM), 1 turn = 1 hour
+        return (19 + self.turn_count) % 24
+        self.start_hour = start_hour
+
+    @property
+    def hour(self):
+        """Current in-game hour (0-23)."""
         return (self.start_hour + self.turn_count) % 24
+        self.start_hour = start_hour  # Start at 7 PM by default
+        self._start_hour = start_hour
+        self._hour = start_hour
 
     def advance_turn(self, power_on: bool, game_state=None, rng=None):
         """
@@ -174,6 +205,8 @@ class TimeSystem:
         }))
         return temp_change, new_temp
 
+        self._hour = (self._start_hour + self.turn_count) % 24
+
     def update_environment(self, power_on):
         """
         Updates environmental factors based on power state.
@@ -189,7 +222,7 @@ class TimeSystem:
             if self.temperature < 20:
                 temp_change = 2
                 self.temperature += temp_change
-                
+
         return temp_change, self.temperature
 
     def to_dict(self):
@@ -202,6 +235,14 @@ class TimeSystem:
 
     @classmethod
     def from_dict(cls, data):
+        if not data:
+            return cls()
+
+        turn_count = data.get("turn_count", 0)
+        saved_hour = data.get("hour", 19)
+        start_hour = (saved_hour - turn_count) % 24
+        ts = cls(data.get("temperature", -40), start_hour)
+        ts.turn_count = turn_count
         temp = data.get("temperature", -40)
         turn_count = data.get("turn_count", 0)
         saved_hour = data.get("hour", 19)
@@ -213,4 +254,10 @@ class TimeSystem:
 
         ts = cls(temp, start_hour=start_hour)
         ts.turn_count = turn_count
+        start_hour = (saved_hour - turn_count) % 24
+
+        ts = cls(temp, start_hour=start_hour)
+        ts.turn_count = turn_count
+        # Recompute hour from stored value to keep normalization consistent.
+        ts.hour = saved_hour
         return ts

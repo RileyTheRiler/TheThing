@@ -32,6 +32,47 @@ class TestGameInitialization:
 
         assert infected1 == infected2
 
+    def test_seed_reproducibility_after_advancing_turns(self):
+        """Seeded games should remain deterministic across turns."""
+        def snapshot(game):
+            crew_state = sorted(
+                [
+                    (
+                        member.name,
+                        member.location,
+                        member.is_infected,
+                        member.is_alive,
+                        member.is_revealed,
+                        round(member.mask_integrity, 2),
+                    )
+                    for member in game.crew
+                ],
+                key=lambda item: item[0],
+            )
+            return {
+                "turn": game.turn,
+                "paranoia": game.paranoia_level,
+                "weather": (
+                    game.weather.wind_direction,
+                    game.weather.storm_intensity,
+                    game.weather.northeasterly_active,
+                    game.weather.northeasterly_turns_remaining,
+                ),
+                "crew": crew_state,
+                "events": list(game.random_events.event_history),
+            }
+
+        def play_sequence():
+            game = GameState(seed=777, difficulty=Difficulty.NORMAL)
+            try:
+                for _ in range(5):
+                    game.advance_turn()
+                return snapshot(game)
+            finally:
+                game.cleanup()
+
+        assert play_sequence() == play_sequence()
+
     def test_game_creates_player(self):
         """Game should have a player character."""
         game = GameState(seed=42, difficulty=Difficulty.NORMAL)
@@ -208,6 +249,23 @@ class TestSerializationIntegration:
         assert restored.turn == game.turn
         assert restored.player.location == game.player.location
         assert len(restored.crew) == len(game.crew)
+
+    def test_rng_state_round_trip(self):
+        """RNG state should survive serialization and continue deterministically."""
+        game = GameState(seed=999, difficulty=Difficulty.NORMAL)
+
+        # Advance RNG state with some rolls
+        _ = [game.rng.roll_d6() for _ in range(3)]
+
+        data = game.to_dict()
+
+        # Roll again after saving to capture post-save sequence
+        continued_rolls = [game.rng.roll_d6() for _ in range(5)]
+
+        restored = GameState.from_dict(data)
+        restored_rolls = [restored.rng.roll_d6() for _ in range(5)]
+
+        assert continued_rolls == restored_rolls
 
 
 class TestEventBusIntegration:

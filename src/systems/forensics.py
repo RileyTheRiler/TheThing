@@ -1,6 +1,6 @@
-import random
 import time
 from core.event_system import event_bus, EventType, GameEvent
+from systems.architect import RandomnessEngine
 
 class BiologicalSlipGenerator:
     """
@@ -25,15 +25,13 @@ class BiologicalSlipGenerator:
     
     @staticmethod
     def get_visual_slip(random_engine=None):
-        if random_engine:
-            return random_engine.choose(BiologicalSlipGenerator.VISUAL_TELLS)
-        return random.choice(BiologicalSlipGenerator.VISUAL_TELLS)
+        engine = random_engine or RandomnessEngine()
+        return engine.choose(BiologicalSlipGenerator.VISUAL_TELLS)
         
     @staticmethod
     def get_audio_slip(random_engine=None):
-        if random_engine:
-            return random_engine.choose(BiologicalSlipGenerator.AUDIO_TELLS)
-        return random.choice(BiologicalSlipGenerator.AUDIO_TELLS)
+        engine = random_engine or RandomnessEngine()
+        return engine.choose(BiologicalSlipGenerator.AUDIO_TELLS)
 
 
 class ForensicDatabase:
@@ -107,7 +105,7 @@ class BloodTestSim:
     READY_THRESHOLD = 90
     COOLING_RATE = 10
 
-    def __init__(self):
+    def __init__(self, rng=None):
         self.active = False
         self.wire_temp = self.ROOM_TEMP
         self.target_temp = self.TARGET_TEMP # Hot enough to burn
@@ -115,6 +113,7 @@ class BloodTestSim:
         self.target_temp = 90 # Hot enough to burn (lowered for gameplay reliability)
         self.current_sample = None # Name of crew member
         self.state = "IDLE" # IDLE, HEATING, READY, REACTION
+        self.rng = rng or RandomnessEngine()
         
     def start_test(self, crew_name):
         self.active = True
@@ -127,7 +126,7 @@ class BloodTestSim:
         if not self.active:
             return "No test in progress."
             
-        increase = random.randint(20, 30)
+        increase = self.rng.randint(20, 30)
         self.wire_temp += increase
         
         if self.wire_temp >= self.READY_THRESHOLD: # Lowered from 100 for gameplay reliability
@@ -193,7 +192,7 @@ class BloodTestSim:
             "The sample violently expands, trying to attack the wire!",
             "Eerie silence... then the petri dish shatters as the blood flees."
         ]
-        return f"*** TEST RESULT: {random.choice(reactions)} ***"
+        return f"*** TEST RESULT: {self.rng.choose(reactions)} ***"
 
     def cancel(self):
         self.active = False
@@ -220,8 +219,9 @@ class ForensicsSystem:
     Agent 4: Forensics System.
     Manages blood tests and evidence tracking.
     """
-    def __init__(self):
-        self.blood_test = BloodTestSim()
+    def __init__(self, rng=None):
+        self.rng = rng or RandomnessEngine()
+        self.blood_test = BloodTestSim(rng=self.rng)
         # Register for turn advance if we want things to happen over time
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
 

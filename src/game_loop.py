@@ -535,7 +535,7 @@ def _execute_command(game, cmd):
 
                 # Initialize interrogation system if needed
                 if not hasattr(game, 'interrogation_system'):
-                    game.interrogation_system = InterrogationSystem(game.rng)
+                    game.interrogation_system = InterrogationSystem(game.rng, game.room_states)
 
                 result = game.interrogation_system.interrogate(
                     game.player, target, topic, game
@@ -581,7 +581,7 @@ def _execute_command(game, cmd):
 
                 # Initialize interrogation system if needed
                 if not hasattr(game, 'interrogation_system'):
-                    game.interrogation_system = InterrogationSystem(game.rng)
+                    game.interrogation_system = InterrogationSystem(game.rng, game.room_states)
 
                 result = game.interrogation_system.make_accusation(
                     game.player, target, evidence, game
@@ -712,7 +712,7 @@ def _execute_command(game, cmd):
                 print(f"{target.name} is already dead.")
             else:
                 # Initialize combat system
-                combat = CombatSystem(game.rng)
+                combat = CombatSystem(game.rng, game.room_states)
 
                 # Roll initiative
                 player_init = combat.roll_initiative(game.player)
@@ -730,7 +730,13 @@ def _execute_command(game, cmd):
                 if target_cover != CoverType.NONE:
                     print(f"[COVER] {target.name} has {target_cover.value} cover!")
 
-                result = combat.calculate_attack(game.player, target, weapon, target_cover)
+                result = combat.calculate_attack(
+                    game.player,
+                    target,
+                    weapon,
+                    target_cover,
+                    player_room
+                )
                 print(result.message)
 
                 if result.success:
@@ -746,7 +752,7 @@ def _execute_command(game, cmd):
         if not hasattr(game, 'combat_cover'):
             game.combat_cover = {}
 
-        combat = CombatSystem(game.rng)
+        combat = CombatSystem(game.rng, game.room_states)
         available = combat.get_available_cover(player_room)
 
         if len(cmd) > 1:
@@ -788,7 +794,7 @@ def _execute_command(game, cmd):
         if not hostiles:
             print("There are no hostiles here to retreat from.")
         else:
-            combat = CombatSystem(game.rng)
+            combat = CombatSystem(game.rng, game.room_states)
             exits = ["NORTH", "SOUTH", "EAST", "WEST"]
 
             # Check which exits are valid
@@ -817,7 +823,7 @@ def _execute_command(game, cmd):
                 # Failed retreat - hostiles get free attacks
                 print("[COMBAT] Hostiles get free attacks!")
                 for hostile in hostiles:
-                    free_result = combat.process_free_attack(hostile, game.player)
+                    free_result = combat.process_free_attack(hostile, game.player, room_name=player_room)
                     print(f"  {hostile.name}: {free_result.message}")
                     if free_result.success:
                         died = game.player.take_damage(free_result.damage)
