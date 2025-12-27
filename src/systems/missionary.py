@@ -222,4 +222,4 @@ class MissionarySystem:
         agent.add_knowledge_tag(role_tag)
         agent.add_knowledge_tag(memory_tag)
 
-        print(f">>> ACQUIRED KNOWLEDGE: {agent.name} learned '{role_tag}' and '{memory_tag}'")
+        # print(f">>> ACQUIRED KNOWLEDGE: {agent.name} learned '{role_tag}' and '{memory_tag}'")
