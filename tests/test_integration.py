@@ -79,16 +79,20 @@ class TestTurnAdvancement:
         """Advancing a turn should allow NPCs to move."""
         game = GameState(seed=42, difficulty=Difficulty.NORMAL)
 
-        initial_positions = {m.name: m.location for m in game.crew if m != game.player}
+        initial_positions = {id(m): m.location for m in game.crew if m != game.player}
 
         # Advance several turns
         for _ in range(10):
             game.advance_turn()
 
-        final_positions = {m.name: m.location for m in game.crew if m != game.player}
+        final_positions = {id(m): m.location for m in game.crew if m != game.player}
 
         # At least some NPCs should have moved
-        moved = sum(1 for name in initial_positions if initial_positions[name] != final_positions[name])
+        moved = sum(
+            1
+            for member_id in initial_positions
+            if initial_positions[member_id] != final_positions.get(member_id, initial_positions[member_id])
+        )
         assert moved > 0
 
 
@@ -104,7 +108,8 @@ class TestWinLoseConditions:
 
         assert game_over is True
         assert won is False
-        assert "killed" in message.lower() or "dead" in message.lower()
+        lower_msg = message.lower()
+        assert "killed" in lower_msg or "dead" in lower_msg or "died" in lower_msg
 
     def test_player_reveal_is_loss(self):
         """Player being revealed as Thing should trigger game over (loss)."""

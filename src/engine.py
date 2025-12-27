@@ -582,15 +582,8 @@ class GameState:
         
         self.paranoia_level = min(100, self.paranoia_level + 1)
         
-        # Update TimeSystem (manual tick if not event-driven)
-        self.time_system.tick()
-        self.time_system.update_environment(self.power_on)
-
-        # 1. Emit TURN_ADVANCE Event (Triggers TimeSystem, WeatherSystem, InfectionSystem, etc.)
-        event_bus.emit(GameEvent(EventType.TURN_ADVANCE, {
-            "game_state": self,
-            "rng": self.rng
-        }))
+        # Advance time, environment, and emit TURN_ADVANCE via the TimeSystem
+        self.time_system.advance_turn(self.power_on, game_state=self, rng=self.rng)
         
         # 3. Process Local Environment Effects
         player_room = self.station_map.get_room_name(*self.player.location)
