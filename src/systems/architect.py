@@ -97,6 +97,9 @@ class RandomnessEngine:
     def random_float(self):
         return random.random()
 
+    def random(self):
+        return random.random()
+
     def to_dict(self):
         # Pickle the state and encode as base64 string
         state = random.getstate()
@@ -121,6 +124,12 @@ class TimeSystem:
         self.temperature = start_temp
         self.points_per_turn = 1
         self.turn_count = 0
+
+    @property
+    def hour(self):
+        """Calculate hour of day based on turn count (0-23). Start at 08:00."""
+        # 1 turn = 1 hour (simplified for now as per legacy code)
+        return (8 + self.turn_count) % 24
         
     def tick(self):
         """Advance time by one turn."""
