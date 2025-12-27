@@ -1,7 +1,7 @@
 from systems.missionary import MissionarySystem
 from systems.psychology import PsychologySystem
 from core.resolution import Attribute, Skill, ResolutionSystem
-from systems.social import TrustMatrix, LynchMobSystem, DialogueManager
+from systems.social import TrustMatrix, LynchMobSystem, DialogueManager, SocialThresholds, bucket_for_thresholds, bucket_label
 from systems.architect import RandomnessEngine, GameMode, TimeSystem
 from systems.architect import RandomnessEngine, GameMode, TimeSystem, Difficulty, DifficultySettings
 from systems.persistence import SaveManager
@@ -369,7 +369,40 @@ class StationMap:
         return sm
 
 class GameState:
-    def __init__(self, seed=None, difficulty=Difficulty.NORMAL):
+    @property
+    def paranoia_level(self):
+        return getattr(self, "_paranoia_level", 0)
+
+    @paranoia_level.setter
+    def paranoia_level(self, value):
+        clamped = max(0, min(100, int(value)))
+        previous_value = getattr(self, "_paranoia_level", None)
+        self._paranoia_level = clamped
+
+        if not hasattr(self, "social_thresholds"):
+            return
+
+        if previous_value is None:
+            self._paranoia_bucket = bucket_for_thresholds(clamped, self.social_thresholds.paranoia_thresholds)
+            return
+
+        new_bucket = bucket_for_thresholds(clamped, self.social_thresholds.paranoia_thresholds)
+        previous_bucket = getattr(self, "_paranoia_bucket", new_bucket)
+        if new_bucket != previous_bucket:
+            self._paranoia_bucket = new_bucket
+            direction = "up" if clamped > previous_value else "down"
+            event_bus.emit(GameEvent(EventType.PARANOIA_THRESHOLD, {
+                "value": clamped,
+                "previous_value": previous_value,
+                "bucket": bucket_label(new_bucket),
+                "thresholds": list(self.social_thresholds.paranoia_thresholds),
+                "direction": direction
+            }))
+        else:
+            self._paranoia_bucket = new_bucket
+
+    def __init__(self, seed=None, difficulty=Difficulty.NORMAL, thresholds: SocialThresholds = None):
+        self.social_thresholds = thresholds or SocialThresholds()
         self.rng = RandomnessEngine(seed)
         self.time_system = TimeSystem()
         self.save_manager = SaveManager(game_state_factory=GameState.from_dict)
@@ -399,10 +432,10 @@ class GameState:
         self._initialize_items()
         self._initialize_infection()
         
-        self.trust_system = TrustMatrix(self.crew)
+        self.trust_system = TrustMatrix(self.crew, thresholds=self.social_thresholds)
         
         # Agent 2: Social Psychologist
-        self.lynch_mob = LynchMobSystem(self.trust_system)
+        self.lynch_mob = LynchMobSystem(self.trust_system, thresholds=self.social_thresholds)
         self.dialogue_manager = DialogueManager()
         
         # Agent 3: Missionary System
@@ -610,7 +643,7 @@ class GameState:
             self.paranoia_level = min(100, self.paranoia_level + paranoia_mod)
         
         # 4. Lynch Mob Check (Agent 2)
-        lynch_target = self.lynch_mob.check_thresholds(self.crew)
+        lynch_target = self.lynch_mob.check_thresholds(self.crew, current_paranoia=self.paranoia_level)
         if lynch_target:
             # Mob is active, NPCs will converge via event handler
             pass
@@ -867,6 +900,8 @@ class GameState:
 
         game.journal = data["journal"]
         game.trust_system.matrix = data.get("trust", {})
+        if hasattr(game.trust_system, "rebuild_buckets"):
+            game.trust_system.rebuild_buckets()
         
         return game
 
