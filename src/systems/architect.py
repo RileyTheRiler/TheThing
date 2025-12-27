@@ -1,11 +1,16 @@
-from enum import Enum
-import random
-import json
-from src.core.event_system import event_bus, EventType, GameEvent
-from src.core.resolution import ResolutionSystem
-import pickle
+"""Systems architecture utilities and helpers.
+
+Imports follow the project-level absolute pattern (`from core...`) so modules stay
+importable without sys.path tweaks or `src.` prefixes.
+"""
+
 import base64
-from core.event_system import event_bus, EventType, GameEvent
+import json
+import pickle
+import random
+from enum import Enum
+
+from core.event_system import EventType, GameEvent, event_bus
 from core.resolution import ResolutionSystem
 
 
@@ -150,11 +155,24 @@ class TimeSystem:
     def hour(self):
         """Calculate the in-game hour (0-23) based on turns elapsed."""
         return (self.start_hour + self.turn_count) % 24
+        self._start_hour = start_hour
+        self._hour = start_hour
+
+    @property
+    def hour(self):
+        """Current in-game hour (0-23)."""
+        return self._hour
+
+    @hour.setter
+    def hour(self, value):
+        # Allow safe assignment from load/state restoration while normalizing range.
+        self._hour = int(value) % 24
 
     def tick(self):
         """Advance time by one turn."""
         self.turn_count += 1
 
+        self._hour = (self._start_hour + self.turn_count) % 24
     def update_environment(self, power_on):
         """
         Updates environmental factors based on power state.
@@ -191,4 +209,8 @@ class TimeSystem:
 
         ts = cls(temp, start_hour=start_hour)
         ts.turn_count = turn_count
+        ts = cls(data.get("temperature", -40), start_hour=data.get("hour", 19))
+        ts.turn_count = data.get("turn_count", 0)
+        # Recompute hour from stored value to keep normalization consistent.
+        ts.hour = data.get("hour", ts._start_hour)
         return ts
