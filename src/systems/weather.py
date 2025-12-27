@@ -56,11 +56,8 @@ class WeatherSystem:
     
     def on_turn_advance(self, event: GameEvent):
         """Subscriber for TURN_ADVANCE event."""
-        # DEBUG
-        print(f"[DEBUG] WeatherSystem received event: {event.type}")
         rng = event.payload.get("rng")
         if not rng:
-            print("[DEBUG] WeatherSystem: No rng in payload")
             return
             
         events = self.tick(rng)
