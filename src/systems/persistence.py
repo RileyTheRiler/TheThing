@@ -29,7 +29,7 @@ class SaveManager:
             traceback.print_exc()
             return False
 
-    def load_game(self, slot_name="auto"):
+    def load_game(self, slot_name="auto", factory=None):
         filename = f"{slot_name}.json"
         filepath = os.path.join(self.save_dir, filename)
         
@@ -44,6 +44,9 @@ class SaveManager:
             # Use factory if provided to avoid circular dependencies
             if self.game_state_factory:
                 return self.game_state_factory(data)
+            hydrator = factory if factory else self.game_state_factory
+            if hydrator:
+                return hydrator(data)
 
             return data
         except Exception as e:

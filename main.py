@@ -13,5 +13,5 @@ sys.path.insert(0, src_path)
 
 # Now import and run the game
 if __name__ == "__main__":
-    from engine import main
+    from game_loop import main
     main()

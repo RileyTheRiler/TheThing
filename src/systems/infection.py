@@ -1,4 +1,5 @@
 from src.core.event_system import event_bus, EventType, GameEvent
+from src.core.resolution import ResolutionSystem
 
 def check_for_communion(game_state):
     """
@@ -20,6 +21,9 @@ def check_for_communion(game_state):
             location_groups[loc] = []
         location_groups[loc].append(member)
     
+    # Instantiate ResolutionSystem once
+    res = ResolutionSystem()
+
     # 2. Check each group
     for loc, members in location_groups.items():
         if len(members) < 2:
@@ -34,15 +38,12 @@ def check_for_communion(game_state):
         # Try to infect non-infected members
         for member in members:
             if not member.is_infected:
-                # Use ResolutionSystem for calculation (Source of Truth)
-                # We need a resolution instance, normally passed or instantiated
-                from src.core.resolution import ResolutionSystem
-                res = ResolutionSystem()
-                
                 # Determine lighting (mocked for now, or derived from power)
                 lighting = "DARK" if not game_state.power_on else "LIGHT"
                 
-                risk = res.calculate_infection_risk(game_state, lighting, member.mask_integrity, game_state.paranoia_level)
+                # Corrected call signature: removed game_state argument
+                # Fixed call to match ResolutionSystem.calculate_infection_risk signature
+                risk = res.calculate_infection_risk(lighting, member.mask_integrity, game_state.paranoia_level)
                 
                 rng = game_state.rng
                 if rng.random_float() < risk:
