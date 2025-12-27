@@ -69,6 +69,13 @@ class TimeSystem:
         self.temperature = start_temp
         self.points_per_turn = 1
         self.turn_count = 0
+
+    @property
+    def hour(self):
+        # Assume game starts at 08:00 (8 AM) and 1 turn = 1 hour for simplicity, or just turn count modulo 24
+        # If no start hour is defined, let's assume turn_count is hours elapsed.
+        # engine.py expects an hour (0-23 probably, or just an integer) for schedules.
+        return self.turn_count % 24
         
     def tick(self):
         """Advance time by one turn."""
