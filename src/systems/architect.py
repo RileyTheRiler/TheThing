@@ -140,61 +140,27 @@ class RandomnessEngine:
                     random.seed(self.seed)
 
 class TimeSystem:
-    def __init__(self, start_temp=-40):
+    def __init__(self, start_temp=-40, start_hour=19):
         self.temperature = start_temp
         self.points_per_turn = 1
         self.turn_count = 0
-        self.hour = 19 # Start at 7 PM
+        self._start_hour = start_hour
+        self._hour = start_hour
 
     @property
     def hour(self):
-        # Assuming 1 turn = 1 hour for now, starting at 8 AM (08:00)
-        # Or just turn count if that's the logic.
-        # Let's map turn 1 to 08:00.
-        # Assume game starts at 08:00 (8 AM) and 1 turn = 1 hour for simplicity, or just turn count modulo 24
-        # If no start hour is defined, let's assume turn_count is hours elapsed.
-        # engine.py expects an hour (0-23 probably, or just an integer) for schedules.
-        return self.turn_count % 24
-        # Assuming 1 turn = 1 hour or some conversion.
-        # Base hour 8:00 AM?
-        """Calculate hour of day based on turn count (0-23). Start at 08:00."""
-        # 1 turn = 1 hour (simplified for now as per legacy code)
-        return (8 + self.turn_count) % 24
-        
-    @property
-    def hour(self):
-        # Start at 19:00 (7 PM), 1 turn = 1 hour
-        return (19 + self.turn_count) % 24
-        # Assume game starts at 08:00 (8 AM) and each turn is 1 hour
-        start_hour = 8
-        return (start_hour + self.turn_count) % 24
-        # Start at 08:00
-        return (8 + self.turn_count) % 24
+        """Current in-game hour (0-23)."""
+        return self._hour
+
+    @hour.setter
+    def hour(self, value):
+        # Allow safe assignment from load/state restoration while normalizing range.
+        self._hour = int(value) % 24
 
     def tick(self):
         """Advance time by one turn."""
         self.turn_count += 1
-        self.hour = (self.hour + 1) % 24
-
-    @property
-    def hour(self):
-        # Assuming turn 1 is 08:00 or similar, or just 0-23 from turn count.
-        # Let's start at hour 0 for turn 0 for simplicity unless context suggests otherwise.
-        # engine.py usage: game.time_system.hour:02
-        return self.turn_count % 24
-        
-    @property
-    def hour(self):
-        """
-        Calculates the in-game hour (0-23) based on turn count.
-        Assuming Turn 0 = 08:00 start or similar?
-        Let's assume Turn 1 = Hour 1 for simplicity or map 1 turn = 1 hour.
-        Modulo 24.
-        """
-        # Starting at 08:00 AM seems reasonable for a shift
-        start_hour = 8
-        return (start_hour + self.turn_count) % 24
-
+        self._hour = (self._start_hour + self.turn_count) % 24
     def update_environment(self, power_on):
         """
         Updates environmental factors based on power state.
@@ -222,7 +188,8 @@ class TimeSystem:
 
     @classmethod
     def from_dict(cls, data):
-        ts = cls(data.get("temperature", -40))
+        ts = cls(data.get("temperature", -40), start_hour=data.get("hour", 19))
         ts.turn_count = data.get("turn_count", 0)
-        ts.hour = data.get("hour", 19)
+        # Recompute hour from stored value to keep normalization consistent.
+        ts.hour = data.get("hour", ts._start_hour)
         return ts
