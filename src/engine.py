@@ -5,11 +5,15 @@ from systems.social import TrustMatrix, LynchMobSystem, DialogueManager
 from systems.architect import RandomnessEngine, GameMode, TimeSystem, Difficulty, DifficultySettings
 from systems.persistence import SaveManager
 from core.event_system import event_bus, EventType, GameEvent
+from core.design_briefs import DesignBriefRegistry
 
 # Agent 6: Dungeon Master Systems
 from systems.weather import WeatherSystem
 from systems.sabotage import SabotageManager
 from systems.room_state import RoomStateManager, RoomState
+from systems.stealth import StealthSystem
+from systems.crafting import CraftingSystem
+from systems.endgame import EndgameSystem
 
 # Agent 8: AI System
 from systems.ai import AISystem
@@ -56,6 +60,7 @@ class GameState:
         self.blood_bank_destroyed = False
         self.paranoia_level = self.difficulty_settings["starting_paranoia"]
         self.mode = GameMode.INVESTIGATIVE
+        self.design_registry = DesignBriefRegistry()
 
         self.station_map = StationMap()
         self.crew = self._initialize_crew()
@@ -102,6 +107,9 @@ class GameState:
         
         self.ai_system = AISystem()
         self.random_events = RandomEventSystem(self.rng)  # Tier 6.2
+        self.stealth_system = StealthSystem(self.design_registry)
+        self.crafting_system = CraftingSystem(self.design_registry)
+        self.endgame_system = EndgameSystem(self.design_registry)
 
         # Integration helper
         self.resolution = ResolutionSystem()
@@ -156,6 +164,9 @@ class GameState:
         if hasattr(self.trust_system, 'cleanup'): self.trust_system.cleanup()
         if hasattr(self.missionary_system, 'cleanup'): self.missionary_system.cleanup()
         if hasattr(self.psychology_system, 'cleanup'): self.psychology_system.cleanup()
+        if hasattr(self.stealth_system, 'cleanup'): self.stealth_system.cleanup()
+        if hasattr(self.crafting_system, 'cleanup'): self.crafting_system.cleanup()
+        if hasattr(self.endgame_system, 'cleanup'): self.endgame_system.cleanup()
 
         # Note: ai_system, dialogue_manager, forensics usually don't subscribe?
         # Check specific systems.
@@ -452,7 +463,7 @@ class GameState:
             return True, "MacReady is gone. The Thing has won."
 
         if not self.player.is_alive:
-            return True, "MacReady has died. The Thing spreads unchecked across the ice."
+            return True, "MacReady is dead. The Thing spreads unchecked across the ice."
 
         if self.player.is_infected and self.player.is_revealed:
             return True, "MacReady has become one of Them. The imitation is perfect."
