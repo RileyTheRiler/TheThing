@@ -164,6 +164,13 @@ class TimeSystem:
     def tick(self):
         """Advance time by one turn."""
         self.turn_count += 1
+
+    @property
+    def hour(self):
+        # Assuming turn 1 is 08:00 or similar, or just 0-23 from turn count.
+        # Let's start at hour 0 for turn 0 for simplicity unless context suggests otherwise.
+        # engine.py usage: game.time_system.hour:02
+        return self.turn_count % 24
         
     def update_environment(self, power_on):
         """
