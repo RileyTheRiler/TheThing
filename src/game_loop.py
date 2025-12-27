@@ -53,12 +53,14 @@ def _save_history():
 
 from core.resolution import Attribute, Skill
 from core.event_system import event_bus, EventType, GameEvent
-from systems.architect import Difficulty, DifficultySettings
+from systems.architect import Difficulty, DifficultySettings, RandomnessEngine
 from systems.combat import CombatSystem, CoverType, CombatEncounter
 from systems.interrogation import InterrogationSystem, InterrogationTopic
 from systems.statistics import stats
 from audio.audio_manager import Sound
 from ui.settings import settings, show_settings_menu
+from ui.crt_effects import CRTOutput
+from ui.title_screen import show_title_screen
 from engine import GameState
 
 
@@ -181,6 +183,38 @@ def main():
     """Main game loop - can be called from launcher or run directly."""
     # Set up readline for command history (arrow keys, history file)
     _setup_readline()
+
+    # Show title screen first
+    temp_crt = CRTOutput(palette="green")
+    temp_rng = RandomnessEngine()
+
+    menu_choice = show_title_screen(temp_crt, temp_rng)
+
+    # Handle menu selection
+    if menu_choice == 3:  # TERMINATE
+        print("\n\033[38;5;46mSystem terminated. Goodbye.\033[0m\n")
+        return
+    elif menu_choice == 1:  # ACCESS RECORDS
+        print("\n\033[38;5;46m[ACCESS DENIED] Personnel records are classified.\033[0m")
+        print("\033[38;5;46mPress ENTER to continue...\033[0m")
+        try:
+            input()
+        except EOFError:
+            pass
+        # Return to main menu by recursing
+        return main()
+    elif menu_choice == 2:  # SYSTEM CONFIG
+        print("\n\033[38;5;46m[SYSTEM CONFIG] This option will be available in a future update.\033[0m")
+        print("\033[38;5;46mPress ENTER to continue...\033[0m")
+        try:
+            input()
+        except EOFError:
+            pass
+        # Return to main menu by recursing
+        return main()
+
+    # menu_choice == 0: BEGIN SIMULATION
+    # Continue with game setup
 
     # Select difficulty before starting
     difficulty = _select_difficulty()

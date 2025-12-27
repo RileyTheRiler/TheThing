@@ -158,11 +158,11 @@ class GameState:
                 data = json.load(f)
                 
             if isinstance(data, list):
-            crew_list = data
-        else:
-            crew_list = data.get("crew", [])
-            
-        for char_data in crew_list:
+                crew_list = data
+            else:
+                crew_list = data.get("crew", [])
+
+            for char_data in crew_list:
                 # Parse attributes
                 attrs = {}
                 for k, v in char_data.get("attributes", {}).items():
