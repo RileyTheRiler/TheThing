@@ -149,6 +149,12 @@ class TimeSystem:
         self.temperature = start_temp
         self.points_per_turn = 1
         self.turn_count = 0
+        self.start_hour = start_hour
+
+    @property
+    def hour(self):
+        """Current in-game hour (0-23)."""
+        return (self.start_hour + self.turn_count) % 24
         self.start_hour = start_hour  # Start at 7 PM by default
 
     @property
@@ -188,7 +194,7 @@ class TimeSystem:
             if self.temperature < 20:
                 temp_change = 2
                 self.temperature += temp_change
-                
+
         return temp_change, self.temperature
 
     def to_dict(self):
@@ -200,6 +206,11 @@ class TimeSystem:
 
     @classmethod
     def from_dict(cls, data):
+        turn_count = data.get("turn_count", 0)
+        saved_hour = data.get("hour", 19)
+        start_hour = (saved_hour - turn_count) % 24
+        ts = cls(data.get("temperature", -40), start_hour)
+        ts.turn_count = turn_count
         temp = data.get("temperature", -40)
         turn_count = data.get("turn_count", 0)
         saved_hour = data.get("hour", 19)
