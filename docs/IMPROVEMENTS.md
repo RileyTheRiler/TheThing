@@ -40,12 +40,12 @@ The game uses an **event-driven, multi-agent architecture** where 8+ independent
 
 ---
 
-## Tier 4: Documentation & Testing
+## Tier 4: Documentation & Testing - MOSTLY COMPLETE
 
-- [ ] **4.1** Complete `TruthLog.md` with all 10+ mechanics
-- [ ] **4.2** Add in-game HELP command with full command list
-- [ ] **4.3** Convert verification scripts to pytest format
-- [ ] **4.4** Add integration test for full game loop
+- [x] **4.1** Complete `TruthLog.md` with all 15 mechanics documented
+- [x] **4.2** Add in-game HELP command with topic categories
+- [x] **4.3** Convert verification scripts to pytest format - `tests/test_game_systems.py`
+- [x] **4.4** Add integration test for full game loop - `tests/test_integration.py`
 - [ ] **4.5** Create player tutorial/intro sequence
 
 ---

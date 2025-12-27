@@ -151,6 +151,90 @@ def _get_player_input(game):
         return None
 
 
+def _show_help(topic=None):
+    """Display help information for commands."""
+    help_topics = {
+        "MOVEMENT": """
+=== MOVEMENT ===
+MOVE <DIR>    - Move in a direction (NORTH/SOUTH/EAST/WEST or N/S/E/W)
+ADVANCE       - Pass time without moving
+""",
+        "COMBAT": """
+=== COMBAT ===
+ATTACK <NAME> - Attack a crew member (initiates combat with initiative rolls)
+COVER [TYPE]  - Take cover (LIGHT/HEAVY/FULL or auto-select best)
+RETREAT       - Attempt to flee from revealed Things
+BREAK <DIR>   - Break through a barricade in the given direction
+""",
+        "SOCIAL": """
+=== SOCIAL ===
+TALK               - Hear dialogue from everyone in the room
+LOOK <NAME>        - Observe a crew member for visual tells
+INTERROGATE <NAME> [TOPIC] - Question someone
+                     Topics: WHEREABOUTS, ALIBI, SUSPICION, BEHAVIOR, KNOWLEDGE
+ACCUSE <NAME>      - Make a formal accusation (triggers crew vote)
+""",
+        "FORENSICS": """
+=== FORENSICS ===
+TEST <NAME>   - Perform blood test (requires Scalpel + Copper Wire)
+HEAT          - Heat the wire during a test
+APPLY         - Apply hot wire to blood sample
+CANCEL        - Cancel current blood test
+TAG <NAME> <CATEGORY> <NOTE> - Log forensic observation
+                Categories: IDENTITY, TRUST, SUSPICION, BEHAVIOR
+DOSSIER <NAME> - View forensic file on a crew member
+LOG <ITEM>    - View chain of custody for an item
+""",
+        "INVENTORY": """
+=== INVENTORY ===
+INV / INVENTORY - View your inventory
+GET <ITEM>      - Pick up an item from the room
+DROP <ITEM>     - Drop an item in the room
+""",
+        "ENVIRONMENT": """
+=== ENVIRONMENT ===
+BARRICADE     - Barricade the current room (reinforces if already barricaded)
+STATUS        - View all crew locations and health
+TRUST <NAME>  - View trust matrix for a crew member
+JOURNAL       - View MacReady's journal entries
+""",
+        "SYSTEM": """
+=== SYSTEM ===
+SAVE [SLOT]   - Save game (default: auto)
+LOAD [SLOT]   - Load game (default: auto)
+EXIT          - Quit the game
+HELP [TOPIC]  - Show help (topics: MOVEMENT, COMBAT, SOCIAL, FORENSICS,
+                           INVENTORY, ENVIRONMENT, SYSTEM)
+""",
+    }
+
+    if topic and topic in help_topics:
+        print(help_topics[topic])
+    elif topic:
+        print(f"Unknown help topic: {topic}")
+        print("Available topics: " + ", ".join(help_topics.keys()))
+    else:
+        print("""
+=== THE THING: COMMAND REFERENCE ===
+
+Type HELP <TOPIC> for detailed help on a category.
+Topics: MOVEMENT, COMBAT, SOCIAL, FORENSICS, INVENTORY, ENVIRONMENT, SYSTEM
+
+--- QUICK REFERENCE ---
+MOVE <DIR>         Move in a direction
+LOOK <NAME>        Observe someone
+TALK               Hear dialogue
+INTERROGATE <NAME> Question someone
+ATTACK <NAME>      Attack someone
+TEST <NAME>        Blood test (need Scalpel + Wire)
+BARRICADE          Barricade room
+STATUS             View crew status
+INV                View inventory
+SAVE / LOAD        Save/load game
+EXIT               Quit game
+""")
+
+
 def _execute_command(game, cmd):
     """Execute a parsed command. Returns False if game should exit."""
     if not cmd:
@@ -161,6 +245,11 @@ def _execute_command(game, cmd):
 
     if action == "EXIT":
         return False
+
+    elif action == "HELP":
+        topic = cmd[1].upper() if len(cmd) > 1 else None
+        _show_help(topic)
+
     elif action == "ADVANCE":
         game.advance_turn()
     elif action == "SAVE":
@@ -651,7 +740,7 @@ def _execute_command(game, cmd):
                     if target.is_infected:
                         game.missionary_system.trigger_reveal(target, "Blood Test Exposure")
     else:
-        print("Unknown command. Try: MOVE, LOOK, GET, DROP, INV, TAG, TEST, ATTACK, COVER, RETREAT, STATUS, SAVE, LOAD, EXIT")
+        print("Unknown command. Type HELP for a list of commands.")
 
     return True
 
