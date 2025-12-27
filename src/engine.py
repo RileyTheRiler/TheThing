@@ -108,6 +108,7 @@ class GameState:
         target_name = event.payload.get("target")
         location = event.payload.get("location")
         print(f"\n[EVENT] LYNCH MOB TRIGGERED for {target_name} at {location}!")
+        self.mode = GameMode.STANDOFF
         self.move_mob_to_target(target_name)
 
     def on_lynch_mob_update(self, event: GameEvent):
