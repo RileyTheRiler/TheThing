@@ -903,6 +903,25 @@ def _execute_command(game, cmd):
         print(result)
         game.advance_turn()
 
+    # --- ALTERNATIVE ENDINGS (Tier 6.3) ---
+    elif action == "REPAIR":
+        if cmd[1:] and "HELICOPTER" in " ".join(cmd[1:]).upper():
+             print(game.attempt_repair_helicopter())
+        else:
+            # Default behavior if specific object not mentioned, try to infer context or fail
+            # For now, only helicopter needs specific repair action
+            print(game.attempt_repair_helicopter())
+        game.advance_turn()
+
+    elif action == "SIGNAL":
+        print(game.attempt_radio_signal())
+        game.advance_turn()
+
+    elif action == "ESCAPE":
+        print(game.attempt_escape())
+        # The win condition check in main loop will catch the status change
+        game.advance_turn()
+
     # --- BLOOD TEST ---
     elif action == "TEST":
         if len(cmd) < 2:

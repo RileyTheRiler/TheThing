@@ -433,6 +433,11 @@ class GameState:
         self.crew = self._initialize_crew()
         self.journal = []
 
+        # Tier 6.3: Alternative Endings State
+        self.helicopter_status = "BROKEN"  # BROKEN, FIXED, ESCAPED
+        self.rescue_signal_active = False
+        self.rescue_turns_remaining = None
+
         self.player = next((m for m in self.crew if m.name == "MacReady"), None)
         self._initialize_items()
         self._initialize_infection()
@@ -520,6 +525,7 @@ class GameState:
             ("Radio", "Long-range radio equipment.", "Radio Room", None, 0),
             ("Headphones", "Heavy-duty radio headphones.", "Radio Room", None, 0),
             ("Fuel Can", "Kerosene for the generator.", "Storage", None, 0),
+            ("Toolbox", "Basic mechanical tools.", "Storage", Skill.MELEE, 1),
             ("Rope", "Heavy nylon rope, 50 feet.", "Storage", None, 0),
             ("Lantern", "Battery-powered emergency lantern.", "Storage", None, 0),
             ("Microscope", "High-powered lab microscope.", "Lab", None, 0),
@@ -627,16 +633,131 @@ class GameState:
         if random_event:
             self.random_events.execute_event(random_event, self)
 
-        # 7. Auto-save every 5 turns
+        # 7. Update Rescue Timer
+        if self.rescue_signal_active and self.rescue_turns_remaining is not None:
+            self.rescue_turns_remaining -= 1
+            if self.rescue_turns_remaining == 5:
+                self.reporter.report_event("RADIO", "Rescue ETA updated: 5 hours out.", priority=True)
+            elif self.rescue_turns_remaining == 1:
+                self.reporter.report_event("RADIO", "Rescue team landing imminent!", priority=True)
+
+        # 8. Auto-save every 5 turns
         if self.turn % 5 == 0 and hasattr(self, 'save_manager'):
             try:
                 self.save_manager.save_game(self, "autosave")
             except Exception:
                 pass  # Don't interrupt gameplay on save failure
 
+    def attempt_repair_helicopter(self) -> str:
+        """Attempt to repair the helicopter in the Hangar."""
+        player_room = self.station_map.get_room_name(*self.player.location)
+        if player_room != "Hangar":
+            return "You must be in the Hangar to repair the helicopter."
+
+        if self.helicopter_status != "BROKEN":
+            return "The helicopter is already operational."
+
+        # Check for required items
+        has_wire = any(i.name == "Wire" for i in self.player.inventory)
+        has_fuel = any(i.name == "Fuel Can" for i in self.player.inventory)
+
+        if not has_wire or not has_fuel:
+            missing = []
+            if not has_wire: missing.append("Wire (electrical repair)")
+            if not has_fuel: missing.append("Fuel Can (refueling)")
+            return f"Cannot repair. Missing: {', '.join(missing)}."
+
+        # Skill Check (Mechanics/Pilot/Repair)
+        # Primary: Mechanics or Repair. Bonus for Pilot.
+        skill = Skill.MECHANICS if Skill.MECHANICS in self.player.skills else Skill.REPAIR
+        attribute = Skill.get_attribute(skill)
+
+        # Difficulty 3 (Challenging)
+        dice_pool = self.player.attributes.get(attribute, 1) + self.player.skills.get(skill, 0)
+
+        # Bonus for Pilot skill
+        if Skill.PILOT in self.player.skills:
+             dice_pool += 1
+
+        successes = self.rng.calculate_success(dice_pool)['success_count']
+
+        if successes >= 2:
+            self.helicopter_status = "FIXED"
+            # Consume items
+            self.player.remove_item("Wire")
+            self.player.remove_item("Fuel Can")
+            return "Success! You've repaired the electrical system and refueled the chopper. It's ready to fly."
+        else:
+            return "Repair failed. It's more complicated than it looks. You need to focus."
+
+    def attempt_radio_signal(self) -> str:
+        """Attempt to signal for rescue using the Radio."""
+        player_room = self.station_map.get_room_name(*self.player.location)
+        if player_room != "Radio Room":
+            return "You need to be in the Radio Room."
+
+        if not self.power_on:
+            return "The radio is dead. No power."
+
+        if self.rescue_signal_active:
+            return f"Rescue already signaled. ETA: {self.rescue_turns_remaining} turns."
+
+        if hasattr(self, 'sabotage') and self.sabotage and not self.sabotage.radio_operational:
+            return "The radio equipment is sabotaged. It won't transmit."
+
+        # Skill Check (Comms)
+        skill = Skill.COMMS
+        attribute = Skill.get_attribute(skill)
+
+        dice_pool = self.player.attributes.get(attribute, 1) + self.player.skills.get(skill, 0)
+        successes = self.rng.calculate_success(dice_pool)['success_count']
+
+        if successes >= 1:
+            self.rescue_signal_active = True
+            self.rescue_turns_remaining = 15  # 15 turns to rescue
+            return "Signal established! McMurdo acknowledges. Rescue team inbound. ETA: 15 hours (turns)."
+        else:
+            return "Static. Just static. You can't punch through the storm interference."
+
+    def attempt_escape(self) -> str:
+        """Attempt to fly the helicopter to safety."""
+        player_room = self.station_map.get_room_name(*self.player.location)
+        if player_room != "Hangar":
+            return "You are not near the helicopter."
+
+        if self.helicopter_status == "BROKEN":
+            return "The helicopter is broken. It won't fly."
+
+        # Skill Check (Pilot)
+        skill = Skill.PILOT
+        attribute = Skill.get_attribute(skill)
+
+        dice_pool = self.player.attributes.get(attribute, 1) + self.player.skills.get(skill, 0)
+
+        # Weather penalty
+        if self.weather.get_visibility() < 0.3:  # WHITEOUT condition
+            dice_pool -= 3
+        elif self.weather.get_visibility() < 0.6: # Poor
+            dice_pool -= 1
+
+        if dice_pool < 1: dice_pool = 1
+
+        successes = self.rng.calculate_success(dice_pool)['success_count']
+
+        if successes >= 1:
+            self.helicopter_status = "ESCAPED"
+            return "Engines spooling up... You lift off into the Antarctic night."
+        else:
+            return "The wind is too strong! You can't get lift-off. Wait for a break in the weather."
+
     def check_win_condition(self):
         """
-        WIN: All infected crew are dead/neutralized AND player is alive and human.
+        WIN:
+        1. All infected crew are dead/neutralized AND player is alive and human (Extermination).
+        2. Player escapes via Helicopter (Escape).
+        3. Rescue team arrives and player is alive/human (Rescue).
+        4. Player is Sole Survivor (Grim Victory).
+
         Returns: (won: bool, message: str)
         """
         if not self.player or not self.player.is_alive:
@@ -644,13 +765,24 @@ class GameState:
         if self.player.is_infected and self.player.is_revealed:
             return False, None
 
-        # Check if any infected crew remain alive and not revealed/neutralized
-        living_infected = [m for m in self.crew
-                          if m.is_infected and m.is_alive and m != self.player]
+        # 1. Helicopter Escape
+        if self.helicopter_status == "ESCAPED":
+            return True, "You pilot the chopper through the storm, leaving the nightmare of Outpost 31 behind."
 
-        # If there were ever infected and now none remain
+        # 2. Rescue Arrival
+        if self.rescue_signal_active and self.rescue_turns_remaining <= 0:
+            return True, "Lights cut through the storm. The rescue team has arrived to extract you."
+
+        # Check living crew status
+        living_crew = [m for m in self.crew if m.is_alive]
+        living_infected = [m for m in living_crew if m.is_infected and m != self.player]
+
+        # 3. Sole Survivor (Everyone else dead)
+        if len(living_crew) == 1 and living_crew[0] == self.player:
+            return True, "Silence falls over the station. You are the only one left alive. The threat is gone... you hope."
+
+        # 4. Extermination (All Things dead)
         if not living_infected:
-            # Verify there was at least one Thing to begin with
             total_infected = [m for m in self.crew if m.is_infected]
             if total_infected:
                 return True, "All Things have been eliminated. Humanity survives... for now."
@@ -706,6 +838,9 @@ class GameState:
             "mode": self.mode.value,
             "difficulty": self.difficulty.value,
             "temperature": self.time_system.temperature,
+            "helicopter_status": self.helicopter_status,
+            "rescue_signal_active": self.rescue_signal_active,
+            "rescue_turns_remaining": self.rescue_turns_remaining,
             "rng": self.rng.to_dict(),
             "time_system": self.time_system.to_dict(),
             "station_map": self.station_map.to_dict(),
@@ -726,6 +861,10 @@ class GameState:
         game.power_on = data["power_on"]
         game.paranoia_level = data["paranoia_level"]
         game.mode = GameMode(data["mode"])
+
+        game.helicopter_status = data.get("helicopter_status", "BROKEN")
+        game.rescue_signal_active = data.get("rescue_signal_active", False)
+        game.rescue_turns_remaining = data.get("rescue_turns_remaining")
 
         game.rng.from_dict(data["rng"])
         game.time_system = TimeSystem.from_dict(data["time_system"])
