@@ -2,8 +2,8 @@ from enum import Enum
 import random
 import pickle
 import base64
-from src.core.event_system import event_bus, EventType, GameEvent
-from src.core.resolution import ResolutionSystem
+from core.event_system import event_bus, EventType, GameEvent
+from core.resolution import ResolutionSystem
 
 class GameMode(Enum):
     INVESTIGATIVE = "Investigative"
@@ -69,10 +69,12 @@ class TimeSystem:
         self.temperature = start_temp
         self.points_per_turn = 1
         self.turn_count = 0
-        
+        self.hour = 19 # Start at 7 PM
+
     def tick(self):
         """Advance time by one turn."""
         self.turn_count += 1
+        self.hour = (self.hour + 1) % 24
         
     def update_environment(self, power_on):
         """
@@ -95,11 +97,13 @@ class TimeSystem:
     def to_dict(self):
         return {
             "temperature": self.temperature,
-            "turn_count": self.turn_count
+            "turn_count": self.turn_count,
+            "hour": self.hour
         }
 
     @classmethod
     def from_dict(cls, data):
         ts = cls(data.get("temperature", -40))
         ts.turn_count = data.get("turn_count", 0)
+        ts.hour = data.get("hour", 19)
         return ts

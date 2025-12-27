@@ -1,5 +1,5 @@
 from enum import Enum
-from src.core.event_system import event_bus, EventType, GameEvent
+from core.event_system import event_bus, EventType, GameEvent
 
 class SabotageEvent(Enum):
     POWER_OUTAGE = "power_outage"

@@ -1,5 +1,5 @@
 from enum import Enum, auto
-from src.core.event_system import event_bus, EventType, GameEvent
+from core.event_system import event_bus, EventType, GameEvent
 
 class RoomState(Enum):
     DARK = auto()       # No light - increased communion chance

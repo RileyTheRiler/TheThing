@@ -1,5 +1,5 @@
-from src.core.resolution import Attribute
-from src.core.event_system import event_bus, EventType, GameEvent
+from core.resolution import Attribute
+from core.event_system import event_bus, EventType, GameEvent
 
 class PsychologySystem:
     MAX_STRESS = 10

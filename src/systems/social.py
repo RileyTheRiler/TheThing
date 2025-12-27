@@ -1,4 +1,4 @@
-from src.core.event_system import event_bus, EventType, GameEvent
+from core.event_system import event_bus, EventType, GameEvent
 
 __all__ = ['TrustMatrix', 'LynchMobSystem', 'DialogueManager']
 

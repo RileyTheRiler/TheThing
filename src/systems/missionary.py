@@ -1,5 +1,5 @@
 import random
-from src.core.event_system import event_bus, EventType, GameEvent
+from core.event_system import event_bus, EventType, GameEvent
 
 class MissionarySystem:
     def __init__(self):

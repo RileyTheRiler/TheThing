@@ -1,6 +1,6 @@
 import random
 import time
-from src.core.event_system import event_bus, EventType, GameEvent
+from core.event_system import event_bus, EventType, GameEvent
 
 class BiologicalSlipGenerator:
     """

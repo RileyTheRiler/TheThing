@@ -1,7 +1,7 @@
 import random
 from enum import Enum
-from src.core.event_system import event_bus, EventType, GameEvent
-from src.systems.architect import RandomnessEngine
+from core.event_system import event_bus, EventType, GameEvent
+from systems.architect import RandomnessEngine
 
 class WindDirection(Enum):
     NORTH = "north"
