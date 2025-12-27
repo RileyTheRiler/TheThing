@@ -38,6 +38,9 @@ class MessageReporter:
         event_bus.subscribe(EventType.ATTACK_RESULT, self._handle_attack)
         event_bus.subscribe(EventType.TEST_RESULT, self._handle_test)
         event_bus.subscribe(EventType.BARRICADE_ACTION, self._handle_barricade)
+        event_bus.subscribe(EventType.STEALTH_REPORT, self._handle_stealth)
+        event_bus.subscribe(EventType.CRAFTING_REPORT, self._handle_crafting)
+        event_bus.subscribe(EventType.ENDING_REPORT, self._handle_ending)
 
     def _handle_message(self, event: GameEvent):
         """Handle general messages."""
@@ -150,6 +153,35 @@ class MessageReporter:
             self.crt.output(f"The barricade in {room} has been broken!")
         elif action == 'damaged':
             self.crt.output(f"The barricade shudders! (Strength: {strength}/3)")
+
+    def _handle_stealth(self, event: GameEvent):
+        """Handle stealth encounter updates."""
+        opponent = event.payload.get('opponent', 'someone')
+        room = event.payload.get('room', 'somewhere')
+        outcome = event.payload.get('outcome', 'evaded')
+        prefix = "[STEALTH]"
+        if outcome == "detected":
+            self.crt.warning(f"{prefix} {opponent} spots you in the {room}!")
+        else:
+            self.crt.output(f"{prefix} You evade {opponent} in the {room}.")
+
+    def _handle_crafting(self, event: GameEvent):
+        """Handle crafting progress updates."""
+        actor = event.payload.get('actor', 'You')
+        recipe = event.payload.get('recipe', 'unknown')
+        event_stage = event.payload.get('event', 'queued')
+        item_name = event.payload.get('item_name')
+        if event_stage == "completed" and item_name:
+            self.crt.output(f"{actor} completed {recipe}: {item_name}.")
+        elif event_stage == "queued":
+            self.crt.output(f"{actor} starts crafting {recipe}.")
+
+    def _handle_ending(self, event: GameEvent):
+        """Handle ending triggers."""
+        message = event.payload.get('message', 'An ending has been reached.')
+        result = event.payload.get('result', 'win')
+        label = "VICTORY" if result == "win" else "DEFEAT"
+        self.crt.output(f"[{label}] {message}", crawl=True)
 
 
 # Utility function to emit messages easily
