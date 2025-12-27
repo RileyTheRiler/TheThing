@@ -27,6 +27,7 @@ class StationMap:
             "Lab": (11, 11, 14, 14),          # Scientific research (center-east)
             "Sleeping Quarters": (0, 6, 4, 10),  # Crew bunks (west)
             "Mess Hall": (5, 0, 9, 4),        # Food and kitchen (north-center)
+            "Hangar": (5, 15, 10, 19),        # Helicopter storage (south-center)
         }
         self.room_items = {}
 

@@ -116,6 +116,12 @@ class LynchMobSystem:
         if self.active_mob:
             if self.target and not self.target.is_alive:
                 self.disband_mob()
+            elif self.target:
+                # Emit update for dynamic tracking
+                event_bus.emit(GameEvent(EventType.LYNCH_MOB_UPDATE, {
+                    "target": self.target.name,
+                    "location": self.target.location
+                }))
             return None
 
         # Check for new targets
