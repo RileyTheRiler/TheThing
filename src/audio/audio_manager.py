@@ -254,11 +254,6 @@ class AudioManager:
     def decrease_volume(self, amount=0.1):
         """Decrease volume by amount."""
         self.set_volume(self.volume - amount)
-        Since winsound cannot control amplitude, this controls:
-        1. Whether sound plays at all (0.0 = mute)
-        2. Density of ambient loops (lower volume = sparser sound)
-        """
-        self.volume = max(0.0, min(1.0, float(volume)))
 
     def get_volume(self):
         """Get current volume level."""
