@@ -72,7 +72,12 @@ class TimeSystem:
     def tick(self):
         """Advance time by one turn."""
         self.turn_count += 1
-        
+
+    @property
+    def hour(self):
+        # Assuming 1 turn = 1 hour, starting at 08:00
+        return (8 + self.turn_count) % 24
+
     def update_environment(self, power_on):
         """
         Updates environmental factors based on power state.
