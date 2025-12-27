@@ -921,17 +921,7 @@ def _execute_command(game, cmd):
                 else:
                     print(f"Drawing blood from {target.name}...")
                     print(game.blood_test_sim.start_test(target.name))
-                    # Rapid heating and application
-                    print(game.blood_test_sim.heat_wire())
-                    print(game.blood_test_sim.heat_wire())
-                    print(game.blood_test_sim.heat_wire())
-                    print(game.blood_test_sim.heat_wire())
-
-                    result = game.blood_test_sim.apply_wire(target.is_infected)
-                    print(result)
-
-                    if target.is_infected:
-                        game.missionary_system.trigger_reveal(target, "Blood Test Exposure")
+                    print("Sample prepared. Use HEAT to heat the wire, then APPLY.")
     else:
         print("Unknown command. Type HELP for a list of commands.")
 
