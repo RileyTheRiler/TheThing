@@ -4,9 +4,14 @@ from core.event_system import event_bus, EventType, GameEvent
 class PsychologySystem:
     MAX_STRESS = 10
     
+    # Paranoia Thresholds
+    CONCERNED_THRESHOLD = 33
+    PANICKED_THRESHOLD = 66
+    
     def __init__(self):
         # Register for turn advance
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+        self.prev_paranoia_level = 0
 
     def cleanup(self):
         event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
@@ -106,4 +111,37 @@ class PsychologySystem:
         """Handle turn advancement via event bus."""
         game_state = event.payload.get("game_state")
         if game_state:
+            old_level = self.prev_paranoia_level
+            
+            # Update paranoia level
+            game_state.paranoia_level = min(100, game_state.paranoia_level + 1)
+            
+            # Process Local Environment Paranoia Modifiers
+            player_room = game_state.station_map.get_room_name(*game_state.player.location)
+            paranoia_mod = game_state.room_states.get_paranoia_modifier(player_room)
+            if paranoia_mod > 0:
+                game_state.paranoia_level = min(100, game_state.paranoia_level + paranoia_mod)
+            
+            new_level = game_state.paranoia_level
+            
+            # Threshold Check
+            thresholds = [self.CONCERNED_THRESHOLD, self.PANICKED_THRESHOLD]
+            for t in thresholds:
+                if old_level < t and new_level >= t:
+                    event_bus.emit(GameEvent(EventType.PARANOIA_THRESHOLD_CROSSED, {
+                        "threshold": t,
+                        "direction": "UP",
+                        "new_value": new_level,
+                        "old_value": old_level
+                    }))
+                elif old_level >= t and new_level < t:
+                    event_bus.emit(GameEvent(EventType.PARANOIA_THRESHOLD_CROSSED, {
+                        "threshold": t,
+                        "direction": "DOWN",
+                        "new_value": new_level,
+                        "old_value": old_level
+                    }))
+            
+            self.prev_paranoia_level = new_level
+                
             self.update(game_state)

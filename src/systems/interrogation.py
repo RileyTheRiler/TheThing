@@ -188,9 +188,21 @@ class InterrogationSystem:
         # Determine if any tells are visible
         tells = []
 
+        # Get room modifiers for empathy check
+        room_modifiers = None
+        if hasattr(game_state, 'room_states') and game_state.room_states:
+            room = getattr(game_state.station_map, 'get_room_name', lambda *args: "Unknown")(*subject.location)
+            if room != "Unknown":
+                room_modifiers = game_state.room_states.get_roll_modifiers(room)
+
         # Roll EMPATHY check to notice tells
         empathy_pool = (interrogator.attributes.get(Attribute.INFLUENCE, 1) +
                        interrogator.skills.get(Skill.EMPATHY, 0))
+        
+        # Apply environmental modifiers
+        from core.resolution import ResolutionSystem
+        empathy_pool = ResolutionSystem.resolve_pool(empathy_pool, [Attribute.INFLUENCE, Skill.EMPATHY], room_modifiers)
+        
         check = self.rng.calculate_success(empathy_pool)
 
         if check['success']:
@@ -223,6 +235,14 @@ class InterrogationSystem:
         if self.interrogation_count[subject.name] > 2:
             trust_change -= 5
             dialogue = f"(Annoyed) Again? Fine... {dialogue}"
+
+        # Emit reporting event
+        event_bus.emit(GameEvent(EventType.INTERROGATION_RESULT, {
+            "subject": subject.name,
+            "dialogue": dialogue,
+            "tells": tells,
+            "topic": topic.value
+        }))
 
         return InterrogationResult(
             response_type=response_type,
@@ -302,6 +322,15 @@ class InterrogationSystem:
             game_state.trust_system.modify_trust(accused.name, accuser.name, -20)
             for voter in voters:
                 game_state.trust_system.modify_trust(voter.name, accuser.name, -5)
+
+        # Emit reporting event
+        event_bus.emit(GameEvent(EventType.ACCUSATION_RESULT, {
+            "target": accused.name,
+            "outcome": outcome,
+            "supporters": [s.name for s in supporters],
+            "opposers": [o.name for o in opposers],
+            "supported": supported
+        }))
 
         return AccusationResult(
             supported=supported,

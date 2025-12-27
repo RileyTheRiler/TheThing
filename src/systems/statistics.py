@@ -36,6 +36,9 @@ class GameSessionStats:
     damage_taken: int = 0
     rooms_visited: int = 0
     random_events_witnessed: int = 0
+    stealth_encounters: int = 0
+    crafting_successes: int = 0
+    ending_type: str = ""
 
 
 @dataclass
@@ -53,6 +56,9 @@ class CareerStats:
     total_things_revealed: int = 0
     best_survival_turns: int = 0
     fastest_victory_turns: int = 999999
+    total_stealth_encounters: int = 0
+    total_crafting_successes: int = 0
+    ending_types_witnessed: Dict[str, int] = field(default_factory=dict)
     sessions: List[Dict] = field(default_factory=list)
 
 
@@ -72,6 +78,9 @@ class StatisticsManager:
         event_bus.subscribe(EventType.TEST_RESULT, self._on_blood_test)
         event_bus.subscribe(EventType.BARRICADE_ACTION, self._on_barricade)
         event_bus.subscribe(EventType.ITEM_PICKUP, self._on_item_pickup)
+        event_bus.subscribe(EventType.STEALTH_REPORT, self._on_stealth_report)
+        event_bus.subscribe(EventType.CRAFTING_REPORT, self._on_crafting_report)
+        event_bus.subscribe(EventType.ENDING_REPORT, self._on_ending_report)
 
     def load(self):
         """Load career statistics from file."""
@@ -134,6 +143,12 @@ class StatisticsManager:
         self.career.total_humans_killed += self.current_session.humans_killed
         self.career.total_blood_tests += self.current_session.blood_tests_performed
         self.career.total_things_revealed += self.current_session.things_revealed_by_test
+        self.career.total_stealth_encounters += self.current_session.stealth_encounters
+        self.career.total_crafting_successes += self.current_session.crafting_successes
+        
+        if self.current_session.ending_type:
+            etype = self.current_session.ending_type
+            self.career.ending_types_witnessed[etype] = self.career.ending_types_witnessed.get(etype, 0) + 1
 
         if outcome == "victory":
             self.career.victories += 1
@@ -214,6 +229,21 @@ class StatisticsManager:
         """Track item collection."""
         if self.current_session:
             self.current_session.items_collected += 1
+
+    def _on_stealth_report(self, event: GameEvent):
+        """Track stealth encounters."""
+        if self.current_session:
+            self.current_session.stealth_encounters += 1
+
+    def _on_crafting_report(self, event: GameEvent):
+        """Track crafting successes."""
+        if self.current_session and event.payload.get('event') == 'completed':
+            self.current_session.crafting_successes += 1
+
+    def _on_ending_report(self, event: GameEvent):
+        """Track ending types."""
+        if self.current_session:
+            self.current_session.ending_type = event.payload.get('ending_type', "UNKNOWN")
 
     def get_current_session_summary(self) -> str:
         """Get a summary of the current session."""

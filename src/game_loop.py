@@ -734,7 +734,7 @@ def _execute_command(game, cmd):
                 print(result.message)
 
                 if result.success:
-                    died = target.take_damage(result.damage)
+                    died = target.take_damage(result.damage, game_state=game)
                     if died:
                         print(f"*** {target.name} HAS DIED ***")
                         # Clear cover assignment

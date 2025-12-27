@@ -62,20 +62,24 @@ class Item:
 
     @classmethod
     def from_dict(cls, data):
-        """Deserialize item from dictionary."""
+        """Deserialize item from dictionary with defensive defaults."""
+        if not data or not isinstance(data, dict):
+            return None
+
         skill = None
-        if data.get("weapon_skill"):
+        skill_name = data.get("weapon_skill")
+        if skill_name:
             try:
-                skill = Skill[data["weapon_skill"]]
-            except KeyError:
+                skill = Skill[skill_name]
+            except (KeyError, ValueError):
                 skill = None
 
         item = cls(
-            name=data["name"],
-            description=data["description"],
-            is_evidence=data["is_evidence"],
+            name=data.get("name", "Unknown Item"),
+            description=data.get("description", "A mysterious object."),
+            is_evidence=data.get("is_evidence", False),
             weapon_skill=skill,
-            damage=data["damage"],
+            damage=data.get("damage", 0),
             uses=data.get("uses", -1),
             effect=data.get("effect"),
             effect_value=data.get("effect_value", 0),

@@ -115,6 +115,13 @@ class RoomStateManager:
         }))
         return f"Blood spatters across {room_name}."
 
+    def get_paranoia_modifier(self, room_name):
+        """Return paranoia modifier based on room states (e.g., BLOODY)."""
+        states = self.get_states(room_name)
+        if RoomState.BLOODY in states:
+            return 2
+        return 0
+
     def barricade_room(self, room_name, actor="You"):
         """Create or reinforce a barricade on a room."""
         self.add_state(room_name, RoomState.BARRICADED)
@@ -217,11 +224,29 @@ class RoomStateManager:
         """Check if entry to a room is blocked by a barricade."""
         return self.has_state(room_name, RoomState.BARRICADED)
     
-    def get_communion_modifier(self, room_name):
-        return 0.4 if self.has_state(room_name, RoomState.DARK) else 0.0
-    
-    def get_paranoia_modifier(self, room_name):
-        modifier = 0
-        if self.has_state(room_name, RoomState.BLOODY): modifier += 5
-        if self.has_state(room_name, RoomState.DARK): modifier += 2
-        return modifier
+    def get_roll_modifiers(self, room_name):
+        """
+        Returns a dictionary of Skill/Attribute modifiers based on room state.
+        
+        Returns:
+            dict: {Skill or Attribute: modifier_value}
+        """
+        states = self.get_states(room_name)
+        modifiers = {}
+
+        if RoomState.DARK in states:
+            # Dark rooms are harder to see in, but easier to hide in
+            modifiers[Skill.STEALTH] = 2
+            modifiers[Skill.OBSERVATION] = -2
+            modifiers[Skill.FIREARMS] = -2
+            modifiers[Skill.MELEE] = -1
+            modifiers[Skill.EMPATHY] = -1
+        
+        if RoomState.FROZEN in states:
+            # Frozen rooms make physical work harder and stiffen joints
+            modifiers[Attribute.PROWESS] = -1
+            modifiers[Skill.REPAIR] = -2
+            modifiers[Skill.MECHANICS] = -2
+            modifiers[Skill.HANDLING] = -1
+
+        return modifiers

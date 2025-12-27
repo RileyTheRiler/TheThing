@@ -2,6 +2,7 @@ from typing import List, Optional
 
 from core.design_briefs import DesignBriefRegistry
 from core.event_system import event_bus, EventType, GameEvent
+from core.resolution import Attribute, Skill
 
 
 class StealthSystem:
@@ -35,6 +36,7 @@ class StealthSystem:
         player = getattr(game_state, "player", None)
         crew = getattr(game_state, "crew", [])
         station_map = getattr(game_state, "station_map", None)
+        room_states = getattr(game_state, "room_states", None)
         if not player or not station_map:
             return
 
@@ -47,18 +49,65 @@ class StealthSystem:
         if not nearby_infected or self.cooldown > 0:
             return
 
-        detection_chance = self.config.get("base_detection_chance", 0.35)
-        detected = rng.random_float() < detection_chance
         opponent = nearby_infected[0]
+        
+        # 1. Subject Pool (Player Stealth)
+        prowess = player.attributes.get(Attribute.PROWESS, 1) if hasattr(player, "attributes") else 2
+        stealth = player.skills.get(Skill.STEALTH, 0) if hasattr(player, "skills") else 0
+        subject_pool = prowess + stealth
+
+        # 2. Observer Pool (Infected NPC Perception)
+        logic = opponent.attributes.get(Attribute.LOGIC, 1)
+        observation = opponent.skills.get(Skill.OBSERVATION, 0)
+        observer_pool = logic + observation
+
+        # 3. Modifiers (Posture and Environment)
+        from entities.crew_member import StealthPosture
+        
+        posture = getattr(player, "stealth_posture", StealthPosture.STANDING)
+        if posture == StealthPosture.CROUCHING:
+            subject_pool += 1
+        elif posture == StealthPosture.CRAWLING:
+            subject_pool += 2
+        elif posture == StealthPosture.HIDING:
+            subject_pool += 4
+
+        # Fetch room modifiers
+        room_modifiers = room_states.get_roll_modifiers(room) if room_states else {}
+        
+        # Apply modifiers using ResolutionSystem
+        from core.resolution import ResolutionSystem
+        subject_pool = ResolutionSystem.resolve_pool(subject_pool, [Skill.STEALTH], room_modifiers)
+        observer_pool = ResolutionSystem.resolve_pool(observer_pool, [Skill.OBSERVATION], room_modifiers)
+        
+        # Enforce minimum pool of 1
+        subject_pool = max(1, subject_pool)
+        observer_pool = max(1, observer_pool)
+
+        # 4. Resolution
+        from core.resolution import ResolutionSystem
+        res = ResolutionSystem()
+        
+        subject_result = res.roll_check(subject_pool, rng)
+        observer_result = res.roll_check(observer_pool, rng)
+        
+        # Success = Subject (Player) has more successes than Observer (NPC)
+        # Tie goes to observer (detection)
+        player_evaded = subject_result['success_count'] > observer_result['success_count']
+        
         payload = {
-            "brief": self.config.get("summary"),
             "room": room,
             "opponent": opponent.name,
-            "outcome": "detected" if detected else "evaded",
+            "outcome": "evaded" if player_evaded else "detected",
+            "player_successes": subject_result['success_count'],
+            "opponent_successes": observer_result['success_count']
         }
         event_bus.emit(GameEvent(EventType.STEALTH_REPORT, payload))
+        
+        # Emit AI perception event for other systems to hook into
+        event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, payload))
 
-        if detected:
+        if not player_evaded:
             event_bus.emit(GameEvent(EventType.WARNING, {
                 "text": f"{opponent.name} corners you in the {room}!"
             }))

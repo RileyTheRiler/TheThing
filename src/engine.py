@@ -1,43 +1,24 @@
 import json
 import os
+import sys
 import random
-from systems.missionary import MissionarySystem
-from systems.psychology import PsychologySystem
-from core.resolution import Attribute, Skill, ResolutionSystem
-from systems.social import TrustMatrix, LynchMobSystem, DialogueManager
-from systems.architect import RandomnessEngine, GameMode, TimeSystem, Difficulty, DifficultySettings
-from systems.persistence import SaveManager
+import time
+
 from core.event_system import event_bus, EventType, GameEvent
+from core.resolution import Attribute, Skill, ResolutionSystem
 from core.design_briefs import DesignBriefRegistry
 
-from audio.audio_manager import AudioManager, Sound
-from core.design_briefs import DesignBriefRegistry
-from core.event_system import EventType, GameEvent, event_bus
-from core.resolution import Attribute, ResolutionSystem, Skill
 from entities.crew_member import CrewMember
 from entities.item import Item
 from entities.station_map import StationMap
+
 from systems.ai import AISystem
-<<<<<<< HEAD
-
-# Agent 4: Forensics
-from systems.random_events import RandomEventSystem
-
-# Agent 4: Forensics
-from systems.forensics import BiologicalSlipGenerator, BloodTestSim, ForensicDatabase, EvidenceLog, ForensicsSystem
-
-# Terminal Designer Systems (Agent 5)
-from ui.renderer import TerminalRenderer
-from ui.crt_effects import CRTOutput
-from ui.command_parser import CommandParser
-from audio.audio_manager import AudioManager, Sound
-=======
-from systems.architect import Difficulty, DifficultySettings, GameMode, RandomnessEngine, TimeSystem
->>>>>>> 8955dd991f45dd39cbbdb368c0ddf168d7372a50
+from systems.architect import RandomnessEngine, GameMode, TimeSystem, Difficulty, DifficultySettings, Verbosity
 from systems.commands import CommandDispatcher, GameContext
+from systems.combat import CombatSystem, CoverType
 from systems.crafting import CraftingSystem
 from systems.endgame import EndgameSystem
-from systems.forensics import BiologicalSlipGenerator, BloodTestSim, EvidenceLog, ForensicDatabase, ForensicsSystem
+from systems.forensics import BiologicalSlipGenerator, BloodTestSim, ForensicDatabase, EvidenceLog, ForensicsSystem
 from systems.missionary import MissionarySystem
 from systems.persistence import SaveManager
 from systems.psychology import PsychologySystem
@@ -47,21 +28,13 @@ from systems.sabotage import SabotageManager
 from systems.social import DialogueManager, LynchMobSystem, TrustMatrix
 from systems.stealth import StealthSystem
 from systems.weather import WeatherSystem
-from ui.command_parser import CommandParser
-from ui.crt_effects import CRTOutput
-from ui.message_reporter import MessageReporter
+
 from ui.renderer import TerminalRenderer
+from ui.crt_effects import CRTOutput
+from ui.command_parser import CommandParser
+from ui.message_reporter import MessageReporter
+from audio.audio_manager import AudioManager, Sound
 
-# Entity Classes
-from entities.item import Item
-from entities.crew_member import CrewMember
-from entities.station_map import StationMap
-
-import json
-import os
-import sys
-import random
-import time
 
 class GameState:
     def __init__(self, seed=None, difficulty=Difficulty.NORMAL):
@@ -74,11 +47,11 @@ class GameState:
         self.difficulty = difficulty
         self.difficulty_settings = DifficultySettings.get_all(difficulty)
 
-        self.turn = 1
         self.power_on = True
         self.blood_bank_destroyed = False
         self.paranoia_level = self.difficulty_settings["starting_paranoia"]
         self.mode = GameMode.INVESTIGATIVE
+        self.verbosity = Verbosity.STANDARD
         self.design_registry = DesignBriefRegistry()
 
         self.station_map = StationMap()
@@ -117,7 +90,7 @@ class GameState:
         self.parser = CommandParser(known_names=[m.name for m in self.crew])
         self.audio = AudioManager(enabled=True)
         self.command_dispatcher = CommandDispatcher()
-        self.reporter = MessageReporter(self.crt)  # Tier 2.6: Event-based reporting
+        self.reporter = MessageReporter(self.crt, self)  # Tier 2.6: Event-based reporting
         
         # Agent 6: DM Systems (Now Event-Driven)
         self.weather = WeatherSystem()
@@ -127,7 +100,7 @@ class GameState:
         self.ai_system = AISystem()
         self.random_events = RandomEventSystem(self.rng)  # Tier 6.2
         self.stealth_system = StealthSystem(self.design_registry)
-        self.crafting_system = CraftingSystem(self.design_registry)
+        self.crafting = CraftingSystem()
         self.endgame_system = EndgameSystem(self.design_registry)
 
         # Integration helper
@@ -149,7 +122,9 @@ class GameState:
     def on_lynch_mob_trigger(self, event: GameEvent):
         target_name = event.payload.get("target")
         location = event.payload.get("location")
-        print(f"\n[EVENT] LYNCH MOB TRIGGERED for {target_name} at {location}!")
+        # Route through message reporter
+        from ui.message_reporter import emit_warning
+        emit_warning(f"LYNCH MOB TRIGGERED for {target_name} at {location}!")
         self.mode = GameMode.STANDOFF
         self.move_mob_to_target(target_name)
 
@@ -164,7 +139,8 @@ class GameState:
                 if m != target_member and m.is_alive and not m.is_revealed:
                     if m.location != target_member.location:
                         m.location = target_member.location
-                        print(f"[SOCIAL] {m.name} pursues {target_name} to {target_member.location}.")
+                        from ui.message_reporter import emit_message
+                        emit_message(f"[SOCIAL] {m.name} pursues {target_name} to {target_member.location}.")
 
     def cleanup(self):
         """Unsubscribe from event bus to prevent leaks."""
@@ -176,6 +152,7 @@ class GameState:
             self.audio.shutdown()
 
         # Cleanup subsystems if they have cleanup
+        if hasattr(self.time_system, 'cleanup'): self.time_system.cleanup()
         if hasattr(self.weather, 'cleanup'): self.weather.cleanup()
         if hasattr(self.sabotage, 'cleanup'): self.sabotage.cleanup()
         if hasattr(self.room_states, 'cleanup'): self.room_states.cleanup()
@@ -184,7 +161,7 @@ class GameState:
         if hasattr(self.missionary_system, 'cleanup'): self.missionary_system.cleanup()
         if hasattr(self.psychology_system, 'cleanup'): self.psychology_system.cleanup()
         if hasattr(self.stealth_system, 'cleanup'): self.stealth_system.cleanup()
-        if hasattr(self.crafting_system, 'cleanup'): self.crafting_system.cleanup()
+        if hasattr(self.crafting, 'cleanup'): self.crafting.cleanup()
         if hasattr(self.endgame_system, 'cleanup'): self.endgame_system.cleanup()
 
         # Note: ai_system, dialogue_manager, forensics usually don't subscribe?
@@ -193,6 +170,11 @@ class GameState:
         # TrustMatrix subscribes.
         # LynchMobSystem does not subscribe (it checks in advance_turn? No, it emits).
         # WeatherSystem subscribes.
+
+    @property
+    def turn(self):
+        """Current turn number (1-based)."""
+        return self.time_system.turn_count + 1
 
     @property
     def temperature(self):
@@ -279,8 +261,6 @@ class GameState:
             member.is_infected = True
 
     def advance_turn(self):
-        self.turn += 1
-        
         # Reset per-turn flags
         for member in self.crew:
             member.slipped_vapor = False
@@ -289,11 +269,8 @@ class GameState:
         
 
 
-        # 1. Emit TURN_ADVANCE Event (Triggers TimeSystem, WeatherSystem, InfectionSystem, etc.)
-        event_bus.emit(GameEvent(EventType.TURN_ADVANCE, {
-            "game_state": self,
-            "rng": self.rng
-        }))
+        # 1. Advance Time and Emit TURN_ADVANCE Event
+        event_bus.emit(GameEvent(EventType.TURN_ADVANCE, {"game_state": self}))
         
         # 3. Process Local Environment Effects
         player_room = self.station_map.get_room_name(*self.player.location)
@@ -321,6 +298,9 @@ class GameState:
                 self.save_manager.save_game(self, "autosave")
             except Exception:
                 pass  # Don't interrupt gameplay on save failure
+
+        # Final reporting sweep
+        self.reporter.flush()
 
     def attempt_repair_helicopter(self) -> str:
         """Attempt to repair the helicopter in the Hangar."""
@@ -360,6 +340,10 @@ class GameState:
             # Consume items
             self.player.remove_item("Wire")
             self.player.remove_item("Fuel Can")
+            
+            # Emit Helicopter Repaired Event
+            event_bus.emit(GameEvent(EventType.HELICOPTER_REPAIRED, {"game_state": self}))
+            
             return "Success! You've repaired the electrical system and refueled the chopper. It's ready to fly."
         else:
             return "Repair failed. It's more complicated than it looks. You need to focus."
@@ -389,6 +373,10 @@ class GameState:
         if successes >= 1:
             self.rescue_signal_active = True
             self.rescue_turns_remaining = 15  # 15 turns to rescue
+            
+            # Emit SOS Event
+            event_bus.emit(GameEvent(EventType.SOS_EMITTED, {"game_state": self}))
+            
             return "Signal established! McMurdo acknowledges. Rescue team inbound. ETA: 15 hours (turns)."
         else:
             return "Static. Just static. You can't punch through the storm interference."
@@ -420,6 +408,10 @@ class GameState:
 
         if successes >= 1:
             self.helicopter_status = "ESCAPED"
+            
+            # Emit Escape Success Event
+            event_bus.emit(GameEvent(EventType.ESCAPE_SUCCESS, {"game_state": self}))
+            
             return "Engines spooling up... You lift off into the Antarctic night."
         else:
             return "The wind is too strong! You can't get lift-off. Wait for a break in the weather."
@@ -510,6 +502,7 @@ class GameState:
             "power_on": self.power_on,
             "paranoia_level": self.paranoia_level,
             "mode": self.mode.value,
+            "verbosity": self.verbosity.value,
             "difficulty": self.difficulty.value,
             "temperature": self.time_system.temperature,
             "helicopter_status": self.helicopter_status,
@@ -520,45 +513,99 @@ class GameState:
             "station_map": self.station_map.to_dict(),
             "crew": [m.to_dict() for m in self.crew],
             "journal": self.journal,
-            "trust": self.trust_system.matrix  # Assuming dict
+            "trust": self.trust_system.matrix,
+            "crafting": self.crafting.to_dict()
         }
 
     @classmethod
     def from_dict(cls, data):
+        """Deserialize game state from dictionary with defensive defaults and validation."""
+        if not data or not isinstance(data, dict):
+            from ui.message_reporter import emit_error
+            emit_error("FAILED TO LOAD: Invalid save data format.")
+            return None
+
         # Get difficulty from save or default to NORMAL
-        difficulty_value = data.get("difficulty", "Normal")
-        difficulty = Difficulty(difficulty_value)
+        difficulty_value = data.get("difficulty", Difficulty.NORMAL.value)
+        try:
+            difficulty = Difficulty(difficulty_value)
+        except ValueError:
+            difficulty = Difficulty.NORMAL
 
-        game = cls(difficulty=difficulty)  # Init with saved difficulty
-        # Overwrite content
-        game.turn = data["turn"]
-        game.power_on = data["power_on"]
-        game.paranoia_level = data["paranoia_level"]
-        game.mode = GameMode(data["mode"])
+        game = cls(difficulty=difficulty)
+        
+        # Power and Paranoia
+        game.power_on = data.get("power_on", True)
+        game.paranoia_level = data.get("paranoia_level", 0)
+        
+        # Mode and Verbosity
+        mode_val = data.get("mode", GameMode.INVESTIGATIVE.value)
+        try:
+            game.mode = GameMode(mode_val)
+        except ValueError:
+            game.mode = GameMode.INVESTIGATIVE
 
+        verbosity_val = data.get("verbosity", Verbosity.STANDARD.value)
+        try:
+            game.verbosity = Verbosity(verbosity_val)
+        except ValueError:
+            game.verbosity = Verbosity.STANDARD
+
+        # Helicopter and Rescue
         game.helicopter_status = data.get("helicopter_status", "BROKEN")
         game.rescue_signal_active = data.get("rescue_signal_active", False)
         game.rescue_turns_remaining = data.get("rescue_turns_remaining")
 
-        game.rng.from_dict(data["rng"])
-        game.time_system = TimeSystem.from_dict(data["time_system"])
+        # RNG and Time System
+        if "rng" in data:
+            game.rng.from_dict(data["rng"])
+        
+        if "time_system" in data:
+            game.time_system = TimeSystem.from_dict(data["time_system"])
+        else:
+            # Fallback if time_system missing
+            game.time_system.turn_count = data.get("turn", 1) - 1
 
-        game.station_map = StationMap.from_dict(data["station_map"])
+        # Station Map
+        if "station_map" in data:
+            game.station_map = StationMap.from_dict(data["station_map"])
 
-        game.crew = [CrewMember.from_dict(m) for m in data["crew"]]
+        # Crew
+        crew_data = data.get("crew", [])
+        if crew_data:
+            game.crew = []
+            for m_data in crew_data:
+                member = CrewMember.from_dict(m_data)
+                if member:
+                    game.crew.append(member)
+        
         # Re-link player
         game.player = next((m for m in game.crew if m.name == "MacReady"), None)
+        # If player missing, create a fallback so game doesn't crash
+        if not game.player and game.crew:
+            game.player = game.crew[0]
+        elif not game.player:
+            from ui.message_reporter import emit_error
+            emit_error("CRITICAL ERROR: No crew found in save file.")
 
-        game.journal = data["journal"]
+        game.journal = data.get("journal", [])
+        
+        # Trust System
         if hasattr(game, "trust_system"):
             game.trust_system.cleanup()
         game.trust_system = TrustMatrix(game.crew)
-        if data.get("trust"):
-            game.trust_system.matrix.update(data["trust"])
-        game.lynch_mob = LynchMobSystem(game.trust_system)
+        trust_data = data.get("trust")
+        if trust_data and isinstance(trust_data, dict):
+            game.trust_system.matrix.update(trust_data)
+        
+        # Re-initialize subsystems that depend on fresh state
         game.renderer.map = game.station_map
         game.parser.set_known_names([m.name for m in game.crew])
         game.room_states = RoomStateManager(list(game.station_map.rooms.keys()))
+        game.crafting = CraftingSystem.from_dict(data.get("crafting"), game)
+        
+        from ui.message_reporter import emit_message
+        emit_message("*** GAME LOADED ***")
         
         return game
 
@@ -630,7 +677,8 @@ def main():
         args = cmd[1:]
         # Try to dispatch using Command System first
         if not game.command_dispatcher.dispatch(action, args, context):
-             print("Unknown command. Try: MOVE, LOOK, GET, DROP, INV, TAG, TEST, ATTACK, STATUS, SAVE, LOAD, EXIT, TALK, BARRICADE, JOURNAL, CHECK")
+             from ui.message_reporter import emit_message
+             emit_message("Unknown command. Try: MOVE, LOOK, GET, DROP, INV, TAG, TEST, ATTACK, STATUS, SAVE, LOAD, EXIT, TALK, BARRICADE, JOURNAL, CHECK")
         if action == "EXIT":
             break
         elif action == "ADVANCE":

@@ -3,9 +3,18 @@
 import random
 
 from core.resolution import Attribute, Skill, ResolutionSystem
+from core.event_system import event_bus, EventType, GameEvent
 from systems.forensics import BiologicalSlipGenerator
 from systems.pathfinding import pathfinder
 from entities.item import Item
+from enum import Enum, auto
+
+
+class StealthPosture(Enum):
+    STANDING = auto()
+    CROUCHING = auto()
+    CRAWLING = auto()
+    HIDING = auto()
 
 
 class CrewMember:
@@ -39,18 +48,27 @@ class CrewMember:
         self.is_revealed = False    # Agent 3: Violent Reveal
         self.slipped_vapor = False  # Hook: Biological Slip flag
         self.knowledge_tags = []    # Agent 3: Searchlight Harvest
+        self.stealth_posture = StealthPosture.STANDING
 
     def add_knowledge_tag(self, tag):
         """Add a knowledge tag/memory log if it doesn't already exist."""
         if tag not in self.knowledge_tags:
             self.knowledge_tags.append(tag)
 
-    def take_damage(self, amount):
+    def take_damage(self, amount, game_state=None):
         """Apply damage to crew member. Returns True if they died."""
         self.health -= amount
         if self.health <= 0:
             self.health = 0
             self.is_alive = False
+            
+            # Emit Crew Death Event
+            if game_state:
+                event_bus.emit(GameEvent(EventType.CREW_DEATH, {
+                    "name": self.name,
+                    "game_state": game_state
+                }))
+            
             return True  # Died
         return False
 
@@ -230,21 +248,28 @@ class CrewMember:
             # Hit! Deal damage
             net_hits = attack_result['success_count'] - defense_result['success_count']
             damage = 2 + net_hits  # Base Thing damage + net hits
-            died = target.take_damage(damage)
+            died = target.take_damage(damage, game_state=game_state)
 
-            print(f"\n[COMBAT] {thing_name} ATTACKS {target.name}!")
-            print(f"[COMBAT] Attack: {attack_result['success_count']} vs Defense: {defense_result['success_count']}")
-            print(f"[COMBAT] HIT! {target.name} takes {damage} damage!")
-
-            if died:
-                print(f"[COMBAT] *** {target.name} HAS BEEN KILLED BY THE THING! ***")
+            event_bus.emit(GameEvent(EventType.COMBAT_LOG, {
+                "attacker": thing_name,
+                "target": target.name,
+                "action": "ATTACKS",
+                "damage": damage,
+                "result": "KILLED" if died else "HIT"
+            }))
 
             # Chance to infect on hit (grapple attack)
             if not died and rng.random_float() < 0.3:
                 target.is_infected = True
-                print(f"[COMBAT] {target.name} has been INFECTED during the attack!")
+                from ui.message_reporter import emit_warning
+                emit_warning(f"{target.name} has been INFECTED during the attack!")
         else:
-            print(f"\n[COMBAT] {thing_name} lunges at {target.name} but MISSES!")
+            event_bus.emit(GameEvent(EventType.COMBAT_LOG, {
+                "attacker": thing_name,
+                "target": target.name,
+                "action": "lunges at",
+                "result": "MISSES"
+            }))
 
     def _pathfind_step(self, target_x, target_y, station_map, current_turn=0, game_state=None):
         """Take one step toward target using A* pathfinding.
@@ -334,32 +359,68 @@ class CrewMember:
             "inventory": [i.to_dict() for i in self.inventory],
             "schedule": self.schedule,
             "invariants": self.invariants,
-            "knowledge_tags": self.knowledge_tags
+            "knowledge_tags": self.knowledge_tags,
+            "stealth_posture": self.stealth_posture.name
         }
 
     @classmethod
     def from_dict(cls, data):
-        """Deserialize crew member from dictionary."""
-        attrs = {Attribute[k]: v for k, v in data.get("attributes", {}).items()}
-        skills = {Skill[k]: v for k, v in data.get("skills", {}).items()}
+        """Deserialize crew member from dictionary with defensive defaults."""
+        if not data or not isinstance(data, dict):
+            return None
+
+        # Helper for Enum mapping
+        def safe_enum(enum_class, key, default):
+            val = data.get(key)
+            if val is None:
+                return default
+            try:
+                return enum_class[val]
+            except (KeyError, ValueError):
+                return default
+
+        # Attributes and Skills with defensive lookups
+        attrs = {}
+        for k, v in data.get("attributes", {}).items():
+            try:
+                attrs[Attribute[k]] = v
+            except KeyError:
+                continue
+
+        skills = {}
+        for k, v in data.get("skills", {}).items():
+            try:
+                skills[Skill[k]] = v
+            except KeyError:
+                continue
 
         m = cls(
-            name=data["name"],
-            role=data["role"],
-            behavior_type=data["behavior_type"],
+            name=data.get("name", "Unknown"),
+            role=data.get("role", "None"),
+            behavior_type=data.get("behavior_type", "Neutral"),
             attributes=attrs,
             skills=skills
         )
-        m.is_infected = data["is_infected"]
-        m.trust_score = data["trust_score"]
-        m.location = tuple(data["location"])
-        m.is_alive = data["is_alive"]
-        m.health = data["health"]
-        m.stress = data["stress"]
+        
+        m.is_infected = data.get("is_infected", False)
+        m.trust_score = data.get("trust_score", 50)
+        m.location = tuple(data.get("location", (0, 0)))
+        m.is_alive = data.get("is_alive", True)
+        m.health = data.get("health", 3)
+        m.stress = data.get("stress", 0)
         m.mask_integrity = data.get("mask_integrity", 100.0)
         m.is_revealed = data.get("is_revealed", False)
         m.schedule = data.get("schedule", [])
         m.invariants = data.get("invariants", [])
-        m.inventory = [Item.from_dict(i) for i in data.get("inventory", [])]
         m.knowledge_tags = data.get("knowledge_tags", [])
+        
+        # Items hydration
+        m.inventory = []
+        for i_data in data.get("inventory", []):
+            item = Item.from_dict(i_data)
+            if item:
+                m.inventory.append(item)
+        
+        m.stealth_posture = safe_enum(StealthPosture, "stealth_posture", StealthPosture.STANDING)
+        
         return m

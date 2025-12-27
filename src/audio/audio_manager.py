@@ -13,6 +13,7 @@ import subprocess
 import time
 import random
 from enum import Enum
+from core.event_system import event_bus, EventType, GameEvent
 
 # Determine audio backend
 AUDIO_BACKEND = None
@@ -105,6 +106,27 @@ class AudioManager:
         Sound.ALERT: 150,
     }
     
+    # Tier 6.4: Audio feedback alignment map
+    EVENT_MAP = {
+        # Warnings
+        EventType.WARNING: Sound.ALERT,
+        EventType.ERROR: Sound.ERROR,
+        EventType.POWER_FAILURE: Sound.POWER_DOWN,
+        
+        # Combat / Action
+        EventType.ATTACK_RESULT: Sound.BEEP,
+        EventType.LYNCH_MOB_TRIGGER: Sound.SCREECH,
+        
+        # Discoveries / Success
+        EventType.COMMUNION_SUCCESS: Sound.POWER_UP, # Dramatic success
+        EventType.TEST_RESULT: Sound.BEEP,
+        EventType.SOS_EMITTED: Sound.BEEP,
+        EventType.ESCAPE_SUCCESS: Sound.POWER_UP,
+        
+        # Movement
+        EventType.MOVEMENT: Sound.FOOTSTEPS,
+    }
+    
     def __init__(self, enabled=True):
         self.enabled = enabled and AUDIO_AVAILABLE
         self.muted = False
@@ -120,6 +142,28 @@ class AudioManager:
         if self.enabled:
             self._audio_thread = threading.Thread(target=self._audio_worker, daemon=True)
             self._audio_thread.start()
+
+        # Tier 6.4: Subscribe to events
+        self._subscribe_to_events()
+
+    def _subscribe_to_events(self):
+        """Subscribe to all events defined in EVENT_MAP."""
+        for event_type in self.EVENT_MAP:
+            event_bus.subscribe(event_type, self.handle_game_event)
+
+    def handle_game_event(self, event: GameEvent):
+        """Callback for event bus to trigger audio."""
+        if not self._running or not self.enabled:
+            return
+            
+        sound = self.EVENT_MAP.get(event.type)
+        if sound:
+            # Determine priority based on event type
+            priority = 5
+            if event.type in (EventType.LYNCH_MOB_TRIGGER, EventType.POWER_FAILURE):
+                priority = 10
+            
+            self.play(sound, priority)
     
     def _audio_worker(self):
         """Background thread for processing audio queue."""

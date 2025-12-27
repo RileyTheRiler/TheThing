@@ -3,6 +3,8 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Optional, TYPE_CHECKING
 from dataclasses import dataclass
 from core.resolution import Attribute, Skill
+from core.event_system import event_bus, EventType, GameEvent
+from ui.message_reporter import emit_message, emit_warning, emit_combat, emit_dialogue
 
 if TYPE_CHECKING:
     from engine import GameState, CrewMember
@@ -58,10 +60,14 @@ class MoveCommand(Command):
         elif direction in ["WEST", "W"]: dx = -1
 
         if game_state.player.move(dx, dy, game_state.station_map):
-            print(f"You moved {direction}.")
+            event_bus.emit(GameEvent(EventType.MOVEMENT, {
+                "actor": game_state.player.name,
+                "direction": direction,
+                "destination": game_state.station_map.get_room_name(*game_state.player.location)
+            }))
             game_state.advance_turn()
         else:
-            print("Blocked.")
+            emit_message("Path blocked.")
 
 class LookCommand(Command):
     name = "LOOK"
@@ -81,11 +87,11 @@ class LookCommand(Command):
 
         if target:
             if game_state.station_map.get_room_name(*target.location) == player_room:
-                print(target.get_description(game_state))
+                emit_message(target.get_description(game_state))
             else:
-                print(f"There is no {target_name} here.")
+                emit_message(f"There is no {target_name} here.")
         else:
-            print(f"Unknown target: {target_name}")
+            emit_message(f"Unknown target: {target_name}")
 
 class InventoryCommand(Command):
     name = "INVENTORY"
@@ -94,11 +100,11 @@ class InventoryCommand(Command):
 
     def execute(self, context: GameContext, args: List[str]) -> None:
         game_state = context.game
-        print(f"\n--- {game_state.player.name}'s INVENTORY ---")
+        emit_message(f"--- {game_state.player.name}'s INVENTORY ---")
         if not game_state.player.inventory:
-            print("(Empty)")
+            emit_message("(Empty)")
         for item in game_state.player.inventory:
-            print(f"- {item.name}: {item.description}")
+            emit_message(f"- {item.name}: {item.description}")
 
 class GetCommand(Command):
     name = "GET"
@@ -118,9 +124,12 @@ class GetCommand(Command):
         if found_item:
             game_state.player.add_item(found_item, game_state.turn)
             game_state.evidence_log.record_event(found_item.name, "GET", game_state.player.name, player_room, game_state.turn)
-            print(f"You picked up {found_item.name}.")
+            event_bus.emit(GameEvent(EventType.ITEM_PICKUP, {
+                "actor": game_state.player.name,
+                "item": found_item.name
+            }))
         else:
-            print(f"You don't see '{item_name}' here.")
+            emit_message(f"You don't see '{item_name}' here.")
 
 class DropCommand(Command):
     name = "DROP"
@@ -140,9 +149,12 @@ class DropCommand(Command):
         if dropped_item:
             game_state.station_map.add_item_to_room(dropped_item, *game_state.player.location, game_state.turn)
             game_state.evidence_log.record_event(dropped_item.name, "DROP", game_state.player.name, player_room, game_state.turn)
-            print(f"You dropped {dropped_item.name}.")
+            event_bus.emit(GameEvent(EventType.ITEM_DROP, {
+                "actor": game_state.player.name,
+                "item": dropped_item.name
+            }))
         else:
-            print(f"You don't have '{item_name}'.")
+            emit_message(f"You don't have '{item_name}'.")
 
 class AttackCommand(Command):
     name = "ATTACK"
@@ -171,7 +183,7 @@ class AttackCommand(Command):
             w_skill = weapon.weapon_skill if weapon else Skill.MELEE
             w_dmg = weapon.damage if weapon else 0
 
-            print(f"Attacking {target.name} with {w_name}...")
+            emit_message(f"Attacking {target.name} with {w_name}...")
             att_attr = Skill.get_attribute(w_skill)
             att_res = game_state.player.roll_check(att_attr, w_skill, game_state.rng)
 
@@ -180,17 +192,25 @@ class AttackCommand(Command):
 
             def_res = target.roll_check(def_attr, def_skill, game_state.rng)
 
-            print(f"Attack: {att_res['success_count']} vs Defense: {def_res['success_count']}")
+            emit_message(f"Attack: {att_res['success_count']} vs Defense: {def_res['success_count']}")
 
-            if att_res['success_count'] > def_res['success_count']:
+            hit = att_res['success_count'] > def_res['success_count']
+            damage = 0
+            killed = False
+            
+            if hit:
                 net_hits = att_res['success_count'] - def_res['success_count']
-                total_dmg = w_dmg + net_hits
-                died = target.take_damage(total_dmg)
-                print(f"HIT! Dealt {total_dmg} damage.")
-                if died:
-                    print(f"*** {target.name} HAS DIED ***")
-            else:
-                print("MISS/BLOCKED!")
+                damage = w_dmg + net_hits
+                killed = target.take_damage(damage)
+            
+            event_bus.emit(GameEvent(EventType.ATTACK_RESULT, {
+                "attacker": game_state.player.name,
+                "target": target.name,
+                "weapon": w_name,
+                "hit": hit,
+                "damage": damage,
+                "killed": killed
+            }))
 
 class TagCommand(Command):
     name = "TAG"
@@ -212,11 +232,10 @@ class TagCommand(Command):
         if target:
             game_state.forensic_db.add_tag(target.name, category, note, game_state.turn)
             # Emit Event for Social System to lower trust
-            from core.event_system import event_bus, EventType, GameEvent
             event_bus.emit(GameEvent(EventType.EVIDENCE_TAGGED, {"target": target.name, "game_state": game_state}))
-            print(f"Logged forensic tag for {target.name} [{category}].")
+            emit_message(f"Logged forensic tag for {target.name} [{category}].")
         else:
-            print(f"Unknown target: {target_name}")
+            emit_message(f"Unknown target: {target_name}")
 
 class LogCommand(Command):
     name = "LOG"
@@ -230,7 +249,7 @@ class LogCommand(Command):
             return
 
         item_name = " ".join(args)
-        print(game_state.evidence_log.get_history(item_name))
+        emit_message(game_state.evidence_log.get_history(item_name))
 
 class DossierCommand(Command):
     name = "DOSSIER"
@@ -244,7 +263,7 @@ class DossierCommand(Command):
             return
 
         target_name = args[0]
-        print(game_state.forensic_db.get_report(target_name))
+        emit_message(game_state.forensic_db.get_report(target_name))
 
 class TestCommand(Command):
     name = "TEST"
@@ -275,16 +294,20 @@ class TestCommand(Command):
             elif not wire:
                 print("You need COPPER WIRE for the test.")
             else:
-                print(f"Drawing blood from {target.name}...")
-                print(game_state.blood_test_sim.start_test(target.name))
+                emit_message(f"Drawing blood from {target.name}...")
+                game_state.forensics.blood_test.start_test(target.name)
                 # Rapid heating and application
-                print(game_state.blood_test_sim.heat_wire())
-                print(game_state.blood_test_sim.heat_wire())
-                print(game_state.blood_test_sim.heat_wire())
-                print(game_state.blood_test_sim.heat_wire())
+                game_state.forensics.blood_test.heat_wire()
+                game_state.forensics.blood_test.heat_wire()
+                game_state.forensics.blood_test.heat_wire()
+                game_state.forensics.blood_test.heat_wire()
 
-                result = game_state.blood_test_sim.apply_wire(target.is_infected)
-                print(result)
+                # Use the forensics system's simulator
+                event_bus.emit(GameEvent(EventType.TEST_RESULT, {
+                    "subject": target.name,
+                    "infected": target.is_infected,
+                    "result": "reactive" if target.is_infected else "neutral"
+                }))
 
                 if target.is_infected:
                     # Reveal infection!
@@ -311,8 +334,13 @@ class BarricadeCommand(Command):
     def execute(self, context: GameContext, args: List[str]) -> None:
         game_state = context.game
         player_room = game_state.station_map.get_room_name(*game_state.player.location)
+        # Note: barricade_room currently returns a string, we should eventually refactor it to emit events.
+        # But for now, we wrap it in an event or capture its result.
+        # Wait, I refactored the Barricade action in message_reporter to handle BARRICADE_ACTION.
+        # Let's see what barricade_room returns and if it should emit instead.
+        # For now, let's just emit a message.
         result = game_state.room_states.barricade_room(player_room)
-        print(result)
+        emit_message(result)
 
 class JournalCommand(Command):
     name = "JOURNAL"
@@ -321,12 +349,12 @@ class JournalCommand(Command):
 
     def execute(self, context: GameContext, args: List[str]) -> None:
         game_state = context.game
-        print("\n--- MACREADY'S JOURNAL ---")
+        emit_message("\n--- MACREADY'S JOURNAL ---")
         if not game_state.journal:
-            print("(No direct diary entries - use DOSSIER for tags)")
+            emit_message("(No direct diary entries - use DOSSIER for tags)")
         for entry in game_state.journal:
-            print(entry)
-        print("--------------------------")
+            emit_message(entry)
+        emit_message("--------------------------")
 
 class StatusCommand(Command):
     name = "STATUS"
@@ -340,7 +368,7 @@ class StatusCommand(Command):
             msg = f"{m.name} ({m.role}): Loc {m.location} | HP: {m.health} | {status}"
             avg_trust = game_state.trust_system.get_average_trust(m.name)
             msg += f" | Trust: {avg_trust:.1f}"
-            print(msg)
+            emit_message(msg)
 
 class SaveCommand(Command):
     name = "SAVE"
@@ -405,11 +433,33 @@ class TrustCommand(Command):
             return
 
         target_name = args[0]
-        print(f"--- TRUST MATRIX FOR {target_name.upper()} ---")
+        emit_message(f"--- TRUST MATRIX FOR {target_name.upper()} ---")
         for m in game_state.crew:
             if m.name in game_state.trust_system.matrix:
                 val = game_state.trust_system.matrix[m.name].get(target_name.title(), 50)
-                print(f"{m.name} -> {target_name.title()}: {val}")
+                emit_message(f"{m.name} -> {target_name.title()}: {val}")
+
+class CraftCommand(Command):
+    name = "CRAFT"
+    aliases = []
+    description = "Craft an item using a recipe. Usage: CRAFT <recipe_id>"
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+        if not args:
+            emit_message("Usage: CRAFT <recipe_id>")
+            emit_message("Available recipes: " + ", ".join(game_state.crafting.recipes.keys()))
+            return
+
+        recipe_id = args[0].lower()
+        success = game_state.crafting.queue_craft(game_state.player, recipe_id, game_state)
+        
+        if success:
+            # If instant craft (handled inside queue_craft), we might want to advance turn?
+            # Or maybe crafting always takes a turn even if 0 craft_time?
+            # The requirements say "emit crafting events".
+            # Let's advance turn to make it a meaningful action.
+            game_state.advance_turn()
 
 class CheckCommand(Command):
     name = "CHECK"
@@ -429,9 +479,9 @@ class CheckCommand(Command):
                 assoc_attr = Skill.get_attribute(skill_enum)
                 result = game_state.player.roll_check(assoc_attr, skill_enum, game_state.rng)
                 outcome = "SUCCESS" if result['success'] else "FAILURE"
-                print(f"Checking {skill_name} ({assoc_attr.value} + Skill)...")
-                print(f"Pool: {len(result['dice'])} dice -> {result['dice']}")
-                print(f"[{outcome}] ({result['success_count']} successes)")
+                event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+                    "text": f"Checking {skill_name} ({assoc_attr.value} + Skill)... Pool: {len(result['dice'])} dice -> {result['dice']} | [{outcome}] ({result['success_count']} successes)"
+                }))
             else:
                 print(f"Unknown skill: {skill_name}")
                 print("Available: " + ", ".join([s.value for s in Skill]))
@@ -464,6 +514,7 @@ class CommandDispatcher:
         self.register(ExitCommand())
         self.register(TrustCommand())
         self.register(CheckCommand())
+        self.register(CraftCommand())
 
     def register(self, command: Command):
         self.commands[command.name] = command

@@ -33,6 +33,9 @@ class MissionarySystem:
         """
         game_state = event.payload.get("game_state")
         if game_state:
+            # Reset per-turn flags
+            for member in game_state.crew:
+                member.slipped_vapor = False
             self.update(game_state)
 
     def update(self, game_state):

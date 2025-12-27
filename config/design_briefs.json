@@ -43,12 +43,37 @@
         "event_type": "ENDING_REPORT",
         "hook": "endgame",
         "summary": "Multiple endings should surface through events so UI layers can react without being coupled to win/lose checks.",
-        "states": [
-            "ESCAPE",
-            "RESCUE",
-            "EXTERMINATION",
-            "SOLE_SURVIVOR",
-            "CONSUMPTION"
-        ]
+        "states": {
+            "ESCAPE": {
+                "name": "Helicopter Escape",
+                "condition": "Player pilots the helicopter to safety.",
+                "message": "You pilot the chopper through the storm, leaving the nightmare of Outpost 31 behind."
+            },
+            "RESCUE": {
+                "name": "Rescue Arrival",
+                "condition": "Rescue team arrives while player is alive and human.",
+                "message": "Lights cut through the storm. The rescue team has arrived to extract you."
+            },
+            "EXTERMINATION": {
+                "name": "Threat Neutralized",
+                "condition": "All Things eliminated, humans remain.",
+                "message": "All Things have been eliminated. Humanity survives... for now."
+            },
+            "SOLE_SURVIVOR": {
+                "name": "Sole Survivor",
+                "condition": "Only the player remains alive and human.",
+                "message": "Silence falls over the station. You are the only one left alive. The threat is gone... you hope."
+            },
+            "CONSUMPTION": {
+                "name": "Humanity Lost",
+                "condition": "All humans are gone or the player is infected and revealed.",
+                "message": "There are no humans left. The Thing has won."
+            },
+            "DEATH": {
+                "name": "MacReady Deceased",
+                "condition": "The player character has died.",
+                "message": "MacReady is dead. The Thing spreads unchecked across the ice."
+            }
+        }
     }
 }

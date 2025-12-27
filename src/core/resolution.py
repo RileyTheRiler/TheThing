@@ -23,6 +23,7 @@ class Skill(Enum):
     METEOROLOGY = "Meteorology"
     HANDLING = "Handling"
     COMMS = "Comms"
+    STEALTH = "Stealth"
 
     @staticmethod
     def get_attribute(skill):
@@ -33,6 +34,7 @@ class Skill(Enum):
             Skill.REPAIR: Attribute.PROWESS,     # "Mechanical skill"
             Skill.MECHANICS: Attribute.PROWESS,
             Skill.HANDLING: Attribute.PROWESS,   
+            Skill.STEALTH: Attribute.PROWESS,
             
             Skill.MEDICINE: Attribute.LOGIC,
             Skill.OBSERVATION: Attribute.LOGIC,  
@@ -56,7 +58,30 @@ class ResolutionSystem:
         Uses the provided RandomnessEngine.
         Success = 6s.
         """
-        return rng.calculate_success(pool_size)
+        return rng.calculate_success(max(1, pool_size))
+
+    @staticmethod
+    def resolve_pool(base_pool, skills_attributes, modifiers):
+        """
+        Calculates final pool size by applying modifiers.
+        
+        Args:
+            base_pool (int): Starting pool size.
+            skills_attributes (list): Skills/Attributes involved in the roll.
+            modifiers (dict): Active environmental modifiers.
+            
+        Returns:
+            int: Modified pool size (minimum 1).
+        """
+        if not modifiers:
+            return max(1, base_pool)
+            
+        final_pool = base_pool
+        for sa in skills_attributes:
+            if sa in modifiers:
+                final_pool += modifiers[sa]
+                
+        return max(1, final_pool)
 
     def calculate_infection_risk(self, lighting_condition: str, mask_integrity: float, paranoia_level: int) -> float:
         """

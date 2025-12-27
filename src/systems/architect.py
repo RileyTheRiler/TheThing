@@ -5,13 +5,10 @@ importable without sys.path tweaks or `src.` prefixes.
 """
 
 import random
-<<<<<<< HEAD
 import json
+from enum import Enum
 from core.event_system import event_bus, EventType, GameEvent
 from core.resolution import ResolutionSystem
-=======
-from enum import Enum
->>>>>>> 8955dd991f45dd39cbbdb368c0ddf168d7372a50
 
 
 class Difficulty(Enum):
@@ -70,6 +67,14 @@ class GameMode(Enum):
     EMERGENCY = "Emergency"
     STANDOFF = "Standoff"
     CINEMATIC = "Cinematic"
+
+
+class Verbosity(Enum):
+    """Output verbosity levels."""
+    MINIMAL = 0    # Only critical events (warnings, errors, items, endings)
+    STANDARD = 1   # Common events (messages, combat, dialogue)
+    VERBOSE = 2    # Detailed events (movement, system logs, crafting)
+    DEBUG = 3      # Everything
 
 class RandomnessEngine:
     def __init__(self, seed=None):
@@ -147,9 +152,8 @@ class RandomnessEngine:
 class TimeSystem:
     def __init__(self, start_temp=-40, start_hour=19):
         self.temperature = start_temp
-        self.points_per_turn = 1
+        self.start_hour = start_hour
         self.turn_count = 0
-<<<<<<< HEAD
         
         # Subscribe to Turn Advance
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
@@ -159,42 +163,15 @@ class TimeSystem:
 
     def on_turn_advance(self, event: GameEvent):
         """Handle turn advance event."""
-        self.tick()
+        self.turn_count += 1
         game_state = event.payload.get("game_state")
         power_on = game_state.power_on if game_state else True
         self.update_environment(power_on)
 
     @property
     def hour(self):
-        # Start at 19:00 (7 PM), 1 turn = 1 hour
-        return (19 + self.turn_count) % 24
-=======
-        self.start_hour = start_hour
->>>>>>> 8955dd991f45dd39cbbdb368c0ddf168d7372a50
-
-    @property
-    def hour(self):
-        """Current in-game hour (0-23)."""
+        """Current in-game hour (0-23). derived from turn count."""
         return (self.start_hour + self.turn_count) % 24
-        self.start_hour = start_hour  # Start at 7 PM by default
-        self._start_hour = start_hour
-        self._hour = start_hour
-
-    @property
-    def hour(self):
-        """Current in-game hour (0-23)."""
-        return self._hour
-
-    @hour.setter
-    def hour(self, value):
-        # Allow safe assignment from load/state restoration while normalizing range.
-        self._hour = int(value) % 24
-
-    def tick(self):
-        """Advance time by one turn."""
-        self.turn_count += 1
-
-        self._hour = (self._start_hour + self.turn_count) % 24
 
     def update_environment(self, power_on):
         """
@@ -218,25 +195,14 @@ class TimeSystem:
         return {
             "temperature": self.temperature,
             "turn_count": self.turn_count,
-            "hour": self.hour
+            "start_hour": self.start_hour
         }
 
     @classmethod
     def from_dict(cls, data):
-        turn_count = data.get("turn_count", 0)
-        saved_hour = data.get("hour", 19)
-        start_hour = (saved_hour - turn_count) % 24
-        ts = cls(data.get("temperature", -40), start_hour)
-        ts.turn_count = turn_count
-        temp = data.get("temperature", -40)
-        turn_count = data.get("turn_count", 0)
-        saved_hour = data.get("hour", 19)
-
-        # Recalculate start hour so property math remains consistent
-        start_hour = (saved_hour - turn_count) % 24
-
-        ts = cls(temp, start_hour=start_hour)
-        ts.turn_count = turn_count
-        # Recompute hour from stored value to keep normalization consistent.
-        ts.hour = saved_hour
+        ts = cls(
+            start_temp=data.get("temperature", -40), 
+            start_hour=data.get("start_hour", 19)
+        )
+        ts.turn_count = data.get("turn_count", 0)
         return ts

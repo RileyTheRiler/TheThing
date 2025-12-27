@@ -120,8 +120,8 @@ class CombatSystem:
         available.remove(best)
         return best
 
-    def calculate_attack(self, attacker, defender, weapon, cover=CoverType.NONE):
-        """Calculate an attack roll with cover modifiers.
+    def calculate_attack(self, attacker, defender, weapon, cover=CoverType.NONE, room_modifiers=None):
+        """Calculate an attack roll with cover and environmental modifiers.
 
         Returns CombatResult with outcome.
         """
@@ -129,14 +129,21 @@ class CombatSystem:
         weapon_skill = getattr(weapon, 'weapon_skill', Skill.MELEE) if weapon else Skill.MELEE
         attr = Skill.get_attribute(weapon_skill)
 
-        attack_pool = attacker.attributes.get(attr, 1) + attacker.skills.get(weapon_skill, 0)
+        base_attack_pool = attacker.attributes.get(attr, 1) + attacker.skills.get(weapon_skill, 0)
+        
+        # Apply environmental modifiers
+        from core.resolution import ResolutionSystem
+        attack_pool = ResolutionSystem.resolve_pool(base_attack_pool, [attr, weapon_skill], room_modifiers)
 
         # Defense pool: PROWESS + Melee + cover bonus
-        defense_pool = (
+        base_defense_pool = (
             defender.attributes.get(Attribute.PROWESS, 1) +
-            defender.skills.get(Skill.MELEE, 0) +
-            self.COVER_BONUS[cover]
+            defender.skills.get(Skill.MELEE, 0)
         )
+        defense_pool = ResolutionSystem.resolve_pool(base_defense_pool, [Attribute.PROWESS, Skill.MELEE], room_modifiers)
+        
+        # Add cover bonus after environmental modifiers
+        defense_pool += self.COVER_BONUS[cover]
 
         # Can't attack if defender is in full cover
         if cover == CoverType.FULL:

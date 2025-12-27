@@ -3,10 +3,19 @@ from core.event_system import event_bus, EventType, GameEvent
 __all__ = ['TrustMatrix', 'LynchMobSystem', 'DialogueManager']
 
 class TrustMatrix:
+    # Threshold Constants
+    LYNCH_THRESHOLD = 20
+    HOSTILE_THRESHOLD = 40
+    FRIENDLY_THRESHOLD = 70
+
     def __init__(self, crew):
         # Dictionary of dictionaries: self.matrix[observer][subject] = trust_value
         # Default trust is 50
         self.matrix = {m.name: {other.name: 50 for other in crew} for m in crew}
+        
+        # Track previous average trust to detect threshold crossings
+        self.prev_avg_trust = {m.name: 50.0 for m in crew}
+        
         self._set_initial_biases()
         
         # Subscribe to events
@@ -61,12 +70,39 @@ class TrustMatrix:
         return total / count if count > 0 else 50.0
 
     def check_for_lynch_mob(self, crew, game_state=None):
-        """If global trust in a human falls below 20%, they are targeted."""
+        """If global trust in a human falls below LYNCH_THRESHOLD, they are targeted."""
         for member in crew:
             if member.is_alive:
                 avg = self.get_average_trust(member.name)
-                # Lynch threshold
-                if avg < 20:
+                prev_avg = self.prev_avg_trust.get(member.name, 50.0)
+                
+                # 1. Detect Threshold Crossings
+                thresholds = [self.FRIENDLY_THRESHOLD, self.HOSTILE_THRESHOLD, self.LYNCH_THRESHOLD]
+                for t in thresholds:
+                    # Dropped below threshold
+                    if prev_avg >= t and avg < t:
+                        event_bus.emit(GameEvent(EventType.TRUST_THRESHOLD_CROSSED, {
+                            "target": member.name,
+                            "threshold": t,
+                            "direction": "DOWN",
+                            "new_value": avg,
+                            "old_value": prev_avg
+                        }))
+                    # Rose above threshold
+                    elif prev_avg < t and avg >= t:
+                        event_bus.emit(GameEvent(EventType.TRUST_THRESHOLD_CROSSED, {
+                            "target": member.name,
+                            "threshold": t,
+                            "direction": "UP",
+                            "new_value": avg,
+                            "old_value": prev_avg
+                        }))
+                
+                # Update tracking
+                self.prev_avg_trust[member.name] = avg
+
+                # 2. Lynch threshold check
+                if avg < self.LYNCH_THRESHOLD:
                     # Emit LYNCH_MOB_TRIGGER event
                     if game_state:
                         event_bus.emit(GameEvent(EventType.LYNCH_MOB_TRIGGER, {
@@ -106,7 +142,8 @@ def on_evidence_tagged(event: GameEvent):
         for member in game_state.crew:
             if hasattr(game_state, 'trust_system'):
                 game_state.trust_system.update_trust(member.name, target, -10)
-        print(f"[SOCIAL] Global suspicion rises for {target}.")
+        from ui.message_reporter import emit_message
+        emit_message(f"[SOCIAL] Global suspicion rises for {target}.")
 
 # Register listeners
 event_bus.subscribe(EventType.EVIDENCE_TAGGED, on_evidence_tagged)
@@ -134,8 +171,9 @@ class LynchMobSystem:
         # We'll just store the name for now.
         # Wait, check_thresholds used self.target (object).
         # Let's rely on event payload updates.
-        print(f"\n*** EMERGENCY: THE CREW HAS TURNED ON {target_name.upper()}! ***")
-        print(f"They are dragging {target_name} to the Rec Room to be tied up.")
+        from ui.message_reporter import emit_warning, emit_message
+        emit_warning(f"EMERGENCY: THE CREW HAS TURNED ON {target_name.upper()}!")
+        emit_message(f"They are dragging {target_name} to the Rec Room to be tied up.", crawl=True)
     
     def check_thresholds(self, crew):
         # Deprecated manual check, handled by TrustMatrix event
@@ -152,7 +190,8 @@ class LynchMobSystem:
 
     def disband_mob(self):
         target_name = self.target.name if self.target else "Unknown"
-        print(f"[SOCIAL] Lynch mob against {target_name} disbanded.")
+        from ui.message_reporter import emit_message
+        emit_message(f"[SOCIAL] Lynch mob against {self.target.name} disbanded.")
         self.active_mob = False
         self.target = None
 

@@ -45,6 +45,16 @@ class SabotageManager:
     
     def on_turn_advance(self, event: GameEvent):
         """Subscriber for TURN_ADVANCE event."""
+        game_state = event.payload.get("game_state")
+        if game_state:
+            # Update Rescue Timer
+            if game_state.rescue_signal_active and game_state.rescue_turns_remaining is not None:
+                game_state.rescue_turns_remaining -= 1
+                if game_state.rescue_turns_remaining == 5:
+                    game_state.reporter.report_event("RADIO", "Rescue ETA updated: 5 hours out.", priority=True)
+                elif game_state.rescue_turns_remaining == 1:
+                    game_state.reporter.report_event("RADIO", "Rescue team landing imminent!", priority=True)
+        
         self.tick()
 
     def can_trigger(self, event):

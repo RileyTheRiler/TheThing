@@ -6,6 +6,10 @@ import time
 class EventType(Enum):
     # Core Game Events
     TURN_ADVANCE = auto()
+    CREW_DEATH = auto()
+    HELICOPTER_REPAIRED = auto()
+    SOS_EMITTED = auto()
+    ESCAPE_SUCCESS = auto()
 
     # "Biological Slip" Hook (Missionary -> Terminal)
     BIOLOGICAL_SLIP = auto()
@@ -13,6 +17,8 @@ class EventType(Enum):
     # "Lynch Mob" Hook (Psychologist -> Architect)
     LYNCH_MOB_TRIGGER = auto()
     LYNCH_MOB_UPDATE = auto()
+    TRUST_THRESHOLD_CROSSED = auto()
+    PARANOIA_THRESHOLD_CROSSED = auto()
 
     # "Searchlight" Hook (Missionary -> Psychologist)
     SEARCHLIGHT_HARVEST = auto()
@@ -45,6 +51,9 @@ class EventType(Enum):
     STEALTH_REPORT = auto()   # Stealth encounter updates
     CRAFTING_REPORT = auto()  # Crafting queue/status updates
     ENDING_REPORT = auto()    # Ending triggers/results
+    INTERROGATION_RESULT = auto() # Questioning results
+    ACCUSATION_RESULT = auto()    # Formal accusation results
+    PERCEPTION_EVENT = auto()     # AI perception results (stealth)
 
 @dataclass
 class GameEvent:
