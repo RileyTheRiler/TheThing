@@ -4,14 +4,8 @@ Imports follow the project-level absolute pattern (`from core...`) so modules st
 importable without sys.path tweaks or `src.` prefixes.
 """
 
-import base64
-import json
-import pickle
 import random
 from enum import Enum
-
-from core.event_system import EventType, GameEvent, event_bus
-from core.resolution import ResolutionSystem
 
 
 class Difficulty(Enum):
