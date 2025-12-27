@@ -45,6 +45,9 @@ class SabotageManager:
     
     def on_turn_advance(self, event: GameEvent):
         """Subscriber for TURN_ADVANCE event."""
+        turn_inventory = event.payload.get("turn_inventory", {})
+        if isinstance(turn_inventory, dict):
+            turn_inventory["sabotage"] = turn_inventory.get("sabotage", 0) + 1
         self.tick()
 
     def can_trigger(self, event):

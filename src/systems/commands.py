@@ -130,6 +130,33 @@ class InventoryCommand(Command):
         for item in game_state.player.inventory:
             print(f"- {item.name}: {item.description}")
 
+class CraftCommand(Command):
+    name = "CRAFT"
+    aliases = []
+    description = "Craft an item from known recipes."
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+        if not hasattr(game_state, "crafting_system"):
+            event_bus.emit(GameEvent(EventType.ERROR, {"text": "Crafting system unavailable."}))
+            return
+
+        if not args:
+            event_bus.emit(GameEvent(EventType.ERROR, {"text": "Usage: CRAFT <RECIPE_ID>"}))
+            return
+
+        recipe_id = args[0]
+        success = game_state.crafting_system.queue_craft(
+            game_state.player,
+            recipe_id,
+            game_state,
+            game_state.player.inventory,
+        )
+        if success:
+            event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+                "text": f"Queued crafting for recipe '{recipe_id}'."
+            }))
+
 class GetCommand(Command):
     name = "GET"
     aliases = []
@@ -201,12 +228,20 @@ class AttackCommand(Command):
             event_bus.emit(GameEvent(EventType.WARNING, {
                 "text": f"{target.name} is already dead."
             }))
+            event_bus.emit(GameEvent(EventType.ERROR, {"text": f"Unknown target: {target_name}"}))
+        elif game_state.station_map.get_room_name(*target.location) != player_room:
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": f"{target.name} is not here."}))
+        elif not target.is_alive:
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": f"{target.name} is already dead."}))
         else:
             weapon = next((i for i in game_state.player.inventory if i.damage > 0), None)
             w_name = weapon.name if weapon else "Fists"
             w_skill = weapon.weapon_skill if weapon else Skill.MELEE
             w_dmg = weapon.damage if weapon else 0
 
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": f"Attacking {target.name} with {w_name}..."
+            }))
             att_attr = Skill.get_attribute(w_skill)
             att_res = game_state.player.roll_check(att_attr, w_skill, game_state.rng)
 
@@ -218,6 +253,9 @@ class AttackCommand(Command):
             hit = att_res['success_count'] > def_res['success_count']
             total_dmg = 0
             killed = False
+            event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+                "text": f"Attack: {att_res['success_count']} vs Defense: {def_res['success_count']}"
+            }))
 
             if hit:
                 net_hits = att_res['success_count'] - def_res['success_count']
@@ -232,6 +270,24 @@ class AttackCommand(Command):
                 "damage": total_dmg,
                 "killed": killed
             }))
+                died = target.take_damage(total_dmg)
+                event_bus.emit(GameEvent(EventType.ATTACK_RESULT, {
+                    "attacker": game_state.player.name,
+                    "target": target.name,
+                    "weapon": w_name,
+                    "hit": True,
+                    "damage": total_dmg,
+                    "killed": died
+                }))
+            else:
+                event_bus.emit(GameEvent(EventType.ATTACK_RESULT, {
+                    "attacker": game_state.player.name,
+                    "target": target.name,
+                    "weapon": w_name,
+                    "hit": False,
+                    "damage": 0,
+                    "killed": False
+                }))
 
 class TagCommand(Command):
     name = "TAG"
@@ -485,6 +541,7 @@ class BarricadeCommand(Command):
         player_room = game_state.station_map.get_room_name(*game_state.player.location)
         game_state.room_states.barricade_room(player_room, actor=getattr(game_state.player, "name", "You"))
         game_state.advance_turn()
+        game_state.room_states.barricade_room(player_room)
 
 class JournalCommand(Command):
     name = "JOURNAL"
@@ -619,6 +676,7 @@ class CommandDispatcher:
         self.register(MoveCommand())
         self.register(LookCommand())
         self.register(InventoryCommand())
+        self.register(CraftCommand())
         self.register(GetCommand())
         self.register(DropCommand())
         self.register(AttackCommand())
