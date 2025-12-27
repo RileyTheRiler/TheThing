@@ -9,6 +9,8 @@ import queue
 import sys
 import os
 import subprocess
+import time
+import random
 from enum import Enum
 
 # Determine audio backend
@@ -105,7 +107,7 @@ class AudioManager:
     def __init__(self, enabled=True):
         self.enabled = enabled and AUDIO_AVAILABLE
         self.muted = False
-        self.volume = 1.0  # Not actually used with winsound, but for future
+        self.volume = 1.0
         
         # Audio queue for async playback
         self.queue = queue.Queue()
@@ -135,11 +137,19 @@ class AudioManager:
         if not self.enabled or not AUDIO_AVAILABLE:
             return
 
+        # Volume check (0.0 volume is effectively muted)
+        if self.volume <= 0.0:
+            return
+
         freq_range = self.FREQUENCIES.get(sound, (440, 440))
         duration = self.DURATIONS.get(sound, 100)
 
         if ambient:
             duration = int(duration * 0.3)  # Shorter for ambient loop
+            # Simulate volume control for ambient sounds by adjusting density
+            if random.random() > self.volume:
+                time.sleep(duration / 1000.0)
+                return
 
         try:
             if AUDIO_BACKEND == 'winsound':
@@ -157,7 +167,6 @@ class AudioManager:
         import winsound
         if len(freq_range) == 2 and freq_range[0] != freq_range[1]:
             # Play a sweep from low to high
-            import time
             steps = 5
             step_duration = duration // steps
             freq_step = (freq_range[1] - freq_range[0]) // steps
@@ -223,6 +232,20 @@ class AudioManager:
         """Toggle mute state."""
         self.muted = not self.muted
         return self.muted
+
+    def set_volume(self, volume):
+        """
+        Set volume level (0.0 to 1.0).
+        """
+        self.volume = max(0.0, min(1.0, volume))
+
+    def increase_volume(self, amount=0.1):
+        """Increase volume by amount."""
+        self.set_volume(self.volume + amount)
+
+    def decrease_volume(self, amount=0.1):
+        """Decrease volume by amount."""
+        self.set_volume(self.volume - amount)
     
     def trigger_event(self, event_type):
         """
@@ -255,8 +278,6 @@ class AudioManager:
         """
         if not self.enabled or self.muted:
             return
-        
-        import time
         
         # Stop ambient
         was_ambient = self.ambient_running
