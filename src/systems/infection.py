@@ -41,6 +41,7 @@ def check_for_communion(game_state):
                 # Determine lighting (mocked for now, or derived from power)
                 lighting = "DARK" if not game_state.power_on else "LIGHT"
                 
+                # Corrected call signature: removed game_state argument
                 # Fixed call to match ResolutionSystem.calculate_infection_risk signature
                 risk = res.calculate_infection_risk(lighting, member.mask_integrity, game_state.paranoia_level)
                 
