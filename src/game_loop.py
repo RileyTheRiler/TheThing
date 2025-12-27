@@ -450,11 +450,20 @@ def _execute_command(game, cmd):
         game.save_manager.save_game(game, slot)
     elif action == "LOAD":
         slot = cmd[1] if len(cmd) > 1 else "auto"
-        data = game.save_manager.load_game(slot)
-        if data:
+        # The save manager now hydrates the object automatically via the factory we injected
+        new_state = game.save_manager.load_game(slot)
+        if new_state:
+            # Update the existing game object with state from the loaded object
+            game.__dict__.update(new_state.__dict__)
+        new_game_state = game.save_manager.load_game(slot)
+        if new_game_state:
             # Note: This modifies the local game variable but won't affect the caller
             # For a proper implementation, we'd need to return the new game state
-            game.__dict__.update(GameState.from_dict(data).__dict__)
+            # If load_game returned a dict (legacy fallback), rehydrate it
+            if isinstance(new_game_state, dict):
+                 new_game_state = GameState.from_dict(new_game_state)
+
+            game.__dict__.update(new_game_state.__dict__)
             print("*** GAME LOADED ***")
     elif action == "STATUS":
         for m in game.crew:
@@ -899,6 +908,25 @@ def _execute_command(game, cmd):
         print(result)
         game.advance_turn()
 
+    # --- ALTERNATIVE ENDINGS (Tier 6.3) ---
+    elif action == "REPAIR":
+        if cmd[1:] and "HELICOPTER" in " ".join(cmd[1:]).upper():
+             print(game.attempt_repair_helicopter())
+        else:
+            # Default behavior if specific object not mentioned, try to infer context or fail
+            # For now, only helicopter needs specific repair action
+            print(game.attempt_repair_helicopter())
+        game.advance_turn()
+
+    elif action == "SIGNAL":
+        print(game.attempt_radio_signal())
+        game.advance_turn()
+
+    elif action == "ESCAPE":
+        print(game.attempt_escape())
+        # The win condition check in main loop will catch the status change
+        game.advance_turn()
+
     # --- BLOOD TEST ---
     elif action == "TEST":
         if len(cmd) < 2:
@@ -921,17 +949,7 @@ def _execute_command(game, cmd):
                 else:
                     print(f"Drawing blood from {target.name}...")
                     print(game.blood_test_sim.start_test(target.name))
-                    # Rapid heating and application
-                    print(game.blood_test_sim.heat_wire())
-                    print(game.blood_test_sim.heat_wire())
-                    print(game.blood_test_sim.heat_wire())
-                    print(game.blood_test_sim.heat_wire())
-
-                    result = game.blood_test_sim.apply_wire(target.is_infected)
-                    print(result)
-
-                    if target.is_infected:
-                        game.missionary_system.trigger_reveal(target, "Blood Test Exposure")
+                    print("Sample prepared. Use HEAT to heat the wire, then APPLY.")
     else:
         print("Unknown command. Type HELP for a list of commands.")
 

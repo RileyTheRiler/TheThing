@@ -4,8 +4,15 @@ import pickle
 from datetime import datetime
 
 class SaveManager:
-    def __init__(self, save_dir="data/saves"):
+    def __init__(self, save_dir="data/saves", state_factory=None):
         self.save_dir = save_dir
+        self.state_factory = state_factory
+    def __init__(self, save_dir="data/saves", game_state_factory=None):
+        self.save_dir = save_dir
+        self.game_state_factory = game_state_factory
+    def __init__(self, save_dir="data/saves", gamestate_factory=None):
+        self.save_dir = save_dir
+        self.gamestate_factory = gamestate_factory
         if not os.path.exists(self.save_dir):
             os.makedirs(self.save_dir)
             
@@ -28,7 +35,7 @@ class SaveManager:
             traceback.print_exc()
             return False
 
-    def load_game(self, slot_name="auto"):
+    def load_game(self, slot_name="auto", factory=None):
         filename = f"{slot_name}.json"
         filepath = os.path.join(self.save_dir, filename)
         
@@ -39,11 +46,18 @@ class SaveManager:
         try:
             with open(filepath, 'r') as f:
                 data = json.load(f)
-            # We need a way to rehydrate. 
-            # Ideally GameState.from_dict(data) but we don't have GameState imported here usually to avoid circular deps.
-            # But the caller (engine.py) will use game_state.from_dict or similar.
-            # Return raw data? Or better, let the caller handle hydration.
-            # Actually, let's return the data and let engine hydrate it.
+
+            # Use provided factory, or instance factory, or return raw data
+            hydrator = factory if factory else self.state_factory
+            if hydrator:
+                return hydrator(data)
+            # Use factory if provided to avoid circular dependencies
+            if self.game_state_factory:
+                return self.game_state_factory(data)
+            # Rehydrate if factory is provided
+            if self.gamestate_factory:
+                return self.gamestate_factory(data)
+
             return data
         except Exception as e:
             print(f"Failed to load game: {e}")
