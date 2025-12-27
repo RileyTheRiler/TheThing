@@ -73,6 +73,12 @@ class TimeSystem:
     def tick(self):
         """Advance time by one turn."""
         self.turn_count += 1
+
+    @property
+    def hour(self):
+        """Returns the current hour of the day (0-23)."""
+        # Assuming 1 turn = 1 hour for now based on usage
+        return self.turn_count % 24
         
     def update_environment(self, power_on):
         """
