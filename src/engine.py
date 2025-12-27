@@ -617,11 +617,11 @@ def main():
     game.audio.ambient_loop(Sound.THRUM)
 
     # PALETTE UX: Situation Report (One-time)
-    print("\n--- SITUATION REPORT ---")
-    print("MISSION: Survive the winter. Trust no one.")
-    print("OBJECTIVE: Identify the infected. Do not let them escape.")
-    print("HINT: Type 'HELP' for a list of commands. Start by looking around.")
-    print("------------------------\n")
+    game.crt.output("\n--- SITUATION REPORT ---")
+    game.crt.output("MISSION: Survive the winter. Trust no one.")
+    game.crt.output("OBJECTIVE: Identify the infected. Do not let them escape.")
+    game.crt.output("HINT: Type 'HELP' for a list of commands. Start by looking around.")
+    game.crt.output("------------------------\n")
 
     while True:
         # Update CRT glitch based on paranoia
@@ -680,7 +680,7 @@ def main():
         if action == "EXIT":
             break
         elif action == "HELP":
-            print(game.parser.get_help_text())
+            game.crt.output(game.parser.get_help_text())
         elif action == "ADVANCE":
             game.advance_turn()
         elif action == "SAVE":
