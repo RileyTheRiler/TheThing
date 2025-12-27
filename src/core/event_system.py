@@ -24,6 +24,10 @@ class EventType(Enum):
     # Sabotage
     POWER_FAILURE = auto()
 
+    # Social thresholds
+    TRUST_THRESHOLD = auto()
+    PARANOIA_THRESHOLD = auto()
+
     # === REPORTING PATTERN (Tier 2.6) ===
     # Systems emit these instead of returning strings
 
