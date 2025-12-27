@@ -1,11 +1,16 @@
-from enum import Enum
-import random
-import json
-from src.core.event_system import event_bus, EventType, GameEvent
-from src.core.resolution import ResolutionSystem
-import pickle
+"""Systems architecture utilities and helpers.
+
+Imports follow the project-level absolute pattern (`from core...`) so modules stay
+importable without sys.path tweaks or `src.` prefixes.
+"""
+
 import base64
-from core.event_system import event_bus, EventType, GameEvent
+import json
+import pickle
+import random
+from enum import Enum
+
+from core.event_system import EventType, GameEvent, event_bus
 from core.resolution import ResolutionSystem
 
 
