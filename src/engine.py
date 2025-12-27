@@ -1,24 +1,24 @@
-from src.systems.missionary import MissionarySystem
-from src.systems.psychology import PsychologySystem
-from src.core.resolution import Attribute, Skill, ResolutionSystem
-from src.systems.social import TrustMatrix, LynchMobSystem, DialogueManager
-from src.systems.architect import RandomnessEngine, GameMode, TimeSystem
-from src.systems.persistence import SaveManager
-from src.core.event_system import event_bus, EventType, GameEvent
+from systems.missionary import MissionarySystem
+from systems.psychology import PsychologySystem
+from core.resolution import Attribute, Skill, ResolutionSystem
+from systems.social import TrustMatrix, LynchMobSystem, DialogueManager
+from systems.architect import RandomnessEngine, GameMode, TimeSystem
+from systems.persistence import SaveManager
+from core.event_system import event_bus, EventType, GameEvent
 
 # Agent 6: Dungeon Master Systems
-from src.systems.weather import WeatherSystem
-from src.systems.sabotage import SabotageManager
-from src.systems.room_state import RoomStateManager, RoomState
+from systems.weather import WeatherSystem
+from systems.sabotage import SabotageManager
+from systems.room_state import RoomStateManager, RoomState
 
 # Agent 4: Forensics
-from src.systems.forensics import BiologicalSlipGenerator, BloodTestSim, ForensicDatabase, EvidenceLog
+from systems.forensics import BiologicalSlipGenerator, BloodTestSim, ForensicDatabase, EvidenceLog
 
 # Terminal Designer Systems (Agent 5)
-from src.ui.renderer import TerminalRenderer
-from src.ui.crt_effects import CRTOutput
-from src.ui.command_parser import CommandParser
-from src.audio.audio_manager import AudioManager, Sound
+from ui.renderer import TerminalRenderer
+from ui.crt_effects import CRTOutput
+from ui.command_parser import CommandParser
+from audio.audio_manager import AudioManager, Sound
 
 import json
 import os
@@ -569,6 +569,70 @@ class GameState:
             if member != self.player:
                 member.update_ai(self)
 
+    def check_win_condition(self):
+        """
+        WIN: All infected crew are dead/neutralized AND player is alive and human.
+        Returns: (won: bool, message: str)
+        """
+        if not self.player or not self.player.is_alive:
+            return False, None
+        if self.player.is_infected and self.player.is_revealed:
+            return False, None
+
+        # Check if any infected crew remain alive and not revealed/neutralized
+        living_infected = [m for m in self.crew
+                          if m.is_infected and m.is_alive and m != self.player]
+
+        # If there were ever infected and now none remain
+        if not living_infected:
+            # Verify there was at least one Thing to begin with
+            total_infected = [m for m in self.crew if m.is_infected]
+            if total_infected:
+                return True, "All Things have been eliminated. Humanity survives... for now."
+
+        return False, None
+
+    def check_lose_condition(self):
+        """
+        LOSE: Player is dead OR player is infected and revealed.
+        Returns: (lost: bool, message: str)
+        """
+        if not self.player:
+            return True, "MacReady is gone. The Thing has won."
+
+        if not self.player.is_alive:
+            return True, "MacReady has died. The Thing spreads unchecked across the ice."
+
+        if self.player.is_infected and self.player.is_revealed:
+            return True, "MacReady has become one of Them. The imitation is perfect."
+
+        # Check if everyone is dead
+        living_crew = [m for m in self.crew if m.is_alive]
+        if len(living_crew) == 0:
+            return True, "The station is silent. No one survived."
+
+        # Check if everyone (including player) is infected
+        living_humans = [m for m in self.crew if m.is_alive and not m.is_infected]
+        if not living_humans:
+            return True, "There are no humans left. The Thing has won."
+
+        return False, None
+
+    def check_game_over(self):
+        """
+        Check both win and lose conditions.
+        Returns: (game_over: bool, won: bool, message: str)
+        """
+        lost, lose_msg = self.check_lose_condition()
+        if lost:
+            return True, False, lose_msg
+
+        won, win_msg = self.check_win_condition()
+        if won:
+            return True, True, win_msg
+
+        return False, False, None
+
     def to_dict(self):
         return {
             "turn": self.turn,
@@ -617,9 +681,32 @@ def main():
     game.audio.ambient_loop(Sound.THRUM)
 
     while True:
+        # Check for game over conditions
+        game_over, won, message = game.check_game_over()
+        if game_over:
+            game.crt.output("\n" + "=" * 50)
+            if won:
+                game.crt.output("*** VICTORY ***", crawl=True)
+                game.audio.trigger_event('success')
+            else:
+                game.crt.output("*** GAME OVER ***", crawl=True)
+                game.audio.trigger_event('alert')
+            game.crt.output(message, crawl=True)
+            game.crt.output("=" * 50)
+            game.crt.output(f"\nFinal Statistics:")
+            game.crt.output(f"  Turns Survived: {game.turn}")
+            living = len([m for m in game.crew if m.is_alive])
+            game.crt.output(f"  Crew Remaining: {living}/{len(game.crew)}")
+            game.crt.output("\nPress ENTER to exit...")
+            try:
+                input()
+            except EOFError:
+                pass
+            break
+
         # Update CRT glitch based on paranoia
         game.crt.set_glitch_level(game.paranoia_level)
-        
+
         player_room = game.station_map.get_room_name(*game.player.location)
         weather_status = game.weather.get_status()
         room_icons = game.room_states.get_status_icons(player_room)
@@ -704,63 +791,20 @@ def main():
         
         # --- FORENSIC COMMANDS ---
         elif action == "HEAT":
-            print(game.forensics.blood_test.heat_wire())
-            
-        elif action == "TEST":
-            if len(cmd) < 2:
-                print("Usage: TEST <NAME>")
-            else:
-                target_name = cmd[1]
-                # Check if we have wire? For now assume yes or check inventory later
-                target = next((m for m in game.crew if m.name.upper() == target_name.upper()), None)
-                if target:
-                    if game.station_map.get_room_name(*target.location) == player_room:
-                        print(game.forensics.blood_test.start_test(target.name))
-                    else:
-                        print(f"{target.name} is not here.")
-                else:
-                    print(f"Unknown target: {target_name}")
+            print(game.blood_test_sim.heat_wire())
 
         elif action == "APPLY":
-            if not game.forensics.blood_test.active:
+            if not game.blood_test_sim.active:
                 print("No test in progress.")
             else:
                 # Find the sample owner to check infection status
-                sample_name = game.forensics.blood_test.current_sample
+                sample_name = game.blood_test_sim.current_sample
                 subject = next((m for m in game.crew if m.name == sample_name), None)
                 if subject:
-                    print(game.forensics.blood_test.apply_wire(subject.is_infected))
-                    
-        elif action == "CANCEL":
-             print(game.forensics.blood_test.cancel())
-             
-        elif action == "TAG":
-            if len(cmd) < 3:
-                print("Usage: TAG <NAME> <CATEGORY> <NOTE...>")
-            else:
-                target_name = cmd[1]
-                category = cmd[2]
-                note = " ".join(cmd[3:])
-                target = next((m for m in game.crew if m.name.upper() == target_name.upper()), None)
-                if target:
-                    game.forensic_db.add_tag(target.name, category, note, game.turn)
-                    print(f"Logged forensic tag for {target.name}.")
-                else:
-                    print(f"Unknown target: {target_name}")
-                    
-        elif action == "LOG":
-            if len(cmd) < 2:
-                print("Usage: LOG <ITEM NAME>")
-            else:
-                item_name = " ".join(cmd[1:])
-                print(game.evidence_log.get_history(item_name))
+                    print(game.blood_test_sim.apply_wire(subject.is_infected))
 
-        elif action == "DOSSIER":
-            if len(cmd) < 2:
-                print("Usage: DOSSIER <NAME>")
-            else:
-                target_name = cmd[1]
-                print(game.forensic_db.get_report(target_name))
+        elif action == "CANCEL":
+             print(game.blood_test_sim.cancel())
         # -------------------------
 
         elif action == "TALK":
