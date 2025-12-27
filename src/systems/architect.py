@@ -150,6 +150,8 @@ class TimeSystem:
         self.points_per_turn = 1
         self.turn_count = 0
         self.start_hour = start_hour  # Start at 7 PM by default
+        self._start_hour = start_hour
+        self._hour = start_hour
 
     @property
     def hour(self):

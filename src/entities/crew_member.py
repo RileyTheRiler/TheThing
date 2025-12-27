@@ -74,7 +74,7 @@ class CrewMember:
 
         # Use a temporary ResolutionSystem if one isn't provided
         res = ResolutionSystem()
-        return res.roll_check(pool_size)
+        return res.roll_check(pool_size, rng=rng)
 
     def move(self, dx, dy, station_map):
         """Attempt to move by delta. Returns True if successful."""
