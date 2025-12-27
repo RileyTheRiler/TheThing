@@ -147,6 +147,8 @@ class TimeSystem:
 
     @property
     def hour(self):
+        # Assuming 1 turn = 1 hour or some conversion.
+        # Base hour 8:00 AM?
         """Calculate hour of day based on turn count (0-23). Start at 08:00."""
         # 1 turn = 1 hour (simplified for now as per legacy code)
         return (8 + self.turn_count) % 24

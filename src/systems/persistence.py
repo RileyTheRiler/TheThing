@@ -4,6 +4,9 @@ import pickle
 from datetime import datetime
 
 class SaveManager:
+    def __init__(self, save_dir="data/saves", game_state_factory=None):
+        self.save_dir = save_dir
+        self.game_state_factory = game_state_factory
     def __init__(self, save_dir="data/saves", gamestate_factory=None):
         self.save_dir = save_dir
         self.gamestate_factory = gamestate_factory
@@ -41,6 +44,9 @@ class SaveManager:
             with open(filepath, 'r') as f:
                 data = json.load(f)
 
+            # Use factory if provided to avoid circular dependencies
+            if self.game_state_factory:
+                return self.game_state_factory(data)
             # Rehydrate if factory is provided
             if self.gamestate_factory:
                 return self.gamestate_factory(data)

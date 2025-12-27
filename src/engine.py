@@ -403,7 +403,7 @@ class StationMap:
             # rooms and grid are static/derived for now, so we don't save grid unless it changes
         }
 
-    @classmethod
+    @classmethodhttps://github.com/RileyTheRiler/TheThing/pull/12/conflict?name=src%252Fsystems%252Farchitect.py&ancestor_oid=230a4fafc073683e95096653630171affed8bc91&base_oid=780f7ee62f545170b93e9084c50d35b792a7f7a8&head_oid=e38ecd8bd411db0560e0596cb9b5e8738fc9013c
     def from_dict(cls, data):
         sm = cls(data["width"], data["height"])
         items_dict = data.get("room_items", {})
@@ -415,6 +415,8 @@ class GameState:
     def __init__(self, seed=None, difficulty=Difficulty.NORMAL):
         self.rng = RandomnessEngine(seed)
         self.time_system = TimeSystem()
+        self.save_manager = SaveManager(game_state_factory=GameState.from_dict)
+        
         self.save_manager = SaveManager(gamestate_factory=GameState.from_dict)
 
         # Store difficulty and get settings
@@ -811,9 +813,9 @@ def main():
             game.save_manager.save_game(game, slot)
         elif action == "LOAD":
             slot = cmd[1] if len(cmd) > 1 else "auto"
-            data = game.save_manager.load_game(slot)
-            if data:
-                game = GameState.from_dict(data)
+            loaded_game = game.save_manager.load_game(slot)
+            if loaded_game:
+                game = loaded_game
                 print("*** GAME LOADED ***")
         elif action == "STATUS":
             for m in game.crew:
