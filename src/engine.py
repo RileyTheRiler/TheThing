@@ -1,3 +1,5 @@
+from typing import Optional
+
 import json
 import os
 import random
@@ -635,7 +637,7 @@ class StationMap:
         for member in infected_crew:
             member.is_infected = True
 
-    def advance_turn(self):
+    def advance_turn(self, power_on: Optional[bool] = None):
         self.turn += 1
         
         # Reset per-turn flags
@@ -643,6 +645,11 @@ class StationMap:
             member.slipped_vapor = False
         
         self.paranoia_level = min(100, self.paranoia_level + 1)
+        if power_on is not None:
+            self.power_on = power_on
+
+        # Update TimeSystem and notify listeners
+        self.time_system.advance_turn(self.power_on, game_state=self, rng=self.rng)
         
 
 
