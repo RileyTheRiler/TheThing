@@ -1,3 +1,6 @@
+import json
+import os
+import random
 from systems.missionary import MissionarySystem
 from systems.psychology import PsychologySystem
 from core.resolution import Attribute, Skill, ResolutionSystem
@@ -7,31 +10,32 @@ from systems.persistence import SaveManager
 from core.event_system import event_bus, EventType, GameEvent
 from core.design_briefs import DesignBriefRegistry
 
-# Agent 6: Dungeon Master Systems
-from systems.weather import WeatherSystem
-from systems.sabotage import SabotageManager
-from systems.room_state import RoomStateManager, RoomState
-from systems.stealth import StealthSystem
+from audio.audio_manager import AudioManager, Sound
+from core.design_briefs import DesignBriefRegistry
+from core.event_system import EventType, GameEvent, event_bus
+from core.resolution import Attribute, ResolutionSystem, Skill
+from entities.crew_member import CrewMember
+from entities.item import Item
+from entities.station_map import StationMap
+from systems.ai import AISystem
+from systems.architect import Difficulty, DifficultySettings, GameMode, RandomnessEngine, TimeSystem
+from systems.commands import CommandDispatcher, GameContext
 from systems.crafting import CraftingSystem
 from systems.endgame import EndgameSystem
-
-# Agent 8: AI System
-from systems.ai import AISystem
-
-# Agent 4: Forensics
+from systems.forensics import BiologicalSlipGenerator, BloodTestSim, EvidenceLog, ForensicDatabase, ForensicsSystem
+from systems.missionary import MissionarySystem
+from systems.persistence import SaveManager
+from systems.psychology import PsychologySystem
 from systems.random_events import RandomEventSystem
-
-# Agent 4: Forensics
-from src.systems.forensics import BiologicalSlipGenerator, BloodTestSim, ForensicDatabase, EvidenceLog, ForensicsSystem
-from systems.forensics import BiologicalSlipGenerator, BloodTestSim, ForensicDatabase, EvidenceLog
-
-# Terminal Designer Systems (Agent 5)
-from ui.renderer import TerminalRenderer
-from ui.crt_effects import CRTOutput
+from systems.room_state import RoomState, RoomStateManager
+from systems.sabotage import SabotageManager
+from systems.social import DialogueManager, LynchMobSystem, TrustMatrix
+from systems.stealth import StealthSystem
+from systems.weather import WeatherSystem
 from ui.command_parser import CommandParser
-from audio.audio_manager import AudioManager, Sound
-from systems.commands import CommandDispatcher, GameContext
+from ui.crt_effects import CRTOutput
 from ui.message_reporter import MessageReporter
+from ui.renderer import TerminalRenderer
 
 # Entity Classes
 from entities.item import Item
