@@ -151,8 +151,31 @@ class InterrogationSystem:
         responses = self.RESPONSES.get(topic, self.RESPONSES[InterrogationTopic.WHEREABOUTS])
         possible = responses.get(is_infected, responses[False])
 
+        # Knowledge Tags Injection (Agent 3)
+        # If infected, check if we have a tag that provides a "perfect" cover
+        injected_response = None
+        if is_infected and hasattr(subject, 'knowledge_tags') and subject.knowledge_tags:
+            if topic == InterrogationTopic.KNOWLEDGE:
+                # Look for Protocol tags
+                protocol_tags = [t for t in subject.knowledge_tags if "Protocol" in t]
+                if protocol_tags:
+                    tag = self.rng.choose(protocol_tags)
+                    role = tag.split(": ")[1]
+                    injected_response = (f"I'm strictly following {role} protocols. I know exactly what I'm doing.", ResponseType.HONEST)
+
+            elif topic == InterrogationTopic.WHEREABOUTS:
+                # Look for Memory tags
+                memory_tags = [t for t in subject.knowledge_tags if "Memory" in t]
+                if memory_tags:
+                    tag = self.rng.choose(memory_tags)
+                    interaction = tag.split(": ")[1]
+                    injected_response = (f"I was occupied. I remember the {interaction} clearly.", ResponseType.HONEST)
+
         # Select a response
-        template, response_type = self.rng.choose(possible)
+        if injected_response and self.rng.random_float() < 0.5:
+             template, response_type = injected_response
+        else:
+             template, response_type = self.rng.choose(possible)
 
         # Fill in template variables
         other_crew = [m for m in game_state.crew if m != subject and m.is_alive]
