@@ -196,7 +196,7 @@ class ForensicsSystem:
         Maybe the wire cools down or heating progresses?
         """
         if self.blood_test.active:
-             self.blood_test.cool_down()
+            self.blood_test.cool_down()
 
     def get_status(self):
         if self.blood_test.active:
