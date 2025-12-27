@@ -3,6 +3,8 @@
 from core.resolution import Attribute, Skill
 from core.event_system import event_bus, EventType, GameEvent
 from systems.architect import Difficulty, DifficultySettings
+from systems.combat import CombatSystem, CoverType, CombatEncounter
+from systems.interrogation import InterrogationSystem, InterrogationTopic
 from audio.audio_manager import Sound
 from engine import GameState
 
@@ -210,6 +212,99 @@ def _execute_command(game, cmd):
             room = game.station_map.get_room_name(*m.location)
             if room == player_room:
                 print(f"{m.name}: {m.get_dialogue(game)}")
+
+    elif action == "INTERROGATE" or action == "ASK":
+        if len(cmd) < 2:
+            print("Usage: INTERROGATE <NAME> [TOPIC]")
+            print("Topics: WHEREABOUTS, ALIBI, SUSPICION, BEHAVIOR, KNOWLEDGE")
+        else:
+            target_name = cmd[1]
+            target = next((m for m in game.crew if m.name.upper() == target_name.upper()), None)
+
+            if not target:
+                print(f"Unknown target: {target_name}")
+            elif game.station_map.get_room_name(*target.location) != player_room:
+                print(f"{target.name} is not here.")
+            elif not target.is_alive:
+                print(f"{target.name} cannot answer...")
+            else:
+                # Determine topic
+                if len(cmd) > 2:
+                    topic_name = cmd[2].upper()
+                    topic_map = {
+                        "WHEREABOUTS": InterrogationTopic.WHEREABOUTS,
+                        "ALIBI": InterrogationTopic.ALIBI,
+                        "SUSPICION": InterrogationTopic.SUSPICION,
+                        "BEHAVIOR": InterrogationTopic.BEHAVIOR,
+                        "KNOWLEDGE": InterrogationTopic.KNOWLEDGE
+                    }
+                    topic = topic_map.get(topic_name, InterrogationTopic.WHEREABOUTS)
+                else:
+                    topic = InterrogationTopic.WHEREABOUTS
+
+                # Initialize interrogation system if needed
+                if not hasattr(game, 'interrogation_system'):
+                    game.interrogation_system = InterrogationSystem(game.rng)
+
+                result = game.interrogation_system.interrogate(
+                    game.player, target, topic, game
+                )
+
+                print(f"\n[INTERROGATION: {target.name} - {topic.value.upper()}]")
+                print(f"\"{result.dialogue}\"")
+                print(f"[Response: {result.response_type.value}]")
+
+                if result.tells:
+                    print("\n[OBSERVATION]")
+                    for tell in result.tells:
+                        print(f"  - {tell}")
+
+                # Apply trust change
+                game.trust_system.modify_trust(target.name, game.player.name, result.trust_change)
+                if result.trust_change != 0:
+                    change_str = f"+{result.trust_change}" if result.trust_change > 0 else str(result.trust_change)
+                    print(f"[Trust: {change_str}]")
+
+    elif action == "ACCUSE":
+        if len(cmd) < 2:
+            print("Usage: ACCUSE <NAME>")
+            print("This makes a formal accusation against a crew member.")
+            print("The crew will vote on whether to support your accusation.")
+        else:
+            target_name = cmd[1]
+            target = next((m for m in game.crew if m.name.upper() == target_name.upper()), None)
+
+            if not target:
+                print(f"Unknown target: {target_name}")
+            elif not target.is_alive:
+                print(f"{target.name} is already dead.")
+            else:
+                # Gather evidence from forensic database
+                evidence = []
+                if hasattr(game, 'forensic_db'):
+                    tags = game.forensic_db.tags.get(target.name, [])
+                    evidence = [t for t in tags if t.get('category') == 'SUSPICION']
+
+                print(f"\n[FORMAL ACCUSATION AGAINST {target.name.upper()}]")
+                print(f"Evidence presented: {len(evidence)} item(s)")
+
+                # Initialize interrogation system if needed
+                if not hasattr(game, 'interrogation_system'):
+                    game.interrogation_system = InterrogationSystem(game.rng)
+
+                result = game.interrogation_system.make_accusation(
+                    game.player, target, evidence, game
+                )
+
+                print(f"\nSupporters: {[s.name for s in result.supporters]}")
+                print(f"Opposers: {[o.name for o in result.opposers]}")
+                print(f"\n{result.outcome_message}")
+
+                if result.supported:
+                    # Activate lynch mob
+                    game.lynch_mob.form_mob(target)
+                    print(f"\n*** LYNCH MOB FORMED AGAINST {target.name.upper()}! ***")
+
     elif action == "LOOK":
         if len(cmd) < 2:
             print("Usage: LOOK <NAME>")
@@ -325,31 +420,118 @@ def _execute_command(game, cmd):
             elif not target.is_alive:
                 print(f"{target.name} is already dead.")
             else:
+                # Initialize combat system
+                combat = CombatSystem(game.rng)
+
+                # Roll initiative
+                player_init = combat.roll_initiative(game.player)
+                target_init = combat.roll_initiative(target)
+                print(f"\n[COMBAT] Initiative: {game.player.name} ({player_init}) vs {target.name} ({target_init})")
+
+                # Get weapons
                 weapon = next((i for i in game.player.inventory if i.damage > 0), None)
                 w_name = weapon.name if weapon else "Fists"
-                w_skill = weapon.weapon_skill if weapon else Skill.MELEE
-                w_dmg = weapon.damage if weapon else 0
+
+                # Get target's cover (if any)
+                target_cover = getattr(game, 'combat_cover', {}).get(target.name, CoverType.NONE)
 
                 print(f"Attacking {target.name} with {w_name}...")
-                att_attr = Skill.get_attribute(w_skill)
-                att_res = game.player.roll_check(att_attr, w_skill, game.rng)
+                if target_cover != CoverType.NONE:
+                    print(f"[COVER] {target.name} has {target_cover.value} cover!")
 
-                def_skill = Skill.MELEE
-                def_attr = Attribute.PROWESS
+                result = combat.calculate_attack(game.player, target, weapon, target_cover)
+                print(result.message)
 
-                def_res = target.roll_check(def_attr, def_skill, game.rng)
-
-                print(f"Attack: {att_res['success_count']} vs Defense: {def_res['success_count']}")
-
-                if att_res['success_count'] > def_res['success_count']:
-                    net_hits = att_res['success_count'] - def_res['success_count']
-                    total_dmg = w_dmg + net_hits
-                    died = target.take_damage(total_dmg)
-                    print(f"HIT! Dealt {total_dmg} damage.")
+                if result.success:
+                    died = target.take_damage(result.damage)
                     if died:
                         print(f"*** {target.name} HAS DIED ***")
-                else:
-                    print("MISS/BLOCKED!")
+                        # Clear cover assignment
+                        if hasattr(game, 'combat_cover') and target.name in game.combat_cover:
+                            del game.combat_cover[target.name]
+
+    elif action == "COVER":
+        # Take cover in the current room
+        if not hasattr(game, 'combat_cover'):
+            game.combat_cover = {}
+
+        combat = CombatSystem(game.rng)
+        available = combat.get_available_cover(player_room)
+
+        if len(cmd) > 1:
+            # Specific cover type requested
+            cover_type_name = cmd[1].upper()
+            cover_map = {"LIGHT": CoverType.LIGHT, "HEAVY": CoverType.HEAVY, "FULL": CoverType.FULL, "NONE": CoverType.NONE}
+            requested = cover_map.get(cover_type_name)
+            if requested and requested in available:
+                game.combat_cover[game.player.name] = requested
+                print(f"You take {requested.value} cover behind nearby objects.")
+                if requested == CoverType.FULL:
+                    print("(You cannot attack while in Full cover)")
+            elif requested == CoverType.NONE:
+                if game.player.name in game.combat_cover:
+                    del game.combat_cover[game.player.name]
+                print("You leave cover.")
+            else:
+                print(f"That cover type is not available. Available: {[c.value for c in available]}")
+        else:
+            # Auto-assign best cover
+            if available:
+                best = max(available, key=lambda c: combat.COVER_BONUS[c])
+                game.combat_cover[game.player.name] = best
+                print(f"You take {best.value} cover behind nearby objects.")
+                print(f"(+{combat.COVER_BONUS[best]} defense dice)")
+            else:
+                print("No cover available in this room!")
+
+    elif action == "RETREAT":
+        # Attempt to retreat from combat
+        if not hasattr(game, 'combat_cover'):
+            game.combat_cover = {}
+
+        # Find hostile entities in the room
+        hostiles = [m for m in game.crew
+                   if m.is_alive and m.location == game.player.location
+                   and getattr(m, 'is_revealed', False)]
+
+        if not hostiles:
+            print("There are no hostiles here to retreat from.")
+        else:
+            combat = CombatSystem(game.rng)
+            exits = ["NORTH", "SOUTH", "EAST", "WEST"]
+
+            # Check which exits are valid
+            valid_exits = []
+            dx_map = {"NORTH": (0, -1), "SOUTH": (0, 1), "EAST": (1, 0), "WEST": (-1, 0)}
+            for direction in exits:
+                dx, dy = dx_map[direction]
+                new_x = game.player.location[0] + dx
+                new_y = game.player.location[1] + dy
+                if game.station_map.is_walkable(new_x, new_y):
+                    valid_exits.append(direction)
+
+            success, message, exit_dir = combat.attempt_retreat(game.player, hostiles, valid_exits)
+            print(message)
+
+            if success:
+                # Move player in that direction
+                dx, dy = dx_map[exit_dir]
+                game.player.move(dx, dy, game.station_map)
+                print(f"You flee {exit_dir}!")
+                # Clear cover
+                if game.player.name in game.combat_cover:
+                    del game.combat_cover[game.player.name]
+                game.advance_turn()
+            else:
+                # Failed retreat - hostiles get free attacks
+                print("[COMBAT] Hostiles get free attacks!")
+                for hostile in hostiles:
+                    free_result = combat.process_free_attack(hostile, game.player)
+                    print(f"  {hostile.name}: {free_result.message}")
+                    if free_result.success:
+                        died = game.player.take_damage(free_result.damage)
+                        if died:
+                            print("*** YOU HAVE BEEN KILLED! ***")
 
     # --- MOVEMENT ---
     elif action == "MOVE":
@@ -367,16 +549,73 @@ def _execute_command(game, cmd):
             elif direction in ["WEST", "W"]:
                 dx = -1
 
-            if game.player.move(dx, dy, game.station_map):
-                print(f"You moved {direction}.")
-                game.advance_turn()
+            # Calculate target position and room
+            new_x = game.player.location[0] + dx
+            new_y = game.player.location[1] + dy
+
+            if game.station_map.is_walkable(new_x, new_y):
+                target_room = game.station_map.get_room_name(new_x, new_y)
+
+                # Check if target room is barricaded
+                if game.room_states.is_entry_blocked(target_room) and target_room != player_room:
+                    strength = game.room_states.get_barricade_strength(target_room)
+                    print(f"The {target_room} is barricaded! (Strength: {strength}/3)")
+                    print("Use BREAK <DIRECTION> to force entry.")
+                else:
+                    game.player.location = (new_x, new_y)
+                    print(f"You moved {direction}.")
+                    game.advance_turn()
             else:
                 print("Blocked.")
+
+    elif action == "BREAK":
+        if len(cmd) < 2:
+            print("Usage: BREAK <DIRECTION>")
+            print("Attempt to break through a barricade in the given direction.")
+        else:
+            direction = cmd[1].upper()
+            dx, dy = 0, 0
+            if direction in ["NORTH", "N"]:
+                dy = -1
+            elif direction in ["SOUTH", "S"]:
+                dy = 1
+            elif direction in ["EAST", "E"]:
+                dx = 1
+            elif direction in ["WEST", "W"]:
+                dx = -1
+            else:
+                print(f"Invalid direction: {direction}")
+                return True
+
+            new_x = game.player.location[0] + dx
+            new_y = game.player.location[1] + dy
+
+            if game.station_map.is_walkable(new_x, new_y):
+                target_room = game.station_map.get_room_name(new_x, new_y)
+
+                if not game.room_states.is_entry_blocked(target_room):
+                    print(f"There is no barricade blocking the {target_room}.")
+                else:
+                    print(f"You slam your body against the barricade...")
+                    success, message, remaining = game.room_states.attempt_break_barricade(
+                        target_room, game.player, game.rng, is_thing=False
+                    )
+                    print(message)
+
+                    if success:
+                        # Barricade broken - enter the room
+                        game.player.location = (new_x, new_y)
+                        print(f"You burst into the {target_room}!")
+
+                    game.advance_turn()
+            else:
+                print("Nothing to break through in that direction.")
 
     # --- ENVIRONMENT ---
     elif action == "BARRICADE":
         result = game.room_states.barricade_room(player_room)
         print(result)
+        game.advance_turn()
 
     # --- BLOOD TEST ---
     elif action == "TEST":
@@ -412,7 +651,7 @@ def _execute_command(game, cmd):
                     if target.is_infected:
                         game.missionary_system.trigger_reveal(target, "Blood Test Exposure")
     else:
-        print("Unknown command. Try: MOVE, LOOK, GET, DROP, USE, INV, TAG, TEST, HEAT, APPLY, ATTACK, STATUS, SAVE, LOAD, EXIT")
+        print("Unknown command. Try: MOVE, LOOK, GET, DROP, INV, TAG, TEST, ATTACK, COVER, RETREAT, STATUS, SAVE, LOAD, EXIT")
 
     return True
 

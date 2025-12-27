@@ -139,7 +139,7 @@ class CrewMember:
             if target != self and target.is_alive:
                 # Move toward the lynch target
                 tx, ty = target.location
-                self._pathfind_step(tx, ty, game_state.station_map, current_turn)
+                self._pathfind_step(tx, ty, game_state.station_map, current_turn, game_state)
                 return
 
         # 1. Check Schedule
@@ -166,7 +166,7 @@ class CrewMember:
             target_pos = game_state.station_map.rooms.get(destination)
             if target_pos:
                 tx, ty, _, _ = target_pos
-                self._pathfind_step(tx, ty, game_state.station_map, current_turn)
+                self._pathfind_step(tx, ty, game_state.station_map, current_turn, game_state)
                 return
 
         # 2. Idling / Wandering
@@ -201,7 +201,7 @@ class CrewMember:
 
         # Move toward closest human
         tx, ty = closest.location
-        self._pathfind_step(tx, ty, game_state.station_map, current_turn)
+        self._pathfind_step(tx, ty, game_state.station_map, current_turn, game_state)
 
     def _thing_attack(self, target, game_state):
         """The Thing attacks a human target."""
@@ -238,10 +238,11 @@ class CrewMember:
         else:
             print(f"\n[COMBAT] {thing_name} lunges at {target.name} but MISSES!")
 
-    def _pathfind_step(self, target_x, target_y, station_map, current_turn=0):
+    def _pathfind_step(self, target_x, target_y, station_map, current_turn=0, game_state=None):
         """Take one step toward target using A* pathfinding.
 
         Falls back to greedy movement if pathfinding fails.
+        Handles barricades - Things can break through, NPCs respect them.
         """
         goal = (target_x, target_y)
 
@@ -252,6 +253,30 @@ class CrewMember:
         if dx == 0 and dy == 0 and self.location != goal:
             dx = 1 if target_x > self.location[0] else -1 if target_x < self.location[0] else 0
             dy = 1 if target_y > self.location[1] else -1 if target_y < self.location[1] else 0
+
+        # Check for barricades at destination
+        new_x = self.location[0] + dx
+        new_y = self.location[1] + dy
+
+        if game_state and station_map.is_walkable(new_x, new_y):
+            target_room = station_map.get_room_name(new_x, new_y)
+            current_room = station_map.get_room_name(*self.location)
+
+            if game_state.room_states.is_entry_blocked(target_room) and target_room != current_room:
+                if self.is_revealed:
+                    # Revealed Things try to break barricades
+                    success, msg, _ = game_state.room_states.attempt_break_barricade(
+                        target_room, self, game_state.rng, is_thing=True
+                    )
+                    if not success:
+                        print(f"[BARRICADE] Something pounds on the {target_room} barricade!")
+                        return  # Can't move this turn
+                    else:
+                        print(f"[BARRICADE] {msg}")
+                        # Fall through to move
+                else:
+                    # Regular NPCs respect barricades
+                    return
 
         self.move(dx, dy, station_map)
 

@@ -29,14 +29,14 @@ The game uses an **event-driven, multi-agent architecture** where 8+ independent
 
 ---
 
-## Tier 3: Gameplay Enhancements - PARTIAL
+## Tier 3: Gameplay Enhancements - COMPLETE
 
 - [x] **3.1** Add difficulty settings (Easy/Normal/Hard with infection rates, mask decay, paranoia)
-- [ ] **3.2** Expand combat system with initiative, cover, and retreat mechanics
+- [x] **3.2** Expand combat system with initiative, cover, and retreat mechanics - `src/systems/combat.py`
 - [x] **3.3** Add more rooms (Radio Room, Storage, Lab, Sleeping Quarters, Mess Hall)
 - [x] **3.4** Implement Thing-creature combat AI when revealed (hunting, attacking, infection)
-- [ ] **3.5** Add interrogation/accusation dialogue system
-- [ ] **3.6** Implement barricade entry mechanics
+- [x] **3.5** Add interrogation/accusation dialogue system - `src/systems/interrogation.py`
+- [x] **3.6** Implement barricade entry mechanics - BREAK command, NPC barricade handling
 
 ---
 
@@ -89,3 +89,14 @@ from src.core.resolution import Attribute, Skill
 - **WIN**: All infected crew eliminated, player alive
 - **LOSE**: Player killed OR player infected and revealed
 - **ESCAPE**: Helicopter operational + reach Kennel helipad (future)
+
+### New Commands (Tier 3)
+```
+ATTACK <NAME>      - Attack with initiative rolls and cover support
+COVER [TYPE]       - Take cover (LIGHT/HEAVY/FULL or auto-select)
+RETREAT            - Attempt to flee from revealed Things
+INTERROGATE <NAME> [TOPIC] - Question crew (WHEREABOUTS/ALIBI/SUSPICION/BEHAVIOR/KNOWLEDGE)
+ACCUSE <NAME>      - Formal accusation triggering crew vote
+BREAK <DIRECTION>  - Break through a barricade
+BARRICADE          - Barricade current room (can be reinforced)
+```

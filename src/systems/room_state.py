@@ -1,5 +1,7 @@
 from enum import Enum, auto
-from src.core.event_system import event_bus, EventType, GameEvent
+from core.event_system import event_bus, EventType, GameEvent
+from core.resolution import Attribute, Skill
+
 
 class RoomState(Enum):
     DARK = auto()       # No light - increased communion chance
@@ -12,12 +14,17 @@ class RoomStateManager:
     """
     Manages environmental states for each room. Reacts to GameEvents.
     """
-    
+
+    # Barricade strength levels
+    BARRICADE_MAX_STRENGTH = 3  # Requires 3 successful break attempts
+
     def __init__(self, room_names):
         # room_name -> set of RoomState
         self.room_states = {name: set() for name in room_names}
+        # room_name -> barricade strength (0 = broken)
+        self.barricade_strength = {}
         self._set_initial_states()
-        
+
         # Subscribe to events
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
         event_bus.subscribe(EventType.POWER_FAILURE, self.on_power_failure)
@@ -101,11 +108,76 @@ class RoomStateManager:
         return f"Blood spatters across {room_name}."
     
     def barricade_room(self, room_name):
+        """Create or reinforce a barricade on a room."""
         self.add_state(room_name, RoomState.BARRICADED)
         self.add_state(room_name, RoomState.DARK)
-    
+        # Set barricade strength if new, or reinforce if already barricaded
+        current = self.barricade_strength.get(room_name, 0)
+        self.barricade_strength[room_name] = min(
+            current + 1,
+            self.BARRICADE_MAX_STRENGTH
+        )
+        return f"Barricade {'reinforced' if current > 0 else 'erected'}. Strength: {self.barricade_strength[room_name]}/{self.BARRICADE_MAX_STRENGTH}"
+
+    def get_barricade_strength(self, room_name):
+        """Get the current barricade strength for a room."""
+        if not self.has_state(room_name, RoomState.BARRICADED):
+            return 0
+        return self.barricade_strength.get(room_name, 0)
+
+    def attempt_break_barricade(self, room_name, breaker, rng, is_thing=False):
+        """Attempt to break through a barricade.
+
+        Args:
+            room_name: The room with the barricade
+            breaker: The creature/person trying to break through
+            rng: Random number generator
+            is_thing: If True, the breaker is a revealed Thing (bonus strength)
+
+        Returns:
+            (success, message, remaining_strength)
+        """
+        if not self.has_state(room_name, RoomState.BARRICADED):
+            return True, "There is no barricade here.", 0
+
+        current_strength = self.barricade_strength.get(room_name, 1)
+
+        # Roll PROWESS + MELEE to break
+        prowess = breaker.attributes.get(Attribute.PROWESS, 1)
+        melee = breaker.skills.get(Skill.MELEE, 0)
+        pool = prowess + melee
+
+        # Things get bonus dice (alien strength)
+        if is_thing:
+            pool += 3
+
+        result = rng.calculate_success(pool)
+
+        if result['success']:
+            # Damage the barricade
+            damage = 1 + result['success_count']  # More successes = more damage
+            self.barricade_strength[room_name] = max(0, current_strength - damage)
+
+            if self.barricade_strength[room_name] <= 0:
+                # Barricade destroyed
+                self.remove_state(room_name, RoomState.BARRICADED)
+                del self.barricade_strength[room_name]
+                return True, "*** The barricade SHATTERS! ***", 0
+            else:
+                remaining = self.barricade_strength[room_name]
+                return False, f"The barricade cracks and splinters! (Strength: {remaining}/{self.BARRICADE_MAX_STRENGTH})", remaining
+        else:
+            return False, "You slam against the barricade but it holds firm.", current_strength
+
     def break_barricade(self, room_name):
+        """Instantly destroy a barricade (for scripted events)."""
         self.remove_state(room_name, RoomState.BARRICADED)
+        if room_name in self.barricade_strength:
+            del self.barricade_strength[room_name]
+
+    def is_entry_blocked(self, room_name):
+        """Check if entry to a room is blocked by a barricade."""
+        return self.has_state(room_name, RoomState.BARRICADED)
     
     def get_communion_modifier(self, room_name):
         return 0.4 if self.has_state(room_name, RoomState.DARK) else 0.0
