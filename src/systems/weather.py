@@ -1,4 +1,3 @@
-import random
 from enum import Enum
 from src.core.event_system import event_bus, EventType, GameEvent
 from src.systems.architect import RandomnessEngine
@@ -61,10 +60,6 @@ class WeatherSystem:
             return
             
         events = self.tick(rng)
-        
-        # Emit messages if needed via a generic message system or log event
-        # For now, we will assume the engine handles display if systems emit log events
-        # but the prompt asked for the tick logic to move here.
     
     def tick(self, rng: RandomnessEngine):
         """
