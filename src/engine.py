@@ -471,6 +471,7 @@ class GameState:
         # Hook Listeners
         event_bus.subscribe(EventType.BIOLOGICAL_SLIP, self.on_biological_slip)
         event_bus.subscribe(EventType.LYNCH_MOB_TRIGGER, self.on_lynch_mob_trigger)
+        event_bus.subscribe(EventType.LYNCH_MOB_UPDATE, self.on_lynch_mob_update)
 
     def on_biological_slip(self, event: GameEvent):
         char_name = event.payload.get("character_name")
@@ -484,13 +485,21 @@ class GameState:
         target_name = event.payload.get("target")
         location = event.payload.get("location")
         print(f"\n[EVENT] LYNCH MOB TRIGGERED for {target_name} at {location}!")
-        # Move all NPCs to location
+        self.mode = GameMode.STANDOFF
+        self.move_mob_to_target(target_name)
+
+    def on_lynch_mob_update(self, event: GameEvent):
+        target_name = event.payload.get("target")
+        self.move_mob_to_target(target_name)
+
+    def move_mob_to_target(self, target_name):
         target_member = next((m for m in self.crew if m.name == target_name), None)
         if target_member:
             for m in self.crew:
                 if m != target_member and m.is_alive and not m.is_revealed:
-                    m.location = target_member.location
-                    print(f"[SOCIAL] {m.name} moves to confront {target_name}.")
+                    if m.location != target_member.location:
+                        m.location = target_member.location
+                        print(f"[SOCIAL] {m.name} pursues {target_name} to {target_member.location}.")
 
     @property
     def temperature(self):
