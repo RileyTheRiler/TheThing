@@ -112,12 +112,14 @@ class MissionarySystem:
         """
         Transforms the character into a monster.
         """
+        revealed_name = f"The-Thing-That-Was-{member.name}"
+        member.revealed_name = revealed_name
+
         print(f"!!! ALERT !!! {member.name} is convulsing... ({reason})")
         member.is_revealed = True
         member.role = "THING-BEAST"
-        member.name = f"The-Thing-That-Was-{member.name}"
         member.health = 10
-        print(f"!!! {member.name} TEARS THROUGH HUMAN FLESH! !!!")
+        print(f"!!! {revealed_name} TEARS THROUGH HUMAN FLESH! !!!")
 
     def attempt_communion_ai(self, agent, game_state):
         """

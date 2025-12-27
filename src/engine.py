@@ -777,7 +777,7 @@ class GameState:
             return True, "MacReady is gone. The Thing has won."
 
         if not self.player.is_alive:
-            return True, "MacReady has died. The Thing spreads unchecked across the ice."
+            return True, "MacReady is dead. The Thing spreads unchecked across the ice."
 
         if self.player.is_infected and self.player.is_revealed:
             return True, "MacReady has become one of Them. The imitation is perfect."
