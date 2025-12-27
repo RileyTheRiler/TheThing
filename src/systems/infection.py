@@ -1,5 +1,4 @@
 from core.event_system import event_bus, EventType, GameEvent
-from src.core.event_system import event_bus, EventType, GameEvent
 from src.core.resolution import ResolutionSystem
 
 def check_for_communion(game_state):
@@ -40,10 +39,6 @@ def check_for_communion(game_state):
         for member in members:
             if not member.is_infected:
                 # Use ResolutionSystem for calculation (Source of Truth)
-                # We need a resolution instance, normally passed or instantiated
-                from core.resolution import ResolutionSystem
-                res = ResolutionSystem()
-                
                 # Determine lighting (mocked for now, or derived from power)
                 lighting = "DARK" if not game_state.power_on else "LIGHT"
                 

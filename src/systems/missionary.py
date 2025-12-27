@@ -115,9 +115,11 @@ class MissionarySystem:
         print(f"!!! ALERT !!! {member.name} is convulsing... ({reason})")
         member.is_revealed = True
         member.role = "THING-BEAST"
-        member.name = f"The-Thing-That-Was-{member.name}"
+        # Preserve the character's name to keep references stable for AI/tests;
+        # use a themed alias only for messaging to avoid breaking lookups.
+        thing_alias = f"The-Thing-That-Was-{member.name}"
         member.health = 10
-        print(f"!!! {member.name} TEARS THROUGH HUMAN FLESH! !!!")
+        print(f"!!! {thing_alias} TEARS THROUGH HUMAN FLESH! !!!")
 
     def attempt_communion_ai(self, agent, game_state):
         """
