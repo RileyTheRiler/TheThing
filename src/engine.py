@@ -302,9 +302,28 @@ class StationMap:
             "Rec Room": (5, 5, 10, 10),
             "Infirmary": (0, 0, 4, 4),
             "Generator": (15, 15, 19, 19),
-            "Kennel": (0, 15, 4, 19)
+            "Kennel": (0, 15, 4, 19),
+            "Radio Room": (11, 0, 14, 4),
+            "Storage": (15, 0, 19, 4),
+            "Lab": (11, 11, 14, 14),
+            "Sleeping Quarters": (0, 6, 4, 10),
+            "Mess Hall": (5, 0, 9, 4),
+            "Hangar": (5, 15, 10, 19)
         }
         self.room_items = {} 
+        self._coord_to_room = self._build_room_lookup()
+
+    def _build_room_lookup(self):
+        lookup = {}
+        for y in range(self.height):
+            for x in range(self.width):
+                room_name = None
+                for name, (x1, y1, x2, y2) in self.rooms.items():
+                    if x1 <= x <= x2 and y1 <= y <= y2:
+                        room_name = name
+                        break
+                lookup[(x, y)] = room_name or f"Corridor (Sector {x},{y})"
+        return lookup
 
     def add_item_to_room(self, item, x, y, turn=0):
         room_name = self.get_room_name(x, y)
@@ -329,10 +348,7 @@ class StationMap:
         return 0 <= x < self.width and 0 <= y < self.height
 
     def get_room_name(self, x, y):
-        for name, (x1, y1, x2, y2) in self.rooms.items():
-            if x1 <= x <= x2 and y1 <= y <= y2:
-                return name
-        return "Corridor (Sector {},{})".format(x, y)
+        return self._coord_to_room.get((x, y), f"Corridor (Sector {x},{y})")
 
     def render(self, crew):
         display_grid = [row[:] for row in self.grid]
@@ -630,6 +646,12 @@ class GameState:
                 self.reporter.report_event("RADIO", "Rescue ETA updated: 5 hours out.", priority=True)
             elif self.rescue_turns_remaining == 1:
                 self.reporter.report_event("RADIO", "Rescue team landing imminent!", priority=True)
+            if self.rescue_turns_remaining is not None and self.rescue_turns_remaining <= 0:
+                self.rescue_turns_remaining = 0
+                event_bus.emit(GameEvent(EventType.SOS_SENT, {
+                    "arrived": True,
+                    "turn": self.turn
+                }))
 
         # 8. Auto-save every 5 turns
         if self.turn % 5 == 0 and hasattr(self, 'save_manager'):
@@ -637,6 +659,16 @@ class GameState:
                 self.save_manager.save_game(self, "autosave")
             except Exception:
                 pass  # Don't interrupt gameplay on save failure
+        self._emit_population_status()
+
+    def _emit_population_status(self):
+        living_crew = len([m for m in self.crew if m.is_alive])
+        living_humans = len([m for m in self.crew if m.is_alive and not m.is_infected])
+        event_bus.emit(GameEvent(EventType.POPULATION_STATUS, {
+            "living_humans": living_humans,
+            "living_crew": living_crew,
+            "player_alive": getattr(self.player, "is_alive", False)
+        }))
 
     def attempt_repair_helicopter(self) -> str:
         """Attempt to repair the helicopter in the Hangar."""
@@ -676,6 +708,10 @@ class GameState:
             # Consume items
             self.player.remove_item("Wire")
             self.player.remove_item("Fuel Can")
+            event_bus.emit(GameEvent(EventType.REPAIR_COMPLETE, {
+                "status": self.helicopter_status,
+                "turn": self.turn
+            }))
             return "Success! You've repaired the electrical system and refueled the chopper. It's ready to fly."
         else:
             return "Repair failed. It's more complicated than it looks. You need to focus."
@@ -705,6 +741,11 @@ class GameState:
         if successes >= 1:
             self.rescue_signal_active = True
             self.rescue_turns_remaining = 15  # 15 turns to rescue
+            event_bus.emit(GameEvent(EventType.SOS_SENT, {
+                "arrived": False,
+                "eta": self.rescue_turns_remaining,
+                "turn": self.turn
+            }))
             return "Signal established! McMurdo acknowledges. Rescue team inbound. ETA: 15 hours (turns)."
         else:
             return "Static. Just static. You can't punch through the storm interference."
@@ -736,6 +777,10 @@ class GameState:
 
         if successes >= 1:
             self.helicopter_status = "ESCAPED"
+            event_bus.emit(GameEvent(EventType.REPAIR_COMPLETE, {
+                "status": self.helicopter_status,
+                "turn": self.turn
+            }))
             return "Engines spooling up... You lift off into the Antarctic night."
         else:
             return "The wind is too strong! You can't get lift-off. Wait for a break in the weather."

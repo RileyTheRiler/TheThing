@@ -150,11 +150,6 @@ class TimeSystem:
         self.points_per_turn = 1
         self.turn_count = 0
         self.start_hour = start_hour  # Start at 7 PM by default
-
-    @property
-    def hour(self):
-        """Calculate the in-game hour (0-23) based on turns elapsed."""
-        return (self.start_hour + self.turn_count) % 24
         self._start_hour = start_hour
         self._hour = start_hour
 
