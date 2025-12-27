@@ -70,6 +70,12 @@ class TimeSystem:
         self.points_per_turn = 1
         self.turn_count = 0
         
+    @property
+    def hour(self):
+        # Assume game starts at 08:00 (8 AM) and each turn is 1 hour
+        start_hour = 8
+        return (start_hour + self.turn_count) % 24
+
     def tick(self):
         """Advance time by one turn."""
         self.turn_count += 1
