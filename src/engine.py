@@ -43,7 +43,6 @@ from entities.station_map import StationMap
 import json
 import os
 import sys
-import random
 import time
 
 class Item:
@@ -221,7 +220,7 @@ class CrewMember:
         # Dialogue Invariants
         dialogue_invariants = [i for i in self.invariants if i.get('type') == 'dialogue']
         if dialogue_invariants:
-            inv = rng.choose(dialogue_invariants) if hasattr(rng, 'choose') else random.choice(dialogue_invariants)
+            inv = rng.choose(dialogue_invariants)
             if self.is_infected and rng.random_float() < inv.get('slip_chance', 0.5):
                 base_dialogue = f"Speaking {inv['slip_desc']}."
             else:
@@ -231,7 +230,7 @@ class CrewMember:
         
         # Advanced Mimicry: Use Knowledge Tags
         if self.is_infected and self.knowledge_tags and rng.random_float() < 0.4:
-            tag = rng.choose(self.knowledge_tags) if hasattr(rng, 'choose') else random.choice(self.knowledge_tags)
+            tag = rng.choose(self.knowledge_tags)
             base_dialogue += f" I remember {tag}."
 
         if game_state.time_system.temperature < 0:
@@ -414,13 +413,13 @@ class GameState:
         # Agent 4: Forensics
         self.forensic_db = ForensicDatabase()
         self.evidence_log = EvidenceLog()
-        self.forensics = ForensicsSystem()
+        self.forensics = ForensicsSystem(rng=self.rng)
         
         # Terminal Designer Systems (Agent 5)
         self.renderer = TerminalRenderer(self.station_map)
-        self.crt = CRTOutput(palette="amber", crawl_speed=0.015)
+        self.crt = CRTOutput(palette="amber", crawl_speed=0.015, rng=self.rng)
         self.parser = CommandParser(known_names=[m.name for m in self.crew])
-        self.audio = AudioManager(enabled=True)
+        self.audio = AudioManager(enabled=True, rng=self.rng)
         self.command_dispatcher = CommandDispatcher()
         self.reporter = MessageReporter(self.crt)  # Tier 2.6: Event-based reporting
         
@@ -577,10 +576,10 @@ class GameState:
         # Determine how many to infect based on difficulty
         min_infected = self.difficulty_settings["initial_infected_min"]
         max_infected = self.difficulty_settings["initial_infected_max"]
-        num_infected = random.randint(min_infected, min(max_infected, len(eligible)))
+        num_infected = self.rng.randint(min_infected, min(max_infected, len(eligible)))
 
         # Randomly select crew to infect
-        infected_crew = random.sample(eligible, num_infected)
+        infected_crew = self.rng.sample(eligible, num_infected)
         for member in infected_crew:
             member.is_infected = True
 

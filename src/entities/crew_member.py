@@ -1,7 +1,5 @@
 """CrewMember entity class for The Thing game."""
 
-import random
-
 from core.resolution import Attribute, Skill, ResolutionSystem
 from systems.forensics import BiologicalSlipGenerator
 from systems.pathfinding import pathfinder
@@ -295,7 +293,7 @@ class CrewMember:
         # Dialogue Invariants
         dialogue_invariants = [i for i in self.invariants if i.get('type') == 'dialogue']
         if dialogue_invariants:
-            inv = rng.choose(dialogue_invariants) if hasattr(rng, 'choose') else random.choice(dialogue_invariants)
+            inv = rng.choose(dialogue_invariants)
             if self.is_infected and rng.random_float() < inv.get('slip_chance', 0.5):
                 base_dialogue = f"Speaking {inv['slip_desc']}."
             else:
