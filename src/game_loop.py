@@ -1,5 +1,56 @@
 """Main game loop for The Thing game."""
 
+import os
+import atexit
+
+# Cross-platform readline support for command history
+READLINE_AVAILABLE = False
+try:
+    import readline
+    READLINE_AVAILABLE = True
+except ImportError:
+    # Windows fallback - try pyreadline3
+    try:
+        import pyreadline3 as readline
+        READLINE_AVAILABLE = True
+    except ImportError:
+        pass
+
+# History file path (in user's home directory)
+HISTORY_FILE = os.path.expanduser("~/.thething_history")
+MAX_HISTORY_LENGTH = 100
+
+
+def _setup_readline():
+    """Configure readline for command history and arrow key navigation."""
+    if not READLINE_AVAILABLE:
+        return
+
+    # Set history file length
+    readline.set_history_length(MAX_HISTORY_LENGTH)
+
+    # Load existing history
+    try:
+        if os.path.exists(HISTORY_FILE):
+            readline.read_history_file(HISTORY_FILE)
+    except (IOError, OSError):
+        pass  # History file doesn't exist or is unreadable
+
+    # Save history on exit
+    atexit.register(_save_history)
+
+
+def _save_history():
+    """Save command history to file."""
+    if not READLINE_AVAILABLE:
+        return
+
+    try:
+        readline.write_history_file(HISTORY_FILE)
+    except (IOError, OSError):
+        pass  # Can't write history file
+
+
 from core.resolution import Attribute, Skill
 from core.event_system import event_bus, EventType, GameEvent
 from systems.architect import Difficulty, DifficultySettings
@@ -126,6 +177,9 @@ Revealed Things will hunt humans aggressively.
 
 def main():
     """Main game loop - can be called from launcher or run directly."""
+    # Set up readline for command history (arrow keys, history file)
+    _setup_readline()
+
     # Select difficulty before starting
     difficulty = _select_difficulty()
 

@@ -50,10 +50,10 @@ The game uses an **event-driven, multi-agent architecture** where 8+ independent
 
 ---
 
-## Tier 5: Platform & Polish - MOSTLY COMPLETE
+## Tier 5: Platform & Polish - COMPLETE
 
 - [x] **5.1** Replace Windows-only `winsound` with cross-platform audio - `src/audio/audio_manager.py`
-- [ ] **5.2** Add command history/arrow key navigation (requires `readline` integration)
+- [x] **5.2** Add command history/arrow key navigation - `src/game_loop.py` with readline/pyreadline3
 - [x] **5.3** Implement auto-save on turn advance (every 5 turns) - `src/engine.py`
 - [x] **5.4** Add colorblind-friendly palette option - `src/ui/crt_effects.py` with 5 palettes
 
@@ -112,3 +112,10 @@ Available palettes in `CRTOutput`:
 | `high-contrast` | Maximum contrast white on black (low vision friendly) |
 
 Usage: `CRTOutput(palette="colorblind")` or `crt.set_palette("high-contrast")`
+
+### Command History (Tier 5.2)
+Arrow key navigation and command history:
+- **Up/Down arrows**: Cycle through previous commands
+- **History file**: `~/.thething_history` (persists between sessions)
+- **Max entries**: 100 commands
+- **Cross-platform**: Uses `readline` (Unix) or `pyreadline3` (Windows)
