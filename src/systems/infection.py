@@ -1,5 +1,5 @@
-from core.event_system import event_bus, EventType, GameEvent
-from core.resolution import ResolutionSystem
+from src.core.event_system import event_bus, EventType, GameEvent
+from src.core.resolution import ResolutionSystem
 
 def check_for_communion(game_state):
     """

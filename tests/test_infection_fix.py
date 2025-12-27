@@ -2,12 +2,12 @@ import os
 import sys
 import unittest
 
-# Add src to path so we can import modules without src. prefix
-sys.path.append(os.path.join(os.getcwd(), 'src'))
+# Add root to path so we can import src.x.y
+sys.path.append(os.getcwd())
 
-from systems.infection import check_for_communion
-from core.resolution import ResolutionSystem
-from core.event_system import event_bus, EventType
+from src.systems.infection import check_for_communion
+from src.core.resolution import ResolutionSystem
+from src.core.event_system import event_bus, EventType
 
 # Mock classes
 class MockRNG:
