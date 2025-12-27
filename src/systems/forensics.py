@@ -160,6 +160,22 @@ class BloodTestSim:
         self.state = "IDLE"
         return "Test cancelled."
 
+    def cool_down(self):
+        """
+        Simulate natural cooling of the wire over time.
+        """
+        if not self.active:
+            return
+
+        # Simple linear cooling
+        cooling_amount = 10
+        if self.wire_temp > 20:
+            self.wire_temp = max(20, self.wire_temp - cooling_amount)
+
+        # State transition: if we lose heat, we might no longer be READY
+        if self.state == "READY" and self.wire_temp < 90:
+             self.state = "HEATING"
+
 class ForensicsSystem:
     """
     Agent 4: Forensics System.
@@ -175,9 +191,8 @@ class ForensicsSystem:
         Handle turn advancement.
         Maybe the wire cools down or heating progresses?
         """
-        if self.blood_test.active and self.blood_test.state == "HEATING":
-             # Auto-heat slightly? Or just wait for user.
-             pass
+        if self.blood_test.active:
+             self.blood_test.cool_down()
 
     def get_status(self):
         if self.blood_test.active:
