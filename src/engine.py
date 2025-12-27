@@ -398,6 +398,8 @@ class StationMap:
             self._paranoia_bucket = bucket_for_thresholds(clamped, self.social_thresholds.paranoia_thresholds)
             return
 
+class GameState:
+    def __init__(self, seed=None, difficulty=Difficulty.NORMAL, characters_path=None, start_hour=None):
         new_bucket = bucket_for_thresholds(clamped, self.social_thresholds.paranoia_thresholds)
         previous_bucket = getattr(self, "_paranoia_bucket", new_bucket)
         if new_bucket != previous_bucket:
@@ -416,8 +418,9 @@ class StationMap:
     def __init__(self, seed=None, difficulty=Difficulty.NORMAL, thresholds: SocialThresholds = None):
         self.social_thresholds = thresholds or SocialThresholds()
         self.rng = RandomnessEngine(seed)
-        self.time_system = TimeSystem()
+        self.time_system = TimeSystem(start_hour=start_hour if start_hour is not None else 19)
         self.save_manager = SaveManager(game_state_factory=GameState.from_dict)
+        self.characters_config_path = characters_path or os.path.join("config", "characters.json")
         
 
         # Store difficulty and get settings
@@ -592,13 +595,15 @@ class StationMap:
         if hasattr(self, 'crew') and self.crew: 
              return self.crew
 
-        config_path = os.path.join("config", "characters.json")
         crew = []
         try:
-            with open(config_path, 'r') as f:
+            with open(self.characters_config_path, 'r') as f:
                 data = json.load(f)
             for char_data in data:
                 # Use Attribute and Skill names directly from JSON as per standards
+                attrs = {Attribute(k): v for k, v in char_data.get("attributes", {}).items()}
+                skills = {Skill(k): v for k, v in char_data.get("skills", {}).items()}
+                schedule = self._validate_schedule(char_data.get("schedule", []), char_data["name"])
                 attrs = {Attribute[k]: v for k, v in char_data.get("attributes", {}).items()}
                 skills = {Skill[k]: v for k, v in char_data.get("skills", {}).items()}
                 
@@ -608,17 +613,49 @@ class StationMap:
                     behavior_type=char_data["behavior"],
                     attributes=attrs,
                     skills=skills,
-                    schedule=char_data.get("schedule", []),
+                    schedule=schedule,
                     invariants=char_data.get("invariants", [])
                 )
                 m.forbidden_rooms = char_data.get("forbidden_rooms", [])
                 m.location = (self.rng.roll_d6() + 4, self.rng.roll_d6() + 4)
                 crew.append(m)
         except Exception as e:
+            if isinstance(e, ValueError):
+                raise
             m = CrewMember("MacReady", "Pilot", "Cynical")
             m.location = (5, 5)
             crew.append(m)
         return crew
+
+    def _validate_schedule(self, schedule, member_name):
+        """Validate schedule entries against the station map configuration."""
+        validated = []
+        for idx, entry in enumerate(schedule):
+            if not isinstance(entry, dict):
+                raise ValueError(f"Invalid schedule entry for {member_name} at index {idx}: must be a mapping.")
+
+            if "room" not in entry:
+                raise ValueError(f"Schedule entry {idx} for {member_name} missing 'room'.")
+            room = entry["room"]
+            if room not in self.station_map.rooms:
+                raise ValueError(f"Schedule room '{room}' for {member_name} is not defined in the station map.")
+
+            for bound in ("start", "end"):
+                if bound not in entry:
+                    raise ValueError(f"Schedule entry {idx} for {member_name} missing '{bound}'.")
+                value = entry[bound]
+                if not isinstance(value, int):
+                    raise ValueError(f"Schedule '{bound}' for {member_name} must be an integer hour, got {type(value).__name__}.")
+                if not 0 <= value <= 24:
+                    raise ValueError(f"Schedule '{bound}' for {member_name} must be between 0 and 24 inclusive.")
+                entry[bound] = value % 24
+
+            validated.append({
+                "start": entry["start"],
+                "end": entry["end"],
+                "room": room
+            })
+        return validated
 
     def _initialize_infection(self):
         """Infect initial crew members based on difficulty settings."""
@@ -980,6 +1017,10 @@ class StationMap:
         if crew_data:
             game.crew = [CrewMember.from_dict(m) for m in crew_data if m]
 
+        game.crew = [CrewMember.from_dict(m) for m in data["crew"]]
+        for member in game.crew:
+            member.schedule = game._validate_schedule(member.schedule, member.name)
+        # Re-link player
         game.player = next((m for m in game.crew if m.name == "MacReady"), None)
 
         game.journal = data.get("journal", game.journal)

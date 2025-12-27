@@ -157,6 +157,8 @@ class TimeSystem:
         self.temperature = start_temp
         self.points_per_turn = 1
         self.turn_count = 0
+        self._start_hour = int(start_hour) % 24
+        self._hour = self._start_hour
         self.start_hour = start_hour % 24  # Start at 7 PM by default
         self._start_hour = start_hour  # Reference hour for turn-based progression
         
@@ -182,6 +184,17 @@ class TimeSystem:
     @property
     def hour(self):
         """Current in-game hour (0-23)."""
+        return self._hour
+
+    @hour.setter
+    def hour(self, value):
+        """Normalize and set the current hour."""
+        self._hour = int(value) % 24
+        self._start_hour = (self._hour - self.turn_count) % 24
+
+    def set_time(self, hour: int):
+        """Explicitly set the clock, keeping turn math consistent."""
+        self.hour = hour
         return (self.start_hour + self.turn_count) % 24
         self.start_hour = start_hour  # Start at 7 PM by default
         self._start_hour = start_hour
@@ -258,6 +271,8 @@ class TimeSystem:
 
         ts = cls(temp, start_hour=start_hour)
         ts.turn_count = turn_count
+        ts._hour = saved_hour % 24
+        ts._start_hour = start_hour
         # Recompute hour from stored value to keep normalization consistent.
         ts.hour = saved_hour
         return ts
