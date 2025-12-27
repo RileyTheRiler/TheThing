@@ -18,13 +18,13 @@ The game uses an **event-driven, multi-agent architecture** where 8+ independent
 
 ---
 
-## Tier 2: Architecture Improvements
+## Tier 2: Architecture Improvements - MOSTLY COMPLETE
 
-- [ ] **2.1** Extract `Item` class to `src/entities/item.py`
-- [ ] **2.2** Extract `CrewMember` class to `src/entities/crew_member.py`
-- [ ] **2.3** Extract `StationMap` class to `src/entities/station_map.py`
-- [ ] **2.4** Refactor `main()` game loop into `src/game_loop.py`
-- [ ] **2.5** Add proper NPC pathfinding (A* instead of greedy step) - `engine.py:247-251`
+- [x] **2.1** Extract `Item` class to `src/entities/item.py`
+- [x] **2.2** Extract `CrewMember` class to `src/entities/crew_member.py`
+- [x] **2.3** Extract `StationMap` class to `src/entities/station_map.py`
+- [x] **2.4** Refactor `main()` game loop into `src/game_loop.py`
+- [x] **2.5** Add proper NPC pathfinding (A* instead of greedy step) - `src/systems/pathfinding.py`
 - [ ] **2.6** Implement "Reporting Pattern" - systems emit events instead of returning strings
 
 ---
@@ -56,7 +56,6 @@ The game uses an **event-driven, multi-agent architecture** where 8+ independent
 - [ ] **5.2** Add command history/arrow key navigation
 - [ ] **5.3** Implement auto-save on turn advance
 - [ ] **5.4** Add colorblind-friendly palette option
-- [ ] **5.5** Remove empty `src/process/` directory
 
 ---
 
