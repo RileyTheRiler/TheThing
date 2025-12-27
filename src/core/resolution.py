@@ -1,6 +1,16 @@
 import random
 import math
+from dataclasses import dataclass
 from enum import Enum
+
+
+@dataclass
+class ResolutionModifiers:
+    """Environmental modifiers that adjust roll math."""
+
+    attack_pool: int = 0
+    observation_pool: int = 0
+    stealth_detection: float = 0.0
 
 class Attribute(Enum):
     PROWESS = "Prowess"
@@ -52,12 +62,25 @@ class Skill(Enum):
 
 class ResolutionSystem:
     @staticmethod
+    def adjust_pool(base_pool: int, modifier: int) -> int:
+        """
+        Safely adjust a dice pool by an integer modifier without going negative.
+        """
+        return max(0, base_pool + modifier)
+
+    @staticmethod
     def roll_check(pool_size, rng):
+    def roll_check(pool_size, rng=None):
         """
         Executes a dice pool check.
-        Uses the provided RandomnessEngine.
+
+        If an explicit RandomnessEngine is provided it is used as the source of
+        truth for dice rolls. Otherwise a lightweight fallback roll using
+        Python's random module is performed so ad-hoc calls (e.g., from
+        CrewMember.roll_check) still function.
         Success = 6s.
         """
+<<<<<<< HEAD
         return rng.calculate_success(max(1, pool_size))
 
     @staticmethod
@@ -82,6 +105,25 @@ class ResolutionSystem:
                 final_pool += modifiers[sa]
                 
         return max(1, final_pool)
+=======
+        if rng is not None and hasattr(rng, "calculate_success"):
+            return rng.calculate_success(pool_size)
+
+        dice = [random.randint(1, 6) for _ in range(pool_size)]
+        successes = dice.count(6)
+        return {
+            "success": successes > 0,
+            "success_count": successes,
+            "dice": dice,
+        }
+
+    @staticmethod
+    def success_probability(pool_size: int) -> float:
+        """Probability of at least one success (6) in the pool."""
+        if pool_size <= 0:
+            return 0.0
+        return 1 - math.pow(5 / 6, pool_size)
+>>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
 
     def calculate_infection_risk(self, lighting_condition: str, mask_integrity: float, paranoia_level: int) -> float:
         """
@@ -120,9 +162,9 @@ class ResolutionSystem:
         
         # If power is on, we are heating UP towards 10C, or maintaining 10C.
         if power_on:
-             # Heating logic: Moves towards 15C
-             target = 15.0
-             delta = k_val * (target - current_temp)
+            # Heating logic: Moves towards 15C
+            target = 15.0
+            delta = k_val * (target - current_temp)
         else:
             # Cooling logic: Moves towards -60C
             delta = -k_val * (current_temp - ambient_exterior)

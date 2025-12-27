@@ -1,4 +1,3 @@
-import random
 from core.event_system import event_bus, EventType, GameEvent
 
 class MissionarySystem:
@@ -91,7 +90,7 @@ class MissionarySystem:
         # BIOLOGICAL SLIP HOOK
         if game_state.temperature < 0:
             slip_chance = (1.0 - (member.mask_integrity / 100.0)) * 0.5
-            if random.random() < slip_chance:
+            if game_state.rng.random_float() < slip_chance:
                 event_bus.emit(GameEvent(EventType.BIOLOGICAL_SLIP, {
                     "character_name": member.name,
                     "type": "VAPOR"

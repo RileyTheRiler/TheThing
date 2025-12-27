@@ -6,10 +6,14 @@ import time
 class EventType(Enum):
     # Core Game Events
     TURN_ADVANCE = auto()
+<<<<<<< HEAD
     CREW_DEATH = auto()
     HELICOPTER_REPAIRED = auto()
     SOS_EMITTED = auto()
     ESCAPE_SUCCESS = auto()
+=======
+    POPULATION_STATUS = auto()
+>>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
 
     # "Biological Slip" Hook (Missionary -> Terminal)
     BIOLOGICAL_SLIP = auto()
@@ -29,6 +33,10 @@ class EventType(Enum):
 
     # Sabotage
     POWER_FAILURE = auto()
+
+    # Social thresholds
+    TRUST_THRESHOLD = auto()
+    PARANOIA_THRESHOLD = auto()
 
     # === REPORTING PATTERN (Tier 2.6) ===
     # Systems emit these instead of returning strings
@@ -50,10 +58,16 @@ class EventType(Enum):
     BARRICADE_ACTION = auto() # Barricade built/broken
     STEALTH_REPORT = auto()   # Stealth encounter updates
     CRAFTING_REPORT = auto()  # Crafting queue/status updates
+    REPAIR_COMPLETE = auto()  # Helicopter repair/escape status updates
+    SOS_SENT = auto()         # Radio rescue signal/arrival
     ENDING_REPORT = auto()    # Ending triggers/results
+<<<<<<< HEAD
     INTERROGATION_RESULT = auto() # Questioning results
     ACCUSATION_RESULT = auto()    # Formal accusation results
     PERCEPTION_EVENT = auto()     # AI perception results (stealth)
+=======
+    INTERROGATION_RESULT = auto() # Interrogation dialogue/results
+>>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
 
 @dataclass
 class GameEvent:

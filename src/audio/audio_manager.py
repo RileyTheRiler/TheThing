@@ -6,12 +6,10 @@ Cross-platform audio using winsound (Windows), terminal bell, or subprocess.
 
 import threading
 import queue
-import random
 import sys
 import os
 import subprocess
 import time
-import random
 from enum import Enum
 from core.event_system import event_bus, EventType, GameEvent
 
@@ -106,6 +104,7 @@ class AudioManager:
         Sound.ALERT: 150,
     }
     
+<<<<<<< HEAD
     # Tier 6.4: Audio feedback alignment map
     EVENT_MAP = {
         # Warnings
@@ -128,9 +127,14 @@ class AudioManager:
     }
     
     def __init__(self, enabled=True):
+=======
+    def __init__(self, enabled=True, rng=None):
+>>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
         self.enabled = enabled and AUDIO_AVAILABLE
         self.muted = False
         self.volume = 1.0
+        from systems.architect import RandomnessEngine
+        self.rng = rng or RandomnessEngine()
         
         # Audio queue for async playback
         self.queue = queue.Queue()
@@ -178,7 +182,7 @@ class AudioManager:
                 if self.ambient_sound and self.ambient_running and not self.muted:
                     # Use volume to control density of ambient sound
                     # Lower volume = fewer loops play (creating gaps/sparser sound)
-                    if self.volume >= 1.0 or random.random() < self.volume:
+                    if self.volume >= 1.0 or self.rng.random() < self.volume:
                         self._play_sound(self.ambient_sound, ambient=True)
     
     def _play_sound(self, sound, ambient=False):
@@ -200,7 +204,7 @@ class AudioManager:
         if ambient:
             duration = int(duration * 0.3)  # Shorter for ambient loop
             # Simulate volume control for ambient sounds by adjusting density
-            if random.random() > self.volume:
+            if self.rng.random() > self.volume:
                 time.sleep(duration / 1000.0)
                 return
 

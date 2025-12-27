@@ -37,6 +37,11 @@ class AISystem:
         if not member.is_alive or member.is_revealed:
             return
 
+        # Passive perception hook: if an NPC spots the player, move toward them
+        if self._perceive_player(member, game_state):
+            self._pursue_player(member, game_state)
+            return
+
         # 0. PRIORITY: Lynch Mob Hunting (Agent 2)
         if game_state.lynch_mob.active_mob and game_state.lynch_mob.target:
             target = game_state.lynch_mob.target
@@ -79,8 +84,37 @@ class AISystem:
             dy = game_state.rng.choose([-1, 0, 1])
             member.move(dx, dy, game_state.station_map)
 
+    def _perceive_player(self, member: 'CrewMember', game_state: 'GameState') -> bool:
+        """Use the StealthSystem detection logic as an AI hook."""
+        stealth = getattr(game_state, "stealth_system", None)
+        player = getattr(game_state, "player", None)
+        station_map = getattr(game_state, "station_map", None)
+        if not stealth or not player or not station_map:
+            return False
+        if member == player or not player.is_alive:
+            return False
+
+        member_room = station_map.get_room_name(*member.location)
+        player_room = station_map.get_room_name(*player.location)
+        if member_room != player_room:
+            return False
+
+        noise = stealth.get_noise_level(player)
+        detected = stealth.evaluate_detection(member, player, game_state, noise_level=noise)
+        if detected and hasattr(member, "add_knowledge_tag"):
+            member.add_knowledge_tag(f"Spotted {player.name} in {player_room}")
+        return detected
+
     def _pathfind_step(self, member: 'CrewMember', target_x: int, target_y: int, station_map: 'StationMap'):
         """Simple greedy step towards target."""
         dx = 1 if target_x > member.location[0] else -1 if target_x < member.location[0] else 0
         dy = 1 if target_y > member.location[1] else -1 if target_y < member.location[1] else 0
         member.move(dx, dy, station_map)
+
+    def _pursue_player(self, member: 'CrewMember', game_state: 'GameState'):
+        """Move one step toward the player when detected via perception."""
+        player = getattr(game_state, "player", None)
+        if not player:
+            return
+        tx, ty = player.location
+        self._pathfind_step(member, tx, ty, game_state.station_map)

@@ -1,6 +1,6 @@
 from enum import Enum, auto
 from core.event_system import event_bus, EventType, GameEvent
-from core.resolution import Attribute, Skill
+from core.resolution import Attribute, Skill, ResolutionModifiers
 
 
 class RoomState(Enum):
@@ -224,6 +224,7 @@ class RoomStateManager:
         """Check if entry to a room is blocked by a barricade."""
         return self.has_state(room_name, RoomState.BARRICADED)
     
+<<<<<<< HEAD
     def get_roll_modifiers(self, room_name):
         """
         Returns a dictionary of Skill/Attribute modifiers based on room state.
@@ -248,5 +249,29 @@ class RoomStateManager:
             modifiers[Skill.REPAIR] = -2
             modifiers[Skill.MECHANICS] = -2
             modifiers[Skill.HANDLING] = -1
+=======
+    def get_communion_modifier(self, room_name):
+        return 0.4 if self.has_state(room_name, RoomState.DARK) else 0.0
+    
+    def get_paranoia_modifier(self, room_name):
+        modifier = 0
+        if self.has_state(room_name, RoomState.BLOODY): modifier += 5
+        if self.has_state(room_name, RoomState.DARK): modifier += 2
+        return modifier
+
+    def get_resolution_modifiers(self, room_name):
+        """Return modifiers that affect ResolutionSystem calculations."""
+        modifiers = ResolutionModifiers()
+        states = self.get_states(room_name)
+
+        if RoomState.DARK in states:
+            modifiers.attack_pool -= 1
+            modifiers.observation_pool -= 1
+            modifiers.stealth_detection -= 0.15  # Harder to spot someone in the dark
+
+        if RoomState.FROZEN in states:
+            modifiers.attack_pool -= 1  # Numb hands, sluggish attacks
+            modifiers.observation_pool -= 1  # Frosted visors, breath mist
+>>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
 
         return modifiers

@@ -1,4 +1,3 @@
-import random
 from enum import Enum
 from core.event_system import event_bus, EventType, GameEvent
 from systems.architect import RandomnessEngine
@@ -60,6 +59,10 @@ class WeatherSystem:
     def on_turn_advance(self, event: GameEvent):
         """Subscriber for TURN_ADVANCE event."""
         rng = event.payload.get("rng")
+        turn_inventory = event.payload.get("turn_inventory", {})
+        if isinstance(turn_inventory, dict):
+            turn_inventory["weather"] = turn_inventory.get("weather", 0) + 1
+
         if not rng:
             return
             

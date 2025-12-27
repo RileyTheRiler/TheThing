@@ -1,8 +1,56 @@
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
+
 from core.event_system import event_bus, EventType, GameEvent
 
-__all__ = ['TrustMatrix', 'LynchMobSystem', 'DialogueManager']
+__all__ = ['TrustMatrix', 'LynchMobSystem', 'DialogueManager', 'SocialThresholds', 'bucket_for_thresholds', 'bucket_label']
+
+
+def bucket_for_thresholds(value: float, thresholds: List[int]) -> int:
+    """Return the bucket index for a value given sorted thresholds."""
+    for idx, threshold in enumerate(sorted(thresholds)):
+        if value < threshold:
+            return idx
+    return len(thresholds)
+
+
+def bucket_label(bucket_index: int) -> str:
+    """
+    Human-friendly label for a threshold bucket.
+
+    More labels are provided than typical thresholds; if we exceed the defaults,
+    fall back to a generic label.
+    """
+    labels = ["critical", "wary", "guarded", "steady", "trusted", "bonded"]
+    if bucket_index < len(labels):
+        return labels[bucket_index]
+    return f"zone-{bucket_index}"
+
+
+@dataclass
+class SocialThresholds:
+    trust_thresholds: List[int] = field(default_factory=lambda: [25, 50, 75])
+    paranoia_thresholds: List[int] = field(default_factory=lambda: [25, 60, 85])
+    lynch_average_threshold: int = 20
+    lynch_paranoia_trigger: int = 50
+
+    def __post_init__(self):
+        self.trust_thresholds = self._normalize(self.trust_thresholds)
+        self.paranoia_thresholds = self._normalize(self.paranoia_thresholds)
+        self.lynch_average_threshold = self._clamp(self.lynch_average_threshold)
+        self.lynch_paranoia_trigger = self._clamp(self.lynch_paranoia_trigger)
+
+    @staticmethod
+    def _normalize(values: List[int]) -> List[int]:
+        unique_sorted = sorted({SocialThresholds._clamp(v) for v in values})
+        return unique_sorted
+
+    @staticmethod
+    def _clamp(value: int) -> int:
+        return max(0, min(100, int(value)))
 
 class TrustMatrix:
+<<<<<<< HEAD
     # Threshold Constants
     LYNCH_THRESHOLD = 20
     HOSTILE_THRESHOLD = 40
@@ -16,7 +64,24 @@ class TrustMatrix:
         # Track previous average trust to detect threshold crossings
         self.prev_avg_trust = {m.name: 50.0 for m in crew}
         
+=======
+    def __init__(self, crew, thresholds: Optional[SocialThresholds] = None):
+        # Dictionary of dictionaries: self.matrix[observer][subject] = trust_value
+        # Default trust is 50
+        self.matrix = {m.name: {other.name: 50 for other in crew} for m in crew}
+        self.thresholds = thresholds or SocialThresholds()
+>>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
         self._set_initial_biases()
+        self._trust_buckets: Dict[str, Dict[str, int]] = {
+            observer: {subject: bucket_for_thresholds(value, self.thresholds.trust_thresholds)
+                       for subject, value in subjects.items()}
+            for observer, subjects in self.matrix.items()
+        }
+        self._average_values: Dict[str, float] = {m.name: self.get_average_trust(m.name) for m in crew}
+        self._average_buckets: Dict[str, int] = {
+            name: bucket_for_thresholds(avg, self.thresholds.trust_thresholds)
+            for name, avg in self._average_values.items()
+        }
         
         # Subscribe to events
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
@@ -48,9 +113,15 @@ class TrustMatrix:
 
     def update_trust(self, observer_name, subject_name, amount):
         """Adjusts trust based on witnessed events."""
+        self.modify_trust(observer_name, subject_name, amount)
+
+    def modify_trust(self, observer_name, subject_name, amount):
+        """Adjusts trust and emits threshold events when buckets change."""
         if observer_name in self.matrix and subject_name in self.matrix[observer_name]:
             current = self.matrix[observer_name][subject_name]
-            self.matrix[observer_name][subject_name] = max(0, min(100, current + amount))
+            new_value = max(0, min(100, current + amount))
+            self.matrix[observer_name][subject_name] = new_value
+            self._maybe_emit_trust_threshold(observer_name, subject_name, current, new_value)
 
     def get_trust(self, observer_name, subject_name):
         """Returns the trust score observer has for subject."""
@@ -69,6 +140,7 @@ class TrustMatrix:
                     count += 1
         return total / count if count > 0 else 50.0
 
+<<<<<<< HEAD
     def check_for_lynch_mob(self, crew, game_state=None):
         """If global trust in a human falls below LYNCH_THRESHOLD, they are targeted."""
         for member in crew:
@@ -103,12 +175,78 @@ class TrustMatrix:
 
                 # 2. Lynch threshold check
                 if avg < self.LYNCH_THRESHOLD:
+=======
+    def rebuild_buckets(self):
+        """Recalculate bucket caches after bulk trust updates (e.g., save hydration)."""
+        self._trust_buckets = {
+            observer: {subject: bucket_for_thresholds(value, self.thresholds.trust_thresholds)
+                       for subject, value in subjects.items()}
+            for observer, subjects in self.matrix.items()
+        }
+        self._average_values = {observer: self.get_average_trust(observer) for observer in self.matrix}
+        self._average_buckets = {
+            name: bucket_for_thresholds(avg, self.thresholds.trust_thresholds)
+            for name, avg in self._average_values.items()
+        }
+
+    def _maybe_emit_trust_threshold(self, observer_name: str, subject_name: str, previous_value: float, new_value: float):
+        previous_bucket = self._trust_buckets.get(observer_name, {}).get(
+            subject_name, bucket_for_thresholds(previous_value, self.thresholds.trust_thresholds)
+        )
+        new_bucket = bucket_for_thresholds(new_value, self.thresholds.trust_thresholds)
+
+        if new_bucket != previous_bucket:
+            self._trust_buckets.setdefault(observer_name, {})[subject_name] = new_bucket
+            direction = "up" if new_value > previous_value else "down"
+            event_bus.emit(GameEvent(EventType.TRUST_THRESHOLD, {
+                "scope": "pair",
+                "observer": observer_name,
+                "subject": subject_name,
+                "value": new_value,
+                "previous_value": previous_value,
+                "bucket": bucket_label(new_bucket),
+                "thresholds": list(self.thresholds.trust_thresholds),
+                "direction": direction
+            }))
+
+    def _track_average_threshold(self, member_name: str, average_value: float):
+        previous_value = self._average_values.get(member_name, average_value)
+        previous_bucket = self._average_buckets.get(
+            member_name, bucket_for_thresholds(previous_value, self.thresholds.trust_thresholds)
+        )
+        new_bucket = bucket_for_thresholds(average_value, self.thresholds.trust_thresholds)
+
+        self._average_values[member_name] = average_value
+        if new_bucket != previous_bucket:
+            self._average_buckets[member_name] = new_bucket
+            direction = "up" if average_value > previous_value else "down"
+            event_bus.emit(GameEvent(EventType.TRUST_THRESHOLD, {
+                "scope": "average",
+                "subject": member_name,
+                "value": average_value,
+                "previous_value": previous_value,
+                "bucket": bucket_label(new_bucket),
+                "thresholds": list(self.thresholds.trust_thresholds),
+                "direction": direction
+            }))
+
+    def check_for_lynch_mob(self, crew, game_state=None, lynch_threshold: Optional[int] = None):
+        """If global trust in a human falls below the configured threshold, they are targeted."""
+        threshold = self.thresholds.lynch_average_threshold if lynch_threshold is None else lynch_threshold
+        for member in crew:
+            if member.is_alive:
+                avg = self.get_average_trust(member.name)
+                self._track_average_threshold(member.name, avg)
+                # Lynch threshold
+                if avg < threshold:
+>>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
                     # Emit LYNCH_MOB_TRIGGER event
                     if game_state:
                         event_bus.emit(GameEvent(EventType.LYNCH_MOB_TRIGGER, {
                             "target": member.name,
                             "location": member.location,
-                            "average_trust": avg
+                            "average_trust": avg,
+                            "threshold": threshold
                         }))
                     return member 
         return None
@@ -150,11 +288,45 @@ event_bus.subscribe(EventType.EVIDENCE_TAGGED, on_evidence_tagged)
 
 
 class LynchMobSystem:
-    def __init__(self, trust_system):
+    def __init__(self, trust_system, thresholds: Optional[SocialThresholds] = None):
         self.trust_system = trust_system
+        self.thresholds = thresholds or SocialThresholds()
         self.active_mob = False
         self.target = None
         
+    def check_thresholds(self, crew, current_paranoia: Optional[int] = None):
+        """
+        Check if any crew member has fallen below the configured lynch threshold.
+        Returns the target if a mob forms.
+        """
+        paranoia_blocked = (
+            current_paranoia is not None
+            and current_paranoia < self.thresholds.lynch_paranoia_trigger
+        )
+
+        if paranoia_blocked:
+            return None
+
+        # If mob is already active, check if target is still valid (alive)
+        if self.active_mob:
+            if self.target and not self.target.is_alive:
+                self.disband_mob()
+            elif self.target:
+                # Emit update for dynamic tracking
+                event_bus.emit(GameEvent(EventType.LYNCH_MOB_UPDATE, {
+                    "target": self.target.name,
+                    "location": self.target.location
+                }))
+            return None
+
+        # Check for new targets
+        potential_target = self.trust_system.check_for_lynch_mob(
+            crew, lynch_threshold=self.thresholds.lynch_average_threshold
+        )
+        if potential_target:
+            self.form_mob(potential_target)
+            return potential_target
+        return None
         event_bus.subscribe(EventType.LYNCH_MOB_TRIGGER, self.on_lynch_mob_trigger)
 
     def cleanup(self):
@@ -182,6 +354,13 @@ class LynchMobSystem:
     def form_mob(self, target):
         # Logic moved to on_lynch_mob_trigger mostly, but this might be called by Accuse command
         self.active_mob = True
+        self.target = target
+        avg_trust = self.trust_system.get_average_trust(target.name)
+        event_bus.emit(GameEvent(EventType.LYNCH_MOB_TRIGGER, {
+            "target": target.name,
+            "location": target.location, # Will be updated dynamically
+            "average_trust": avg_trust,
+            "threshold": self.thresholds.lynch_average_threshold
         self.target = target # Object
         event_bus.emit(GameEvent(EventType.LYNCH_MOB_TRIGGER, {
             "target": target.name,

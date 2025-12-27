@@ -4,6 +4,10 @@
         "hook": "stealth",
         "summary": "Hiding and evasion let the player survive encounters with revealed or suspicious crew by using darkness, cover, and timing instead of open conflict.",
         "base_detection_chance": 0.35,
+        "base_detection_pool": 1,
+        "darkness_modifier": 0.5,
+        "lights_off_modifier": 0.6,
+        "noise_step": 0.25,
         "cooldown_turns": 2,
         "signals": [
             "TURN_ADVANCE",
@@ -43,6 +47,7 @@
         "event_type": "ENDING_REPORT",
         "hook": "endgame",
         "summary": "Multiple endings should surface through events so UI layers can react without being coupled to win/lose checks.",
+<<<<<<< HEAD
         "states": {
             "ESCAPE": {
                 "name": "Helicopter Escape",
@@ -75,5 +80,36 @@
                 "message": "MacReady is dead. The Thing spreads unchecked across the ice."
             }
         }
+=======
+        "endings": [
+            {
+                "id": "helicopter_escape",
+                "result": "win",
+                "trigger": "repair_complete",
+                "status": "ESCAPED",
+                "message": "You pilot the chopper through the storm, leaving the nightmare of Outpost 31 behind."
+            },
+            {
+                "id": "radio_rescue",
+                "result": "win",
+                "trigger": "sos_sent",
+                "arrived": true,
+                "message": "Lights cut through the storm. The rescue team has arrived to extract you."
+            },
+            {
+                "id": "sole_survivor",
+                "result": "win",
+                "trigger": "population_status",
+                "message": "Silence falls over the station. You are the only one left alive. The threat is gone... you hope."
+            }
+        ],
+        "states": [
+            "ESCAPE",
+            "RESCUE",
+            "EXTERMINATION",
+            "SOLE_SURVIVOR",
+            "CONSUMPTION"
+        ]
+>>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
     }
 }

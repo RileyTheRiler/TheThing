@@ -45,6 +45,7 @@ class SabotageManager:
     
     def on_turn_advance(self, event: GameEvent):
         """Subscriber for TURN_ADVANCE event."""
+<<<<<<< HEAD
         game_state = event.payload.get("game_state")
         if game_state:
             # Update Rescue Timer
@@ -55,6 +56,11 @@ class SabotageManager:
                 elif game_state.rescue_turns_remaining == 1:
                     game_state.reporter.report_event("RADIO", "Rescue team landing imminent!", priority=True)
         
+=======
+        turn_inventory = event.payload.get("turn_inventory", {})
+        if isinstance(turn_inventory, dict):
+            turn_inventory["sabotage"] = turn_inventory.get("sabotage", 0) + 1
+>>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
         self.tick()
 
     def can_trigger(self, event):

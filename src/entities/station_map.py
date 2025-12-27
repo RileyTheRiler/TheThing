@@ -108,6 +108,7 @@ class StationMap:
 
     @classmethod
     def from_dict(cls, data):
+<<<<<<< HEAD
         """Deserialize station map from dictionary with defensive defaults."""
         if not data or not isinstance(data, dict):
             # Fallback to default map if data is missing/corrupt
@@ -126,4 +127,14 @@ class StationMap:
                 item = Item.from_dict(i_data)
                 if item:
                     sm.room_items[room].append(item)
+=======
+        """Deserialize station map from dictionary."""
+        if not isinstance(data, dict):
+            raise ValueError("Station map data must be a dictionary.")
+
+        sm = cls(data.get("width", 20), data.get("height", 20))
+        items_dict = data.get("room_items", {}) if isinstance(data.get("room_items", {}), dict) else {}
+        for room, items_data in items_dict.items():
+            sm.room_items[room] = [Item.from_dict(i) for i in items_data if i]
+>>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
         return sm
