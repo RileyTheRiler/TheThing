@@ -114,6 +114,7 @@ class CrewMember:
         self.forbidden_rooms = [] # Hydrated from JSON
         self.stress = 0
         self.inventory = []
+        self.knowledge_tags = [] # Agent 3: Mimicry Data
         self.health = 3 # Base health
         self.mask_integrity = 100.0 # Agent 3: Mask Tracking
         self.is_revealed = False    # Agent 3: Violent Reveal
@@ -264,6 +265,11 @@ class CrewMember:
         else:
             base_dialogue = f"I'm {self.behavior_type}."
         
+        # Advanced Mimicry: Use Knowledge Tags
+        if self.is_infected and self.knowledge_tags and rng.random_float() < 0.4:
+            tag = rng.choose(self.knowledge_tags) if hasattr(rng, 'choose') else random.choice(self.knowledge_tags)
+            base_dialogue += f" I remember {tag}."
+
         if game_state.time_system.temperature < 0:
             show_vapor = True
             # BIOLOGICAL SLIP HOOK
@@ -292,6 +298,7 @@ class CrewMember:
             "attributes": {k.name: v for k, v in self.attributes.items()},
             "skills": {k.name: v for k, v in self.skills.items()},
             "inventory": [i.to_dict() for i in self.inventory],
+            "knowledge_tags": self.knowledge_tags,
             "schedule": self.schedule,
             "invariants": self.invariants
         }
@@ -318,6 +325,7 @@ class CrewMember:
         m.is_revealed = data.get("is_revealed", False)
         m.schedule = data.get("schedule", [])
         m.invariants = data.get("invariants", [])
+        m.knowledge_tags = data.get("knowledge_tags", [])
         m.inventory = [Item.from_dict(i) for i in data.get("inventory", [])]
         return m
 
