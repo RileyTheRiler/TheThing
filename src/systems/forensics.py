@@ -1,6 +1,6 @@
 import random
 import time
-from src.core.event_system import event_bus, EventType, GameEvent
+from core.event_system import event_bus, EventType, GameEvent
 
 class BiologicalSlipGenerator:
     """
@@ -171,7 +171,10 @@ class BloodTestSim:
         if not self.active:
             return "No test in progress."
             
-        if self.wire_temp < self.target_temp:
+        # Fix logic: Use 90 as threshold since heat_wire considers 90 as READY
+        threshold = 90 if hasattr(self, 'state') and self.state == "READY" else self.target_temp
+
+        if self.wire_temp < threshold:
             return f"Wire not hot enough ({self.wire_temp}C). It just feels warm."
             
         self.active = False # End test after application

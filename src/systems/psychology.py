@@ -1,5 +1,5 @@
-from src.core.resolution import Attribute
-from src.core.event_system import event_bus, EventType, GameEvent
+from core.resolution import Attribute
+from core.event_system import event_bus, EventType, GameEvent
 
 class PsychologySystem:
     MAX_STRESS = 10
@@ -7,6 +7,9 @@ class PsychologySystem:
     def __init__(self):
         # Register for turn advance
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+
+    def cleanup(self):
+        event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
 
     def update(self, game_state):
         """

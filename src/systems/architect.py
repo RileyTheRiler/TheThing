@@ -144,6 +144,7 @@ class TimeSystem:
         self.temperature = start_temp
         self.points_per_turn = 1
         self.turn_count = 0
+        self.hour = 19 # Start at 7 PM
 
     @property
     def hour(self):
@@ -173,6 +174,7 @@ class TimeSystem:
     def tick(self):
         """Advance time by one turn."""
         self.turn_count += 1
+        self.hour = (self.hour + 1) % 24
 
     @property
     def hour(self):
@@ -214,11 +216,13 @@ class TimeSystem:
     def to_dict(self):
         return {
             "temperature": self.temperature,
-            "turn_count": self.turn_count
+            "turn_count": self.turn_count,
+            "hour": self.hour
         }
 
     @classmethod
     def from_dict(cls, data):
         ts = cls(data.get("temperature", -40))
         ts.turn_count = data.get("turn_count", 0)
+        ts.hour = data.get("hour", 19)
         return ts

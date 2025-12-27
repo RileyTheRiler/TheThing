@@ -24,6 +24,9 @@ class MissionarySystem:
         # Register for turn advance
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
 
+    def cleanup(self):
+        event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+
     def on_turn_advance(self, event: GameEvent):
         """
         Triggered when turn advances.

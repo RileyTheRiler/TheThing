@@ -12,6 +12,9 @@ class TrustMatrix:
         # Subscribe to events
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
 
+    def cleanup(self):
+        event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+
     def _set_initial_biases(self):
         # Hierarchical Distrust
         # Check if keys exist before setting to avoid key errors if partial crew

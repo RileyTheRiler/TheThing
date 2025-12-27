@@ -2,6 +2,7 @@ from systems.missionary import MissionarySystem
 from systems.psychology import PsychologySystem
 from core.resolution import Attribute, Skill, ResolutionSystem
 from systems.social import TrustMatrix, LynchMobSystem, DialogueManager
+from systems.architect import RandomnessEngine, GameMode, TimeSystem
 from systems.architect import RandomnessEngine, GameMode, TimeSystem, Difficulty, DifficultySettings
 from systems.persistence import SaveManager
 from core.event_system import event_bus, EventType, GameEvent
@@ -10,6 +11,11 @@ from core.event_system import event_bus, EventType, GameEvent
 from systems.weather import WeatherSystem
 from systems.sabotage import SabotageManager
 from systems.room_state import RoomStateManager, RoomState
+
+# Agent 8: AI System
+from systems.ai import AISystem
+
+# Agent 4: Forensics
 from systems.random_events import RandomEventSystem
 
 # Agent 4: Forensics
@@ -20,6 +26,8 @@ from systems.forensics import BiologicalSlipGenerator, BloodTestSim, ForensicDat
 from ui.renderer import TerminalRenderer
 from ui.crt_effects import CRTOutput
 from ui.command_parser import CommandParser
+from audio.audio_manager import AudioManager, Sound
+from systems.commands import CommandDispatcher, GameContext
 from ui.message_reporter import MessageReporter
 from audio.audio_manager import AudioManager, Sound
 
@@ -202,62 +210,6 @@ class CrewMember:
         desc.append(f"State: {state.capitalize()}.")
         
         return " ".join(desc)
-
-    def update_ai(self, game_state):
-        """
-        Agent 2/8: NPC AI Logic.
-        Priority: Lynch Mob > Schedule > Wander
-        """
-        if not self.is_alive or self.is_revealed:
-            return
-
-        # 0. PRIORITY: Lynch Mob Hunting (Agent 2)
-        if game_state.lynch_mob.active_mob and game_state.lynch_mob.target:
-            target = game_state.lynch_mob.target
-            if target != self and target.is_alive:
-                # Move toward the lynch target
-                tx, ty = target.location
-                self._pathfind_step(tx, ty, game_state.station_map)
-                return
-
-        # 1. Check Schedule
-        # Schedule entries: {"start": 8, "end": 20, "room": "Rec Room"}
-        current_hour = game_state.time_system.hour
-        destination = None
-        for entry in self.schedule:
-            start = entry.get("start", 0)
-            end = entry.get("end", 24)
-            room = entry.get("room")
-            
-            # Handle wrap-around schedules (e.g., 20:00 to 08:00)
-            if start < end:
-                if start <= current_hour < end:
-                    destination = room
-                    break
-            else: # Wrap around midnight
-                if current_hour >= start or current_hour < end:
-                    destination = room
-                    break
-        
-        if destination:
-            # Move towards destination room
-            target_pos = game_state.station_map.rooms.get(destination)
-            if target_pos:
-                tx, ty, _, _ = target_pos
-                self._pathfind_step(tx, ty, game_state.station_map)
-                return
-
-        # 2. Idling / Wandering
-        if game_state.rng.random_float() < 0.3:
-            dx = game_state.rng.choose([-1, 0, 1])
-            dy = game_state.rng.choose([-1, 0, 1])
-            self.move(dx, dy, game_state.station_map)
-
-    def _pathfind_step(self, target_x, target_y, station_map):
-        """Simple greedy step towards target."""
-        dx = 1 if target_x > self.location[0] else -1 if target_x < self.location[0] else 0
-        dy = 1 if target_y > self.location[1] else -1 if target_y < self.location[1] else 0
-        self.move(dx, dy, station_map)
 
     def get_dialogue(self, game_state):
         rng = game_state.rng
@@ -464,12 +416,15 @@ class GameState:
         self.crt = CRTOutput(palette="amber", crawl_speed=0.015)
         self.parser = CommandParser(known_names=[m.name for m in self.crew])
         self.audio = AudioManager(enabled=True)
+        self.command_dispatcher = CommandDispatcher()
         self.reporter = MessageReporter(self.crt)  # Tier 2.6: Event-based reporting
         
         # Agent 6: DM Systems (Now Event-Driven)
         self.weather = WeatherSystem()
         self.sabotage = SabotageManager()
         self.room_states = RoomStateManager(list(self.station_map.rooms.keys()))
+        
+        self.ai_system = AISystem()
         self.random_events = RandomEventSystem(self.rng)  # Tier 6.2
 
         # Integration helper
@@ -512,6 +467,27 @@ class GameState:
                     if m.location != target_member.location:
                         m.location = target_member.location
                         print(f"[SOCIAL] {m.name} pursues {target_name} to {target_member.location}.")
+
+    def cleanup(self):
+        """Unsubscribe from event bus to prevent leaks."""
+        event_bus.unsubscribe(EventType.BIOLOGICAL_SLIP, self.on_biological_slip)
+        event_bus.unsubscribe(EventType.LYNCH_MOB_TRIGGER, self.on_lynch_mob_trigger)
+
+        # Cleanup subsystems if they have cleanup
+        if hasattr(self.weather, 'cleanup'): self.weather.cleanup()
+        if hasattr(self.sabotage, 'cleanup'): self.sabotage.cleanup()
+        if hasattr(self.room_states, 'cleanup'): self.room_states.cleanup()
+        if hasattr(self.lynch_mob, 'cleanup'): self.lynch_mob.cleanup()
+        if hasattr(self.trust_system, 'cleanup'): self.trust_system.cleanup()
+        if hasattr(self.missionary_system, 'cleanup'): self.missionary_system.cleanup()
+        if hasattr(self.psychology_system, 'cleanup'): self.psychology_system.cleanup()
+
+        # Note: ai_system, dialogue_manager, forensics usually don't subscribe?
+        # Check specific systems.
+        # forensics (BloodTestSim) doesn't subscribe.
+        # TrustMatrix subscribes.
+        # LynchMobSystem does not subscribe (it checks in advance_turn? No, it emits).
+        # WeatherSystem subscribes.
 
     @property
     def temperature(self):
@@ -629,9 +605,7 @@ class GameState:
             pass
         
         # 5. NPC AI Update
-        for member in self.crew:
-            if member != self.player:
-                member.update_ai(self)
+        self.ai_system.update(self)
 
         # 6. Random Events Check (Tier 6.2)
         random_event = self.random_events.check_for_event(self)
@@ -888,13 +862,15 @@ class GameState:
 # --- Game Loop ---
 def main():
     """Main game loop - can be called from launcher or run directly"""
-    game = GameState(seed=None)
+    game_state = GameState(seed=None)
+    context = GameContext(game=game_state)
     
     # Agent 5 Boot Sequence
-    game.crt.boot_sequence()
-    game.audio.ambient_loop(Sound.THRUM)
+    context.game.crt.boot_sequence()
+    context.game.audio.ambient_loop(Sound.THRUM)
 
     while True:
+        game = context.game
         # Update CRT glitch based on paranoia
         game.crt.set_glitch_level(game.paranoia_level)
         
@@ -948,6 +924,10 @@ def main():
             
         action = cmd[0]
         
+        args = cmd[1:]
+        # Try to dispatch using Command System first
+        if not game.command_dispatcher.dispatch(action, args, context):
+             print("Unknown command. Try: MOVE, LOOK, GET, DROP, INV, TAG, TEST, ATTACK, STATUS, SAVE, LOAD, EXIT, TALK, BARRICADE, JOURNAL, CHECK")
         if action == "EXIT":
             break
         elif action == "ADVANCE":
