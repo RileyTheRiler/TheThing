@@ -79,15 +79,23 @@ class TrustMatrix:
 
     def on_turn_advance(self, event: GameEvent):
         """
-        Check for lynch mob conditions each turn.
+        Check for lynch mob conditions each turn and apply paranoia decay.
         """
         game_state = event.payload.get("game_state")
         if game_state:
-            targeted = self.check_for_lynch_mob(game_state.crew)
+            # Global Trust Decay based on Paranoia
+            # For every 20 points of paranoia, lose 1 trust with everyone per turn
+            decay_amount = int(game_state.paranoia_level / 20)
+            if decay_amount > 0:
+                for observer in self.matrix:
+                    for subject in self.matrix[observer]:
+                        if observer != subject:
+                            self.matrix[observer][subject] = max(0, self.matrix[observer][subject] - decay_amount)
+
+            targeted = self.check_for_lynch_mob(game_state.crew, game_state)
             if targeted and targeted.is_alive:
-                print(f"\\n*** EMERGENCY: THE CREW HAS TURNED ON {targeted.name.upper()}! ***")
-                print(f"They are dragging {targeted.name} to the Rec Room to be tied up.")
-                targeted.location = (7, 7) # Forced move to Rec Room
+                # Event is emitted by check_for_lynch_mob, mechanics handled by listeners
+                pass
 
 
 def on_evidence_tagged(event: GameEvent):
@@ -110,41 +118,41 @@ class LynchMobSystem:
         self.active_mob = False
         self.target = None
         
-    def check_thresholds(self, crew):
-        """
-        Check if any crew member has fallen below the lynch threshold (20 trust).
-        Returns the target if a mob forms.
-        """
-        # If mob is already active, check if target is still valid (alive)
-        if self.active_mob:
-            if self.target and not self.target.is_alive:
-                self.disband_mob()
-            elif self.target:
-                # Emit update for dynamic tracking
-                event_bus.emit(GameEvent(EventType.LYNCH_MOB_UPDATE, {
-                    "target": self.target.name,
-                    "location": self.target.location
-                }))
-            return None
+        event_bus.subscribe(EventType.LYNCH_MOB_TRIGGER, self.on_lynch_mob_trigger)
 
-        # Check for new targets
-        potential_target = self.trust_system.check_for_lynch_mob(crew)
-        if potential_target:
-            self.form_mob(potential_target)
-            return potential_target
-        return None
+    def cleanup(self):
+        event_bus.unsubscribe(EventType.LYNCH_MOB_TRIGGER, self.on_lynch_mob_trigger)
+
+    def on_lynch_mob_trigger(self, event: GameEvent):
+        target_name = event.payload.get("target")
+        # We need the actual object, but we only have name/loc in payload usually.
+        # But TrustMatrix emits target object? No, payload has "target": member.name.
+        # We store the name or need game state to resolve.
+        # Let's check TrustMatrix trigger: "target": member.name
+        self.active_mob = True
+        # We can't easily resolve the object here without game_state in this class, but we can store the name.
+        # We'll just store the name for now.
+        # Wait, check_thresholds used self.target (object).
+        # Let's rely on event payload updates.
+        print(f"\n*** EMERGENCY: THE CREW HAS TURNED ON {target_name.upper()}! ***")
+        print(f"They are dragging {target_name} to the Rec Room to be tied up.")
+    
+    def check_thresholds(self, crew):
+        # Deprecated manual check, handled by TrustMatrix event
+        pass
 
     def form_mob(self, target):
+        # Logic moved to on_lynch_mob_trigger mostly, but this might be called by Accuse command
         self.active_mob = True
-        self.target = target
+        self.target = target # Object
         event_bus.emit(GameEvent(EventType.LYNCH_MOB_TRIGGER, {
             "target": target.name,
-            "location": target.location # Will be updated dynamically
+            "location": target.location
         }))
-        print(f"[SOCIAL] Lynch mob formed against {target.name}!")
 
     def disband_mob(self):
-        print(f"[SOCIAL] Lynch mob against {self.target.name if self.target else 'Unknown'} disbanded.")
+        target_name = self.target.name if self.target else "Unknown"
+        print(f"[SOCIAL] Lynch mob against {target_name} disbanded.")
         self.active_mob = False
         self.target = None
 

@@ -4,14 +4,14 @@ Imports follow the project-level absolute pattern (`from core...`) so modules st
 importable without sys.path tweaks or `src.` prefixes.
 """
 
-import base64
-import json
-import pickle
 import random
-from enum import Enum
-
-from core.event_system import EventType, GameEvent, event_bus
+<<<<<<< HEAD
+import json
+from core.event_system import event_bus, EventType, GameEvent
 from core.resolution import ResolutionSystem
+=======
+from enum import Enum
+>>>>>>> 8955dd991f45dd39cbbdb368c0ddf168d7372a50
 
 
 class Difficulty(Enum):
@@ -149,12 +149,34 @@ class TimeSystem:
         self.temperature = start_temp
         self.points_per_turn = 1
         self.turn_count = 0
-        self.start_hour = start_hour  # Start at 7 PM by default
+<<<<<<< HEAD
+        
+        # Subscribe to Turn Advance
+        event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+
+    def cleanup(self):
+        event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+
+    def on_turn_advance(self, event: GameEvent):
+        """Handle turn advance event."""
+        self.tick()
+        game_state = event.payload.get("game_state")
+        power_on = game_state.power_on if game_state else True
+        self.update_environment(power_on)
 
     @property
     def hour(self):
-        """Calculate the in-game hour (0-23) based on turns elapsed."""
+        # Start at 19:00 (7 PM), 1 turn = 1 hour
+        return (19 + self.turn_count) % 24
+=======
+        self.start_hour = start_hour
+>>>>>>> 8955dd991f45dd39cbbdb368c0ddf168d7372a50
+
+    @property
+    def hour(self):
+        """Current in-game hour (0-23)."""
         return (self.start_hour + self.turn_count) % 24
+        self.start_hour = start_hour  # Start at 7 PM by default
         self._start_hour = start_hour
         self._hour = start_hour
 
@@ -173,6 +195,7 @@ class TimeSystem:
         self.turn_count += 1
 
         self._hour = (self._start_hour + self.turn_count) % 24
+
     def update_environment(self, power_on):
         """
         Updates environmental factors based on power state.
@@ -188,7 +211,7 @@ class TimeSystem:
             if self.temperature < 20:
                 temp_change = 2
                 self.temperature += temp_change
-                
+
         return temp_change, self.temperature
 
     def to_dict(self):
@@ -200,6 +223,11 @@ class TimeSystem:
 
     @classmethod
     def from_dict(cls, data):
+        turn_count = data.get("turn_count", 0)
+        saved_hour = data.get("hour", 19)
+        start_hour = (saved_hour - turn_count) % 24
+        ts = cls(data.get("temperature", -40), start_hour)
+        ts.turn_count = turn_count
         temp = data.get("temperature", -40)
         turn_count = data.get("turn_count", 0)
         saved_hour = data.get("hour", 19)
@@ -209,8 +237,6 @@ class TimeSystem:
 
         ts = cls(temp, start_hour=start_hour)
         ts.turn_count = turn_count
-        ts = cls(data.get("temperature", -40), start_hour=data.get("hour", 19))
-        ts.turn_count = data.get("turn_count", 0)
         # Recompute hour from stored value to keep normalization consistent.
-        ts.hour = data.get("hour", ts._start_hour)
+        ts.hour = saved_hour
         return ts

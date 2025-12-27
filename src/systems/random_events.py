@@ -52,6 +52,18 @@ class RandomEventSystem:
         self.events = self._define_events()
         self.event_history = []  # List of (turn, event_id)
         self.cooldowns = {}  # event_id -> turns until available
+        
+        event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+
+    def cleanup(self):
+        event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+
+    def on_turn_advance(self, event):
+        game_state = event.payload.get("game_state")
+        if game_state:
+            res_event = self.check_for_event(game_state)
+            if res_event:
+                self.execute_event(res_event, game_state)
 
     def _define_events(self) -> List[RandomEvent]:
         """Define all possible random events."""
