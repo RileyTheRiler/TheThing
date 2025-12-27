@@ -214,7 +214,8 @@ class CrewMember:
 
         # 1. Check Schedule
         # Schedule entries: {"start": 8, "end": 20, "room": "Rec Room"}
-        current_hour = game_state.time_system.hour
+        # Fix: TimeSystem lacks 'hour' property, calculate manually (Start 08:00)
+        current_hour = (game_state.time_system.turn_count + 8) % 24
         destination = None
         for entry in self.schedule:
             start = entry.get("start", 0)
@@ -625,7 +626,9 @@ def main():
         weather_status = game.weather.get_status()
         room_icons = game.room_states.get_status_icons(player_room)
         
-        game.crt.output(f"\n[TURN {game.turn}] MODE: {game.mode.value} | TIME: {game.time_system.hour:02}:00 | TEMP: {game.temperature:.1f}C | POWER: {'ON' if game.power_on else 'OFF'}")
+        # Fix: TimeSystem lacks 'hour' property, calculate manually (Start 08:00)
+        current_hour = (game.time_system.turn_count + 8) % 24
+        game.crt.output(f"\n[TURN {game.turn}] MODE: {game.mode.value} | TIME: {current_hour:02}:00 | TEMP: {game.temperature:.1f}C | POWER: {'ON' if game.power_on else 'OFF'}")
         game.crt.output(f"[LOC: {player_room}] {room_icons}")
         game.crt.output(f"[{weather_status}]")
         
