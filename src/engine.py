@@ -654,15 +654,19 @@ def main():
             # Use CommandParser
             parsed = game.parser.parse(user_input)
             if not parsed:
-                # Fallback to legacy
-                cmd = user_input.upper().split()
-            else:
-                action = parsed['action']
-                target = parsed.get('target')
-                cmd = [action]
-                if target: cmd.append(target)
-                if parsed.get('args'):
-                    cmd.extend(parsed['args'])
+                suggestion = game.parser.suggest_correction(user_input)
+                if suggestion:
+                    print(f"Unknown command. {suggestion}")
+                else:
+                    print("I don't understand that command.")
+                continue
+
+            action = parsed['action']
+            target = parsed.get('target')
+            cmd = [action]
+            if target: cmd.append(target)
+            if parsed.get('args'):
+                cmd.extend(parsed['args'])
                 
             game.audio.trigger_event('success')
         except EOFError:
