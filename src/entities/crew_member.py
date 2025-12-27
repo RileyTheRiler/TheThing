@@ -338,26 +338,46 @@ class CrewMember:
     @classmethod
     def from_dict(cls, data):
         """Deserialize crew member from dictionary."""
-        attrs = {Attribute[k]: v for k, v in data.get("attributes", {}).items()}
-        skills = {Skill[k]: v for k, v in data.get("skills", {}).items()}
+        if not isinstance(data, dict):
+            raise ValueError("Crew member data must be a dictionary.")
+
+        name = data.get("name")
+        role = data.get("role")
+        behavior_type = data.get("behavior_type")
+        if not all([name, role, behavior_type]):
+            raise ValueError("Crew member data missing required fields 'name', 'role', or 'behavior_type'.")
+
+        attrs = {}
+        for key, value in data.get("attributes", {}).items():
+            try:
+                attrs[Attribute[key]] = value
+            except KeyError:
+                continue
+
+        skills = {}
+        for key, value in data.get("skills", {}).items():
+            try:
+                skills[Skill[key]] = value
+            except KeyError:
+                continue
 
         m = cls(
-            name=data["name"],
-            role=data["role"],
-            behavior_type=data["behavior_type"],
+            name=name,
+            role=role,
+            behavior_type=behavior_type,
             attributes=attrs,
             skills=skills
         )
-        m.is_infected = data["is_infected"]
-        m.trust_score = data["trust_score"]
-        m.location = tuple(data["location"])
-        m.is_alive = data["is_alive"]
-        m.health = data["health"]
-        m.stress = data["stress"]
+        m.is_infected = data.get("is_infected", False)
+        m.trust_score = data.get("trust_score", 50)
+        m.location = tuple(data.get("location", (0, 0)))
+        m.is_alive = data.get("is_alive", True)
+        m.health = data.get("health", 3)
+        m.stress = data.get("stress", 0)
         m.mask_integrity = data.get("mask_integrity", 100.0)
         m.is_revealed = data.get("is_revealed", False)
         m.schedule = data.get("schedule", [])
         m.invariants = data.get("invariants", [])
-        m.inventory = [Item.from_dict(i) for i in data.get("inventory", [])]
+        m.inventory = [Item.from_dict(i) for i in data.get("inventory", []) if i]
         m.knowledge_tags = data.get("knowledge_tags", [])
         return m
