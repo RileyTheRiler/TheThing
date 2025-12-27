@@ -70,9 +70,19 @@ class TimeSystem:
         self.points_per_turn = 1
         self.turn_count = 0
         
+        # Subscribe to turn advances
+        event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+
     def tick(self):
         """Advance time by one turn."""
         self.turn_count += 1
+
+    def on_turn_advance(self, event: GameEvent):
+        """Advance time and update environment on turn."""
+        self.tick()
+        game_state = event.payload.get("game_state")
+        if game_state:
+            self.update_environment(game_state.power_on)
         
     def update_environment(self, power_on):
         """

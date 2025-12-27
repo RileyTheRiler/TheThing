@@ -1,6 +1,11 @@
 import unittest
 from src.core.resolution import ResolutionSystem
 from src.systems.architect import TimeSystem
+from src.core.event_system import event_bus, EventType, GameEvent
+
+class MockGameState:
+    def __init__(self, power_on=True):
+        self.power_on = power_on
 
 class TestThermalDecay(unittest.TestCase):
     def test_thermal_decay_cooling_fast(self):
@@ -38,6 +43,25 @@ class TestThermalDecay(unittest.TestCase):
         change, new_temp = ts.update_environment(power_on=False)
         self.assertAlmostEqual(new_temp, -20.0, places=1)
         self.assertEqual(ts.temperature, new_temp)
+
+    def test_time_system_event_handling(self):
+        """
+        Verify that TimeSystem responds to TURN_ADVANCE events.
+        """
+        ts = TimeSystem(start_temp=20.0)
+        # Verify event subscription happened in init
+
+        game_state = MockGameState(power_on=False)
+        event = GameEvent(EventType.TURN_ADVANCE, {"game_state": game_state})
+
+        # Simulate event emission (or direct handler call if testing handler logic)
+        # Since TimeSystem subscribes in init, we can just trigger the handler directly for unit testing
+        # OR we can emit if we want to test the bus. Let's call handler directly to avoid global state issues.
+        ts.on_turn_advance(event)
+
+        # Should have cooled down
+        self.assertAlmostEqual(ts.temperature, -20.0, places=1)
+        self.assertEqual(ts.turn_count, 1)
 
 if __name__ == '__main__':
     unittest.main()
