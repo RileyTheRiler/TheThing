@@ -1,12 +1,12 @@
 import os
 import sys
 
-# Add src to path
-sys.path.append(os.path.join(os.getcwd(), 'src'))
+# Add root to path so we can import src.x.y
+sys.path.append(os.getcwd())
 
-from engine import GameState
-from core.event_system import event_bus, EventType, GameEvent
-from systems.architect import GameMode
+from src.engine import GameState
+from src.core.event_system import event_bus, EventType, GameEvent
+from src.systems.architect import GameMode
 
 def test_event_driven_architecture():
     print("=== VERIFYING EVENT-DRIVEN ARCHITECTURE ===\n")
