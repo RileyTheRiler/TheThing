@@ -702,67 +702,6 @@ def main():
                         val = game.trust_system.matrix[m.name].get(target_name.title(), 50)
                         print(f"{m.name} -> {target_name.title()}: {val}")
         
-        # --- FORENSIC COMMANDS ---
-        elif action == "HEAT":
-            print(game.forensics.blood_test.heat_wire())
-            
-        elif action == "TEST":
-            if len(cmd) < 2:
-                print("Usage: TEST <NAME>")
-            else:
-                target_name = cmd[1]
-                # Check if we have wire? For now assume yes or check inventory later
-                target = next((m for m in game.crew if m.name.upper() == target_name.upper()), None)
-                if target:
-                    if game.station_map.get_room_name(*target.location) == player_room:
-                        print(game.forensics.blood_test.start_test(target.name))
-                    else:
-                        print(f"{target.name} is not here.")
-                else:
-                    print(f"Unknown target: {target_name}")
-
-        elif action == "APPLY":
-            if not game.forensics.blood_test.active:
-                print("No test in progress.")
-            else:
-                # Find the sample owner to check infection status
-                sample_name = game.forensics.blood_test.current_sample
-                subject = next((m for m in game.crew if m.name == sample_name), None)
-                if subject:
-                    print(game.forensics.blood_test.apply_wire(subject.is_infected))
-                    
-        elif action == "CANCEL":
-             print(game.forensics.blood_test.cancel())
-             
-        elif action == "TAG":
-            if len(cmd) < 3:
-                print("Usage: TAG <NAME> <CATEGORY> <NOTE...>")
-            else:
-                target_name = cmd[1]
-                category = cmd[2]
-                note = " ".join(cmd[3:])
-                target = next((m for m in game.crew if m.name.upper() == target_name.upper()), None)
-                if target:
-                    game.forensic_db.add_tag(target.name, category, note, game.turn)
-                    print(f"Logged forensic tag for {target.name}.")
-                else:
-                    print(f"Unknown target: {target_name}")
-                    
-        elif action == "LOG":
-            if len(cmd) < 2:
-                print("Usage: LOG <ITEM NAME>")
-            else:
-                item_name = " ".join(cmd[1:])
-                print(game.evidence_log.get_history(item_name))
-
-        elif action == "DOSSIER":
-            if len(cmd) < 2:
-                print("Usage: DOSSIER <NAME>")
-            else:
-                target_name = cmd[1]
-                print(game.forensic_db.get_report(target_name))
-        # -------------------------
-
         elif action == "TALK":
              for m in game.crew:
                 room = game.station_map.get_room_name(*m.location)
@@ -961,4 +900,4 @@ def main():
                             # Reveal infection!
                             game.missionary_system.trigger_reveal(target, "Blood Test Exposure")
         else:
-            print("Unknown command. Try: MOVE, LOOK, GET, DROP, USE, INV, TAG, TEST, HEAT, APPLY, ATTACK, STATUS, SAVE, LOAD, EXIT")
+            print("Unknown command. Try: MOVE, LOOK, GET, DROP, USE, INV, TAG, TEST, ATTACK, STATUS, SAVE, LOAD, EXIT")
