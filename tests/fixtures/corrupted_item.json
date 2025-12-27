@@ -1,0 +1,5 @@
+{
+    "description": "An item without a name should be rejected.",
+    "damage": 1,
+    "is_evidence": false
+}

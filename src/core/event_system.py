@@ -24,6 +24,10 @@ class EventType(Enum):
     # Sabotage
     POWER_FAILURE = auto()
 
+    # Social thresholds
+    TRUST_THRESHOLD = auto()
+    PARANOIA_THRESHOLD = auto()
+
     # === REPORTING PATTERN (Tier 2.6) ===
     # Systems emit these instead of returning strings
 
@@ -45,6 +49,7 @@ class EventType(Enum):
     STEALTH_REPORT = auto()   # Stealth encounter updates
     CRAFTING_REPORT = auto()  # Crafting queue/status updates
     ENDING_REPORT = auto()    # Ending triggers/results
+    INTERROGATION_RESULT = auto() # Interrogation dialogue/results
 
 @dataclass
 class GameEvent:
