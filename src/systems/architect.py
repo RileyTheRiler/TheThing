@@ -149,6 +149,12 @@ class TimeSystem:
         self.temperature = start_temp
         self.points_per_turn = 1
         self.turn_count = 0
+        self.start_hour = start_hour  # Start at 7 PM by default
+
+    @property
+    def hour(self):
+        """Calculate the in-game hour (0-23) based on turns elapsed."""
+        return (self.start_hour + self.turn_count) % 24
         self._start_hour = start_hour
         self._hour = start_hour
 
@@ -165,6 +171,7 @@ class TimeSystem:
     def tick(self):
         """Advance time by one turn."""
         self.turn_count += 1
+
         self._hour = (self._start_hour + self.turn_count) % 24
     def update_environment(self, power_on):
         """
@@ -193,6 +200,15 @@ class TimeSystem:
 
     @classmethod
     def from_dict(cls, data):
+        temp = data.get("temperature", -40)
+        turn_count = data.get("turn_count", 0)
+        saved_hour = data.get("hour", 19)
+
+        # Recalculate start hour so property math remains consistent
+        start_hour = (saved_hour - turn_count) % 24
+
+        ts = cls(temp, start_hour=start_hour)
+        ts.turn_count = turn_count
         ts = cls(data.get("temperature", -40), start_hour=data.get("hour", 19))
         ts.turn_count = data.get("turn_count", 0)
         # Recompute hour from stored value to keep normalization consistent.

@@ -176,7 +176,12 @@ class TerminalRenderer:
                 visible_npcs.append(f"{member.name[0]}={member.name}{status}")
         
         if visible_npcs:
-            return f"[@=You] [{'] ['.join(visible_npcs[:4])}]"
+            shown = visible_npcs[:4]
+            extra = len(visible_npcs) - len(shown)
+            legend = f"[@=You] [{'] ['.join(shown)}]"
+            if extra > 0:
+                legend += f" (+{extra} more nearby)"
+            return legend
         return "[@=You] [.=Floor] [#=Wall] [+=Door]"
     
     def render_minimap(self, game_state, player):

@@ -112,9 +112,14 @@ class MissionarySystem:
         """
         Transforms the character into a monster.
         """
+        revealed_name = f"The-Thing-That-Was-{member.name}"
+        member.revealed_name = revealed_name
+
         print(f"!!! ALERT !!! {member.name} is convulsing... ({reason})")
         member.is_revealed = True
         member.role = "THING-BEAST"
+        member.health = 10
+        print(f"!!! {revealed_name} TEARS THROUGH HUMAN FLESH! !!!")
         # Preserve the character's name to keep references stable for AI/tests;
         # use a themed alias only for messaging to avoid breaking lookups.
         thing_alias = f"The-Thing-That-Was-{member.name}"
