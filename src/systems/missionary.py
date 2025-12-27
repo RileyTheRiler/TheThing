@@ -77,7 +77,6 @@ class MissionarySystem:
             # DIREC DISSONANCE: Being in the wrong place is taxing for the organism
             dissonance_penalty = 5.0
             member.mask_integrity -= dissonance_penalty
-            # print(f"[DEBUG] {member.name} (Role: {member.role}) is in {current_room} - NOT AT STATION (Penalty: {dissonance_penalty})")
 
     def process_decay(self, member, game_state):
         """
@@ -196,9 +195,6 @@ class MissionarySystem:
         # Infect Target
         target.is_infected = True
         target.mask_integrity = 100 # Fresh mask
-        
-        # Log to hidden state (or debug)
-        # print(f"[DEBUG] {target.name} ASSIMILATED by {agent.name}")
 
     def searchlight_harvest(self, agent, target):
         """
