@@ -1,3 +1,5 @@
+from typing import Optional
+
 from systems.missionary import MissionarySystem
 from systems.psychology import PsychologySystem
 from core.resolution import Attribute, Skill, ResolutionSystem
@@ -584,7 +586,7 @@ class GameState:
         for member in infected_crew:
             member.is_infected = True
 
-    def advance_turn(self):
+    def advance_turn(self, power_on: Optional[bool] = None):
         self.turn += 1
         
         # Reset per-turn flags
@@ -592,16 +594,11 @@ class GameState:
             member.slipped_vapor = False
         
         self.paranoia_level = min(100, self.paranoia_level + 1)
-        
-        # Update TimeSystem (manual tick if not event-driven)
-        self.time_system.tick()
-        self.time_system.update_environment(self.power_on)
+        if power_on is not None:
+            self.power_on = power_on
 
-        # 1. Emit TURN_ADVANCE Event (Triggers TimeSystem, WeatherSystem, InfectionSystem, etc.)
-        event_bus.emit(GameEvent(EventType.TURN_ADVANCE, {
-            "game_state": self,
-            "rng": self.rng
-        }))
+        # Update TimeSystem and notify listeners
+        self.time_system.advance_turn(self.power_on, game_state=self, rng=self.rng)
         
         # 3. Process Local Environment Effects
         player_room = self.station_map.get_room_name(*self.player.location)

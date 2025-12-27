@@ -8,7 +8,11 @@ import os
 import pytest
 
 # Add src directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+src_path = os.path.join(project_root, "src")
+for path in (project_root, src_path):
+    if path not in sys.path:
+        sys.path.insert(0, path)
 
 from engine import GameState
 from systems.architect import Difficulty
