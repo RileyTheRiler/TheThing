@@ -323,12 +323,19 @@ class RandomEventSystem:
 
     def _effect_blizzard(self, game):
         """Blizzard effect: temperature drop, visibility issues."""
-        game.weather.trigger_storm()
-        game.temperature -= 10
+        game.weather.trigger_northeasterly()
+        # Temperature is a property in GameState that reads from weather,
+        # but we might want to affect the base temp in time_system?
+        # GameState.temperature is a property: return self.weather.get_effective_temperature(self.time_system.temperature)
+        # So we can't subtract from it directly.
+        # We should modify time_system or let weather handle it.
+        # The weather system handles temp modification via intensity.
+        # But if we want an EXTRA drop:
+        game.time_system.temperature -= 10
 
     def _effect_temp_drop(self, game):
         """Temperature drop effect."""
-        game.temperature -= 5
+        game.time_system.temperature -= 5
 
     def _effect_generator_trouble(self, game):
         """Generator trouble: possible power issues next few turns."""
