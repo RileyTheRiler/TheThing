@@ -136,6 +136,21 @@ class BloodTestSim:
         else:
             return f"Heating wire... ({self.wire_temp}C)"
 
+    def cool_down(self):
+        """
+        Simulates the wire cooling down over time.
+        """
+        if not self.active:
+            return
+
+        if self.wire_temp > 20:
+            # Cool down by 15 degrees, but don't go below 20
+            cooling_amount = 15
+            self.wire_temp = max(20, self.wire_temp - cooling_amount)
+
+            # If it was READY but cooled down too much, revert state
+            if self.state == "READY" and self.wire_temp < 90:
+                self.state = "HEATING"
             
     def cool_down(self):
         """
@@ -210,6 +225,7 @@ class ForensicsSystem:
     def on_turn_advance(self, event: GameEvent):
         """
         Handle turn advancement.
+        The wire cools down if left unattended.
         The wire cools down over time.
         """
         if self.blood_test.active:

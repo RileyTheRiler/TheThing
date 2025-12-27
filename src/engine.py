@@ -13,6 +13,7 @@ from systems.room_state import RoomStateManager, RoomState
 from systems.random_events import RandomEventSystem
 
 # Agent 4: Forensics
+from src.systems.forensics import BiologicalSlipGenerator, BloodTestSim, ForensicDatabase, EvidenceLog, ForensicsSystem
 from systems.forensics import BiologicalSlipGenerator, BloodTestSim, ForensicDatabase, EvidenceLog
 
 # Terminal Designer Systems (Agent 5)
@@ -458,7 +459,7 @@ class GameState:
         # Agent 4: Forensics
         self.forensic_db = ForensicDatabase()
         self.evidence_log = EvidenceLog()
-        self.blood_test_sim = BloodTestSim()
+        self.forensics = ForensicsSystem()
         
         # Terminal Designer Systems (Agent 5)
         self.renderer = TerminalRenderer(self.station_map)
@@ -976,6 +977,75 @@ def main():
                         val = game.trust_system.matrix[m.name].get(target_name.title(), 50)
                         print(f"{m.name} -> {target_name.title()}: {val}")
         
+        # --- FORENSIC COMMANDS ---
+        elif action == "HEAT":
+            print(game.forensics.blood_test.heat_wire())
+            
+        elif action == "TEST":
+            if len(cmd) < 2:
+                print("Usage: TEST <NAME>")
+            else:
+                target_name = cmd[1]
+                target = next((m for m in game.crew if m.name.upper() == target_name.upper()), None)
+                if not target:
+                    print(f"Unknown target: {target_name}")
+                elif game.station_map.get_room_name(*target.location) != player_room:
+                    print(f"{target.name} is not here.")
+                else:
+                    # Check for required items
+                    scalpel = next((i for i in game.player.inventory if "SCALPEL" in i.name.upper()), None)
+                    wire = next((i for i in game.player.inventory if "WIRE" in i.name.upper()), None)
+
+                    if not scalpel:
+                        print("You need a SCALPEL to draw a blood sample.")
+                    elif not wire:
+                        print("You need COPPER WIRE for the test.")
+                    else:
+                        print(f"Drawing blood from {target.name}...")
+                        print(game.forensics.blood_test.start_test(target.name))
+
+        elif action == "APPLY":
+            if not game.forensics.blood_test.active:
+                print("No test in progress.")
+            else:
+                # Find the sample owner to check infection status
+                sample_name = game.forensics.blood_test.current_sample
+                subject = next((m for m in game.crew if m.name == sample_name), None)
+                if subject:
+                    print(game.forensics.blood_test.apply_wire(subject.is_infected))
+                    
+        elif action == "CANCEL":
+             print(game.forensics.blood_test.cancel())
+             
+        elif action == "TAG":
+            if len(cmd) < 3:
+                print("Usage: TAG <NAME> <CATEGORY> <NOTE...>")
+            else:
+                target_name = cmd[1]
+                category = cmd[2]
+                note = " ".join(cmd[3:])
+                target = next((m for m in game.crew if m.name.upper() == target_name.upper()), None)
+                if target:
+                    game.forensic_db.add_tag(target.name, category, note, game.turn)
+                    print(f"Logged forensic tag for {target.name}.")
+                else:
+                    print(f"Unknown target: {target_name}")
+                    
+        elif action == "LOG":
+            if len(cmd) < 2:
+                print("Usage: LOG <ITEM NAME>")
+            else:
+                item_name = " ".join(cmd[1:])
+                print(game.evidence_log.get_history(item_name))
+
+        elif action == "DOSSIER":
+            if len(cmd) < 2:
+                print("Usage: DOSSIER <NAME>")
+            else:
+                target_name = cmd[1]
+                print(game.forensic_db.get_report(target_name))
+        # -------------------------
+
         elif action == "TALK":
              for m in game.crew:
                 room = game.station_map.get_room_name(*m.location)
@@ -1138,40 +1208,5 @@ def main():
         elif action == "BARRICADE":
             result = game.room_states.barricade_room(player_room)
             print(result)
-        elif action == "TEST":
-            # Simplified Heated Wire Test flow
-            if len(cmd) < 2:
-                print("Usage: TEST <NAME>")
-            else:
-                target_name = cmd[1]
-                target = next((m for m in game.crew if m.name.upper() == target_name.upper()), None)
-                if not target:
-                    print(f"Unknown target: {target_name}")
-                elif game.station_map.get_room_name(*target.location) != player_room:
-                    print(f"{target.name} is not here.")
-                else:
-                    # Check for required items
-                    scalpel = next((i for i in game.player.inventory if "SCALPEL" in i.name.upper()), None)
-                    wire = next((i for i in game.player.inventory if "WIRE" in i.name.upper()), None)
-                    
-                    if not scalpel:
-                        print("You need a SCALPEL to draw a blood sample.")
-                    elif not wire:
-                        print("You need COPPER WIRE for the test.")
-                    else:
-                        print(f"Drawing blood from {target.name}...")
-                        print(game.blood_test_sim.start_test(target.name))
-                        # Rapid heating and application
-                        print(game.blood_test_sim.heat_wire())
-                        print(game.blood_test_sim.heat_wire())
-                        print(game.blood_test_sim.heat_wire())
-                        print(game.blood_test_sim.heat_wire())
-                        
-                        result = game.blood_test_sim.apply_wire(target.is_infected)
-                        print(result)
-                        
-                        if target.is_infected:
-                            # Reveal infection!
-                            game.missionary_system.trigger_reveal(target, "Blood Test Exposure")
         else:
             print("Unknown command. Try: MOVE, LOOK, GET, DROP, USE, INV, TAG, TEST, ATTACK, STATUS, SAVE, LOAD, EXIT")
