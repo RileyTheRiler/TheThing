@@ -224,12 +224,25 @@ class InterrogationSystem:
             trust_change -= 5
             dialogue = f"(Annoyed) Again? Fine... {dialogue}"
 
-        return InterrogationResult(
+        result = InterrogationResult(
             response_type=response_type,
             dialogue=dialogue,
             tells=tells,
             trust_change=trust_change
         )
+
+        # Emit event for UI/message reporter
+        event_bus.emit(GameEvent(EventType.INTERROGATION_RESULT, {
+            "interrogator": interrogator.name,
+            "subject": subject.name,
+            "topic": topic.value,
+            "dialogue": dialogue,
+            "response_type": response_type.value,
+            "tells": tells,
+            "trust_change": trust_change
+        }))
+
+        return result
 
     def make_accusation(self, accuser, accused, evidence, game_state):
         """Make a formal accusation against a crew member.

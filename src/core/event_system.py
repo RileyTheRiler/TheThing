@@ -45,6 +45,7 @@ class EventType(Enum):
     STEALTH_REPORT = auto()   # Stealth encounter updates
     CRAFTING_REPORT = auto()  # Crafting queue/status updates
     ENDING_REPORT = auto()    # Ending triggers/results
+    INTERROGATION_RESULT = auto() # Interrogation dialogue/results
 
 @dataclass
 class GameEvent:
