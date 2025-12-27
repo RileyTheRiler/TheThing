@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Optional, TYPE_CHECKING
 from dataclasses import dataclass
 from core.resolution import Attribute, Skill
+from core.event_system import event_bus, EventType, GameEvent
 
 if TYPE_CHECKING:
     from engine import GameState, CrewMember
@@ -99,6 +100,33 @@ class InventoryCommand(Command):
             print("(Empty)")
         for item in game_state.player.inventory:
             print(f"- {item.name}: {item.description}")
+
+class CraftCommand(Command):
+    name = "CRAFT"
+    aliases = []
+    description = "Craft an item from known recipes."
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+        if not hasattr(game_state, "crafting_system"):
+            event_bus.emit(GameEvent(EventType.ERROR, {"text": "Crafting system unavailable."}))
+            return
+
+        if not args:
+            event_bus.emit(GameEvent(EventType.ERROR, {"text": "Usage: CRAFT <RECIPE_ID>"}))
+            return
+
+        recipe_id = args[0]
+        success = game_state.crafting_system.queue_craft(
+            game_state.player,
+            recipe_id,
+            game_state,
+            game_state.player.inventory,
+        )
+        if success:
+            event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+                "text": f"Queued crafting for recipe '{recipe_id}'."
+            }))
 
 class GetCommand(Command):
     name = "GET"
@@ -447,6 +475,7 @@ class CommandDispatcher:
         self.register(MoveCommand())
         self.register(LookCommand())
         self.register(InventoryCommand())
+        self.register(CraftCommand())
         self.register(GetCommand())
         self.register(DropCommand())
         self.register(AttackCommand())
