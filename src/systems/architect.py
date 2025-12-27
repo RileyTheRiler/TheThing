@@ -74,6 +74,18 @@ class TimeSystem:
         """Advance time by one turn."""
         self.turn_count += 1
         
+    @property
+    def hour(self):
+        """
+        Calculates the in-game hour (0-23) based on turn count.
+        Assuming Turn 0 = 08:00 start or similar?
+        Let's assume Turn 1 = Hour 1 for simplicity or map 1 turn = 1 hour.
+        Modulo 24.
+        """
+        # Starting at 08:00 AM seems reasonable for a shift
+        start_hour = 8
+        return (start_hour + self.turn_count) % 24
+
     def update_environment(self, power_on):
         """
         Updates environmental factors based on power state.
