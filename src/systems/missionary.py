@@ -155,15 +155,21 @@ class MissionarySystem:
                 continue
             
             other_room = game_state.station_map.get_room_name(*other.location)
+            is_visible = False
             if other_room == room_name:
+                is_visible = True
+            elif room_name and other_room and "Corridor" in room_name and "Corridor" in other_room:
+                # LOS for Corridors: Check distance
+                dist = ((agent.location[0] - other.location[0])**2 + (agent.location[1] - other.location[1])**2)**0.5
+                if dist <= 5:  # Visibility range in corridors
+                    is_visible = True
+
+            if is_visible:
                 if other.is_infected:
                     witnesses.append(other) # Other things don't count as witnesses against you, strictly speaking, but for now let's say they complicate the ritual? No, actually they help.
                     # Simplification: Only non-infected count as "Witnesses" that prevent the act.
                 else:
                     potential_targets.append(other)
-            else:
-                # Someone near? (Not implementing complex LOS yet)
-                pass
 
         # If there are witnesses (non-infected people other than target), we can't do it cleanly
         # Actually, if there is EXACTLY ONE target and NO ONE ELSE, we can do it.
