@@ -18,6 +18,7 @@ from systems.forensics import BiologicalSlipGenerator, BloodTestSim, ForensicDat
 from ui.renderer import TerminalRenderer
 from ui.crt_effects import CRTOutput
 from ui.command_parser import CommandParser
+from ui.message_reporter import MessageReporter
 from audio.audio_manager import AudioManager, Sound
 
 # Entity Classes
@@ -78,6 +79,7 @@ class GameState:
         self.crt = CRTOutput(palette="amber", crawl_speed=0.015)
         self.parser = CommandParser(known_names=[m.name for m in self.crew])
         self.audio = AudioManager(enabled=True)
+        self.reporter = MessageReporter(self.crt)  # Tier 2.6: Event-based reporting
         
         # Agent 6: DM Systems (Now Event-Driven)
         self.weather = WeatherSystem()

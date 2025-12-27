@@ -5,6 +5,7 @@ Provides initiative, cover, and retreat mechanics for tactical combat.
 
 from enum import Enum
 from core.resolution import Attribute, Skill
+from core.event_system import event_bus, EventType, GameEvent
 
 
 class CoverType(Enum):
@@ -154,6 +155,15 @@ class CombatSystem:
             net_hits = attack_result['success_count'] - defense_result['success_count']
             total_damage = weapon_damage + net_hits
 
+            # Emit combat event (Tier 2.6 Reporting Pattern)
+            event_bus.emit(GameEvent(EventType.COMBAT_LOG, {
+                'attacker': attacker.name,
+                'target': defender.name,
+                'action': f'strikes with {weapon_name}',
+                'result': 'HIT',
+                'damage': total_damage
+            }))
+
             return CombatResult(
                 success=True,
                 damage=total_damage,
@@ -165,6 +175,15 @@ class CombatSystem:
                 special={"net_hits": net_hits, "attack_roll": attack_result, "defense_roll": defense_result}
             )
         else:
+            # Emit combat event (Tier 2.6 Reporting Pattern)
+            event_bus.emit(GameEvent(EventType.COMBAT_LOG, {
+                'attacker': attacker.name,
+                'target': defender.name,
+                'action': f'attacks with {weapon_name}',
+                'result': 'MISS',
+                'damage': 0
+            }))
+
             return CombatResult(
                 success=False,
                 message=(

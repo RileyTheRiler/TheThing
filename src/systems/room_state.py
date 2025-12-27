@@ -105,9 +105,13 @@ class RoomStateManager:
     
     def mark_bloody(self, room_name):
         self.add_state(room_name, RoomState.BLOODY)
+        # Emit event instead of returning string (Tier 2.6)
+        event_bus.emit(GameEvent(EventType.MESSAGE, {
+            'text': f"Blood spatters across {room_name}."
+        }))
         return f"Blood spatters across {room_name}."
-    
-    def barricade_room(self, room_name):
+
+    def barricade_room(self, room_name, actor="You"):
         """Create or reinforce a barricade on a room."""
         self.add_state(room_name, RoomState.BARRICADED)
         self.add_state(room_name, RoomState.DARK)
@@ -117,7 +121,18 @@ class RoomStateManager:
             current + 1,
             self.BARRICADE_MAX_STRENGTH
         )
-        return f"Barricade {'reinforced' if current > 0 else 'erected'}. Strength: {self.barricade_strength[room_name]}/{self.BARRICADE_MAX_STRENGTH}"
+        action = 'reinforced' if current > 0 else 'built'
+        strength = self.barricade_strength[room_name]
+
+        # Emit event (Tier 2.6 Reporting Pattern)
+        event_bus.emit(GameEvent(EventType.BARRICADE_ACTION, {
+            'action': action,
+            'room': room_name,
+            'strength': strength,
+            'actor': actor
+        }))
+
+        return f"Barricade {'reinforced' if current > 0 else 'erected'}. Strength: {strength}/{self.BARRICADE_MAX_STRENGTH}"
 
     def get_barricade_strength(self, room_name):
         """Get the current barricade strength for a room."""
@@ -141,6 +156,7 @@ class RoomStateManager:
             return True, "There is no barricade here.", 0
 
         current_strength = self.barricade_strength.get(room_name, 1)
+        breaker_name = getattr(breaker, 'name', 'Something')
 
         # Roll PROWESS + MELEE to break
         prowess = breaker.attributes.get(Attribute.PROWESS, 1)
@@ -162,9 +178,27 @@ class RoomStateManager:
                 # Barricade destroyed
                 self.remove_state(room_name, RoomState.BARRICADED)
                 del self.barricade_strength[room_name]
+
+                # Emit event (Tier 2.6)
+                event_bus.emit(GameEvent(EventType.BARRICADE_ACTION, {
+                    'action': 'broken',
+                    'room': room_name,
+                    'strength': 0,
+                    'actor': breaker_name
+                }))
+
                 return True, "*** The barricade SHATTERS! ***", 0
             else:
                 remaining = self.barricade_strength[room_name]
+
+                # Emit event (Tier 2.6)
+                event_bus.emit(GameEvent(EventType.BARRICADE_ACTION, {
+                    'action': 'damaged',
+                    'room': room_name,
+                    'strength': remaining,
+                    'actor': breaker_name
+                }))
+
                 return False, f"The barricade cracks and splinters! (Strength: {remaining}/{self.BARRICADE_MAX_STRENGTH})", remaining
         else:
             return False, "You slam against the barricade but it holds firm.", current_strength

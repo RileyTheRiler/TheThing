@@ -18,14 +18,14 @@ The game uses an **event-driven, multi-agent architecture** where 8+ independent
 
 ---
 
-## Tier 2: Architecture Improvements - MOSTLY COMPLETE
+## Tier 2: Architecture Improvements - COMPLETE
 
 - [x] **2.1** Extract `Item` class to `src/entities/item.py`
 - [x] **2.2** Extract `CrewMember` class to `src/entities/crew_member.py`
 - [x] **2.3** Extract `StationMap` class to `src/entities/station_map.py`
 - [x] **2.4** Refactor `main()` game loop into `src/game_loop.py`
 - [x] **2.5** Add proper NPC pathfinding (A* instead of greedy step) - `src/systems/pathfinding.py`
-- [ ] **2.6** Implement "Reporting Pattern" - systems emit events instead of returning strings
+- [x] **2.6** Implement "Reporting Pattern" - `src/ui/message_reporter.py` with event-based output
 
 ---
 
@@ -119,3 +119,29 @@ Arrow key navigation and command history:
 - **History file**: `~/.thething_history` (persists between sessions)
 - **Max entries**: 100 commands
 - **Cross-platform**: Uses `readline` (Unix) or `pyreadline3` (Windows)
+
+### Reporting Pattern (Tier 2.6)
+Systems emit events instead of returning strings:
+```python
+# Old pattern (returns string):
+return f"Barricade erected. Strength: {strength}/3"
+
+# New pattern (emits event):
+event_bus.emit(GameEvent(EventType.BARRICADE_ACTION, {
+    'action': 'built',
+    'room': room_name,
+    'strength': strength
+}))
+```
+
+Event types for reporting:
+| EventType | Purpose |
+|-----------|---------|
+| `MESSAGE` | General output |
+| `WARNING` | High-visibility alerts |
+| `COMBAT_LOG` | Attack results |
+| `DIALOGUE` | NPC speech |
+| `BARRICADE_ACTION` | Barricade events |
+| `TEST_RESULT` | Blood test outcomes |
+
+The `MessageReporter` class subscribes to these and routes them through `CRTOutput`.
