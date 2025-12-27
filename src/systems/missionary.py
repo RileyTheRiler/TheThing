@@ -214,5 +214,16 @@ class MissionarySystem:
                 # 50% reduction in detection chance
                 inv['slip_chance'] *= 0.5
         
-        # Note: In a deeper game, this would also grant 'Knowledge Tags' or 'Memory Logs'
-        # that the NPC can use in dialogue to prove they are 'human'.
+        # Advanced Mimicry: Grant Knowledge Tags
+        # The agent learns personal details to use in social defense
+        memories = [
+            f"details about {target.name}'s life",
+            f"a story about {target.name}'s childhood",
+            f"{target.name}'s favorite song",
+            f"{target.name}'s routine in the {target.role}",
+            f"a secret {target.name} kept"
+        ]
+        new_tag = random.choice(memories)
+        if hasattr(agent, 'knowledge_tags'):
+            agent.knowledge_tags.append(new_tag)
+            print(f">>> MIMICRY UPDATE: {agent.name} learned '{new_tag}'")

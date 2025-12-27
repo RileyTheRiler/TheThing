@@ -1,19 +1,50 @@
 """
 Audio Trigger System
 Event-driven audio for ambient sounds and dramatic cues.
-Uses winsound for lightweight beep-based audio (no external dependencies).
+Cross-platform audio using winsound (Windows), terminal bell, or subprocess.
 """
 
 import threading
 import queue
+import random
+import sys
+import os
+import subprocess
 from enum import Enum
 
-# Try to import winsound (Windows only)
+# Determine audio backend
+AUDIO_BACKEND = None
+
+# Try Windows winsound first
 try:
     import winsound
-    AUDIO_AVAILABLE = True
+    AUDIO_BACKEND = 'winsound'
 except ImportError:
-    AUDIO_AVAILABLE = False
+    pass
+
+# Check for macOS afplay
+if AUDIO_BACKEND is None and sys.platform == 'darwin':
+    try:
+        subprocess.run(['which', 'afplay'], capture_output=True, check=True)
+        AUDIO_BACKEND = 'afplay'
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+
+# Check for Linux paplay (PulseAudio) or aplay (ALSA)
+if AUDIO_BACKEND is None and sys.platform.startswith('linux'):
+    for cmd in ['paplay', 'aplay']:
+        try:
+            subprocess.run(['which', cmd], capture_output=True, check=True)
+            AUDIO_BACKEND = cmd
+            break
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            pass
+
+# Fallback to terminal bell
+if AUDIO_BACKEND is None:
+    AUDIO_BACKEND = 'bell'
+
+AUDIO_AVAILABLE = AUDIO_BACKEND is not None
 
 
 class Sound(Enum):
@@ -75,7 +106,7 @@ class AudioManager:
     def __init__(self, enabled=True):
         self.enabled = enabled and AUDIO_AVAILABLE
         self.muted = False
-        self.volume = 1.0  # Not actually used with winsound, but for future
+        self.volume = 1.0
         
         # Audio queue for async playback
         self.queue = queue.Queue()
@@ -98,35 +129,61 @@ class AudioManager:
             except queue.Empty:
                 # Play ambient if nothing in queue
                 if self.ambient_sound and self.ambient_running and not self.muted:
-                    self._play_sound(self.ambient_sound, ambient=True)
+                    # Use volume to control density of ambient sound
+                    # Lower volume = fewer loops play (creating gaps/sparser sound)
+                    if self.volume >= 1.0 or random.random() < self.volume:
+                        self._play_sound(self.ambient_sound, ambient=True)
     
     def _play_sound(self, sound, ambient=False):
-        """Actually play the sound using winsound."""
+        """Play sound using the available backend."""
         if not self.enabled or not AUDIO_AVAILABLE:
             return
         
+        # Check volume threshold - effectively mute if volume is zero
+        if self.volume <= 0.0:
+            return
+
         freq_range = self.FREQUENCIES.get(sound, (440, 440))
         duration = self.DURATIONS.get(sound, 100)
-        
+
         if ambient:
             duration = int(duration * 0.3)  # Shorter for ambient loop
-        
+
         try:
-            if len(freq_range) == 2 and freq_range[0] != freq_range[1]:
-                # Play a sweep from low to high
-                import time
-                steps = 5
-                step_duration = duration // steps
-                freq_step = (freq_range[1] - freq_range[0]) // steps
-                
-                for i in range(steps):
-                    freq = freq_range[0] + (i * freq_step)
-                    winsound.Beep(max(37, min(32767, freq)), step_duration)
-            else:
-                # Single frequency
-                winsound.Beep(freq_range[0], duration)
+            if AUDIO_BACKEND == 'winsound':
+                self._play_winsound(freq_range, duration)
+            elif AUDIO_BACKEND == 'bell':
+                self._play_bell(sound)
+            # Note: afplay/aplay require audio files, so fall back to bell
+            elif AUDIO_BACKEND in ('afplay', 'aplay', 'paplay'):
+                self._play_bell(sound)
         except Exception:
             pass  # Silently fail on audio errors
+
+    def _play_winsound(self, freq_range, duration):
+        """Play sound using Windows winsound.Beep()."""
+        import winsound
+        if len(freq_range) == 2 and freq_range[0] != freq_range[1]:
+            # Play a sweep from low to high
+            import time
+            steps = 5
+            step_duration = duration // steps
+            freq_step = (freq_range[1] - freq_range[0]) // steps
+
+            for i in range(steps):
+                freq = freq_range[0] + (i * freq_step)
+                winsound.Beep(max(37, min(32767, freq)), step_duration)
+        else:
+            # Single frequency
+            winsound.Beep(freq_range[0], duration)
+
+    def _play_bell(self, sound):
+        """Play terminal bell as fallback audio."""
+        # Only play bell for important sounds to avoid annoyance
+        important_sounds = {Sound.SCREECH, Sound.ALERT, Sound.ERROR, Sound.POWER_DOWN}
+        if sound in important_sounds:
+            sys.stdout.write('\a')
+            sys.stdout.flush()
     
     def play(self, sound, priority=5):
         """
@@ -174,6 +231,19 @@ class AudioManager:
         """Toggle mute state."""
         self.muted = not self.muted
         return self.muted
+
+    def set_volume(self, volume):
+        """
+        Set volume level (0.0 to 1.0).
+        Since winsound cannot control amplitude, this controls:
+        1. Whether sound plays at all (0.0 = mute)
+        2. Density of ambient loops (lower volume = sparser sound)
+        """
+        self.volume = max(0.0, min(1.0, float(volume)))
+
+    def get_volume(self):
+        """Get current volume level."""
+        return self.volume
     
     def trigger_event(self, event_type):
         """

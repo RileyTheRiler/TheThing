@@ -14,16 +14,52 @@ class ANSI:
     DIM = "\033[2m"
     BLINK = "\033[5m"
     REVERSE = "\033[7m"
-    
+
     # Monochrome palettes
     AMBER = "\033[38;5;214m"      # Classic amber terminal
     GREEN = "\033[38;5;46m"       # Classic green terminal
     WHITE = "\033[38;5;255m"      # Bright white
     GRAY = "\033[38;5;244m"       # Dimmed gray
-    
+
+    # Colorblind-friendly palettes (high contrast)
+    # Using blue-orange color scheme (deuteranopia/protanopia safe)
+    CB_BLUE = "\033[38;5;33m"     # Bright blue (safe for most color blindness)
+    CB_ORANGE = "\033[38;5;208m"  # Orange (distinguishable from blue)
+    CB_CYAN = "\033[38;5;51m"     # Cyan (high visibility)
+    CB_YELLOW = "\033[38;5;226m"  # Yellow (high contrast)
+
+    # High contrast mode (for low vision)
+    HC_WHITE = "\033[38;5;231m"   # Pure white
+    HC_BLACK_BG = "\033[48;5;16m" # Pure black background
+
     # Effects
     GLITCH_CHARS = "▓▒░█▄▀■□▪▫"
     STATIC = ".:;!|+*#@"
+
+
+# Available palette configurations
+PALETTES = {
+    "amber": {
+        "primary": ANSI.AMBER,
+        "description": "Classic amber CRT terminal (default)"
+    },
+    "green": {
+        "primary": ANSI.GREEN,
+        "description": "Classic green phosphor terminal"
+    },
+    "white": {
+        "primary": ANSI.WHITE,
+        "description": "Modern white terminal"
+    },
+    "colorblind": {
+        "primary": ANSI.CB_CYAN,
+        "description": "High contrast blue/cyan (colorblind-friendly)"
+    },
+    "high-contrast": {
+        "primary": ANSI.HC_WHITE,
+        "description": "Maximum contrast white on black"
+    }
+}
 
 
 class CRTOutput:
@@ -31,20 +67,33 @@ class CRTOutput:
     Wraps all text output to simulate a 1982 CRT terminal.
     Features: text crawl, glitches, scanlines, flicker.
     """
-    
+
     def __init__(self, palette="amber", crawl_speed=0.02):
         self.palette = palette
         self.crawl_speed = crawl_speed  # Seconds per character
         self.enabled = True
         self.glitch_level = 0  # 0-100, increases with paranoia
-        
+
         # Set color based on palette
-        if palette == "amber":
+        self.set_palette(palette)
+
+    def set_palette(self, palette_name):
+        """Set the color palette. Supports colorblind-friendly options."""
+        self.palette = palette_name
+
+        if palette_name in PALETTES:
+            self.color = PALETTES[palette_name]["primary"]
+        elif palette_name == "amber":
             self.color = ANSI.AMBER
-        elif palette == "green":
+        elif palette_name == "green":
             self.color = ANSI.GREEN
         else:
             self.color = ANSI.WHITE
+
+    @staticmethod
+    def get_available_palettes():
+        """Return list of available palette names and descriptions."""
+        return {name: config["description"] for name, config in PALETTES.items()}
     
     def output(self, text, crawl=False, glitch=False):
         """

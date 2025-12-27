@@ -3,6 +3,62 @@ import random
 import json
 from src.core.event_system import event_bus, EventType, GameEvent
 from src.core.resolution import ResolutionSystem
+import pickle
+import base64
+from core.event_system import event_bus, EventType, GameEvent
+from core.resolution import ResolutionSystem
+
+
+class Difficulty(Enum):
+    """Game difficulty levels affecting infection rates, mask decay, and starting conditions."""
+    EASY = "Easy"
+    NORMAL = "Normal"
+    HARD = "Hard"
+
+
+class DifficultySettings:
+    """Configuration for each difficulty level."""
+
+    SETTINGS = {
+        Difficulty.EASY: {
+            "base_infection_chance": 0.05,      # 5% base infection per turn
+            "darkness_infection_chance": 0.30,  # 30% in darkness
+            "mask_decay_rate": 1,               # 1 point per turn
+            "starting_paranoia": 0,
+            "initial_infected_min": 1,
+            "initial_infected_max": 1,
+            "description": "Forgiving mode for learning the mechanics"
+        },
+        Difficulty.NORMAL: {
+            "base_infection_chance": 0.10,      # 10% base infection per turn
+            "darkness_infection_chance": 0.50,  # 50% in darkness
+            "mask_decay_rate": 2,               # 2 points per turn
+            "starting_paranoia": 0,
+            "initial_infected_min": 1,
+            "initial_infected_max": 2,
+            "description": "The standard experience as intended"
+        },
+        Difficulty.HARD: {
+            "base_infection_chance": 0.15,      # 15% base infection per turn
+            "darkness_infection_chance": 0.70,  # 70% in darkness
+            "mask_decay_rate": 3,               # 3 points per turn
+            "starting_paranoia": 20,
+            "initial_infected_min": 2,
+            "initial_infected_max": 3,
+            "description": "Paranoia from the start, trust no one"
+        }
+    }
+
+    @classmethod
+    def get(cls, difficulty: Difficulty, key: str):
+        """Get a setting value for the given difficulty."""
+        return cls.SETTINGS[difficulty].get(key)
+
+    @classmethod
+    def get_all(cls, difficulty: Difficulty) -> dict:
+        """Get all settings for the given difficulty."""
+        return cls.SETTINGS[difficulty].copy()
+
 
 class GameMode(Enum):
     INVESTIGATIVE = "Investigative"
@@ -42,6 +98,9 @@ class RandomnessEngine:
         return random.choice(collection)
         
     def random_float(self):
+        return random.random()
+
+    def random(self):
         return random.random()
 
     def to_dict(self):
@@ -85,6 +144,12 @@ class TimeSystem:
         self.temperature = start_temp
         self.points_per_turn = 1
         self.turn_count = 0
+
+    @property
+    def hour(self):
+        """Calculate hour of day based on turn count (0-23). Start at 08:00."""
+        # 1 turn = 1 hour (simplified for now as per legacy code)
+        return (8 + self.turn_count) % 24
         
     def tick(self):
         """Advance time by one turn."""
