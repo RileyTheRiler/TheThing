@@ -1,6 +1,16 @@
 import random
 import math
+from dataclasses import dataclass
 from enum import Enum
+
+
+@dataclass
+class ResolutionModifiers:
+    """Environmental modifiers that adjust roll math."""
+
+    attack_pool: int = 0
+    observation_pool: int = 0
+    stealth_detection: float = 0.0
 
 class Attribute(Enum):
     PROWESS = "Prowess"
@@ -49,6 +59,13 @@ class Skill(Enum):
         return mapping.get(skill)
 
 class ResolutionSystem:
+    @staticmethod
+    def adjust_pool(base_pool: int, modifier: int) -> int:
+        """
+        Safely adjust a dice pool by an integer modifier without going negative.
+        """
+        return max(0, base_pool + modifier)
+
     @staticmethod
     def roll_check(pool_size, rng):
         """

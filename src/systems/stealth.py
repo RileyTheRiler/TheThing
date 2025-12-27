@@ -10,10 +10,11 @@ class StealthSystem:
     Emits reporting events so the UI can surface outcomes without direct calls.
     """
 
-    def __init__(self, design_registry: Optional[DesignBriefRegistry] = None):
+    def __init__(self, design_registry: Optional[DesignBriefRegistry] = None, room_states=None):
         self.design_registry = design_registry or DesignBriefRegistry()
         self.config = self.design_registry.get_brief("stealth")
         self.cooldown = 0
+        self.room_states = room_states
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
 
     def cleanup(self):
@@ -48,6 +49,11 @@ class StealthSystem:
             return
 
         detection_chance = self.config.get("base_detection_chance", 0.35)
+
+        # Environmental penalties (darkness makes detection harder)
+        if self.room_states and room:
+            modifiers = self.room_states.get_resolution_modifiers(room)
+            detection_chance = max(0.0, detection_chance + modifiers.stealth_detection)
         detected = rng.random_float() < detection_chance
         opponent = nearby_infected[0]
         payload = {

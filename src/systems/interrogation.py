@@ -4,7 +4,7 @@ Allows players to question crew members and make formal accusations.
 """
 
 from enum import Enum
-from core.resolution import Attribute, Skill
+from core.resolution import Attribute, Skill, ResolutionSystem
 from core.event_system import event_bus, EventType, GameEvent
 
 
@@ -132,9 +132,10 @@ class InterrogationSystem:
         "Sweat beads on their forehead despite the cold.",
     ]
 
-    def __init__(self, rng):
+    def __init__(self, rng, room_states=None):
         self.rng = rng
         self.interrogation_count = {}  # name -> count (repeated interrogation raises suspicion)
+        self.room_states = room_states
 
     def interrogate(self, interrogator, subject, topic, game_state):
         """Conduct an interrogation on a subject.
@@ -191,6 +192,12 @@ class InterrogationSystem:
         # Roll EMPATHY check to notice tells
         empathy_pool = (interrogator.attributes.get(Attribute.INFLUENCE, 1) +
                        interrogator.skills.get(Skill.EMPATHY, 0))
+
+        # Apply environmental observation modifiers based on the subject's room
+        if self.room_states and getattr(subject, "location", None) and getattr(game_state, "station_map", None):
+            room = game_state.station_map.get_room_name(*subject.location)
+            modifiers = self.room_states.get_resolution_modifiers(room)
+            empathy_pool = ResolutionSystem.adjust_pool(empathy_pool, modifiers.observation_pool)
         check = self.rng.calculate_success(empathy_pool)
 
         if check['success']:

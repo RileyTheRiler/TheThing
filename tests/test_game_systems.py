@@ -6,6 +6,7 @@ Converted from verification scripts to proper pytest format.
 import sys
 import os
 import pytest
+from types import SimpleNamespace
 
 # Add src directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -16,6 +17,7 @@ from systems.architect import RandomnessEngine, Difficulty, DifficultySettings
 from systems.combat import CombatSystem, CoverType
 from systems.interrogation import InterrogationSystem, InterrogationTopic
 from systems.room_state import RoomStateManager, RoomState
+from systems.stealth import StealthSystem
 from entities.item import Item
 from entities.crew_member import CrewMember
 from entities.station_map import StationMap
@@ -259,6 +261,112 @@ class TestRoomStateManager:
 
         # Either broke through or damaged it
         assert remaining <= initial_strength
+
+    def test_dark_cold_attack_penalty(self, sample_crew):
+        """Attacks should lose dice in dark, frozen rooms."""
+        rooms = ["Rec Room"]
+        manager = RoomStateManager(rooms)
+        manager.add_state("Rec Room", RoomState.DARK)
+        manager.add_state("Rec Room", RoomState.FROZEN)
+
+        class TrackingRNG(RandomnessEngine):
+            def __init__(self):
+                super().__init__(seed=1)
+                self.pools = []
+
+            def calculate_success(self, pool_size):
+                self.pools.append(pool_size)
+                return {"success": False, "success_count": 0, "dice": [1] * pool_size}
+
+        rng = TrackingRNG()
+        combat = CombatSystem(rng, manager)
+        macready, childs = sample_crew
+        weapon = Item("Axe", "Sharp", weapon_skill=Skill.MELEE, damage=2)
+
+        combat.calculate_attack(macready, childs, weapon, CoverType.NONE, "Rec Room")
+
+        base_pool = macready.attributes.get(Attribute.PROWESS, 1) + macready.skills.get(Skill.MELEE, 0)
+        expected_pool = max(0, base_pool - 2)  # DARK + FROZEN penalty
+        assert rng.pools[0] == expected_pool
+        defense_pool = childs.attributes.get(Attribute.PROWESS, 1) + childs.skills.get(Skill.MELEE, 0)
+        assert rng.pools[1] == defense_pool  # Defense unaffected by darkness/cold
+
+    def test_dark_room_observation_penalty(self, sample_crew, station_map):
+        """Observation checks should account for dark room penalties."""
+        rooms = ["Rec Room"]
+        manager = RoomStateManager(rooms)
+        manager.add_state("Rec Room", RoomState.DARK)
+        manager.add_state("Rec Room", RoomState.FROZEN)
+
+        class ObservationRNG(RandomnessEngine):
+            def __init__(self):
+                super().__init__(seed=2)
+                self.pools = []
+
+            def calculate_success(self, pool_size):
+                self.pools.append(pool_size)
+                return {"success": True, "success_count": 1, "dice": [6] * pool_size}
+
+            def random_float(self):
+                return 0.0
+
+            def choose(self, collection):
+                return collection[0] if collection else None
+
+        rng = ObservationRNG()
+        macready, childs = sample_crew
+        macready.location = (7, 7)  # Rec Room
+        childs.location = (7, 7)
+
+        class MockGameState:
+            def __init__(self):
+                self.crew = sample_crew
+                self.station_map = station_map
+                self.rng = rng
+
+        game = MockGameState()
+        interrogation = InterrogationSystem(rng, manager)
+
+        interrogation.interrogate(macready, childs, InterrogationTopic.WHEREABOUTS, game)
+
+        assert rng.pools[0] == 0  # Base 1 empathy, -2 from DARK+FROZEN, clamped to 0
+
+
+def test_stealth_detection_darkness_penalty(sample_crew, station_map):
+    """Dark rooms should make stealth detection less likely."""
+    event_bus.clear()
+    rooms = ["Rec Room"]
+    manager = RoomStateManager(rooms)
+    manager.add_state("Rec Room", RoomState.DARK)
+
+    class StubRegistry:
+        def get_brief(self, _):
+            return {"base_detection_chance": 0.4, "cooldown_turns": 0, "summary": "Stealth encounter"}
+
+    class StealthRNG(RandomnessEngine):
+        def random_float(self):
+            return 0.4  # Higher than adjusted detection chance (0.25)
+
+        def choose(self, collection):
+            return collection[0] if collection else None
+
+    rng = StealthRNG()
+    player, infected = sample_crew
+    player.location = (7, 7)
+    infected.location = (7, 7)
+    infected.is_infected = True
+
+    game_state = SimpleNamespace(player=player, crew=[player, infected], station_map=station_map)
+    stealth = StealthSystem(StubRegistry(), manager)
+    captured = []
+    event_bus.subscribe(EventType.STEALTH_REPORT, captured.append)
+
+    stealth.on_turn_advance(GameEvent(EventType.TURN_ADVANCE, {"game_state": game_state, "rng": rng}))
+
+    assert captured, "Stealth system should emit a report"
+    assert captured[0].payload["outcome"] == "evaded"
+    stealth.cleanup()
+    event_bus.clear()
 
 
 # === CREW MEMBER TESTS ===

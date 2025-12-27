@@ -431,7 +431,7 @@ class GameState:
         
         self.ai_system = AISystem()
         self.random_events = RandomEventSystem(self.rng)  # Tier 6.2
-        self.stealth_system = StealthSystem(self.design_registry)
+        self.stealth_system = StealthSystem(self.design_registry, self.room_states)
         self.crafting_system = CraftingSystem(self.design_registry)
         self.endgame_system = EndgameSystem(self.design_registry)
 
