@@ -18,10 +18,11 @@ class StealthSystem:
     Emits reporting events so the UI can surface outcomes without direct calls.
     """
 
-    def __init__(self, design_registry: Optional[DesignBriefRegistry] = None):
+    def __init__(self, design_registry: Optional[DesignBriefRegistry] = None, room_states=None):
         self.design_registry = design_registry or DesignBriefRegistry()
         self.config = self.design_registry.get_brief("stealth")
         self.cooldown = 0
+        self.room_states = room_states
         self.postures: Dict[str, StealthPosture] = {}
         self.noise_levels: Dict[str, int] = {}
         self.resolution = ResolutionSystem()
@@ -62,6 +63,12 @@ class StealthSystem:
         if not nearby_infected or self.cooldown > 0:
             return
 
+        detection_chance = self.config.get("base_detection_chance", 0.35)
+
+        # Environmental penalties (darkness makes detection harder)
+        if self.room_states and room:
+            modifiers = self.room_states.get_resolution_modifiers(room)
+            detection_chance = max(0.0, detection_chance + modifiers.stealth_detection)
         detection_chance = self.get_detection_chance(
             observer=nearby_infected[0],
             target=player,

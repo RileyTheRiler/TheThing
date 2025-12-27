@@ -1,6 +1,6 @@
 from enum import Enum, auto
 from core.event_system import event_bus, EventType, GameEvent
-from core.resolution import Attribute, Skill
+from core.resolution import Attribute, Skill, ResolutionModifiers
 
 
 class RoomState(Enum):
@@ -225,3 +225,19 @@ class RoomStateManager:
         if self.has_state(room_name, RoomState.BLOODY): modifier += 5
         if self.has_state(room_name, RoomState.DARK): modifier += 2
         return modifier
+
+    def get_resolution_modifiers(self, room_name):
+        """Return modifiers that affect ResolutionSystem calculations."""
+        modifiers = ResolutionModifiers()
+        states = self.get_states(room_name)
+
+        if RoomState.DARK in states:
+            modifiers.attack_pool -= 1
+            modifiers.observation_pool -= 1
+            modifiers.stealth_detection -= 0.15  # Harder to spot someone in the dark
+
+        if RoomState.FROZEN in states:
+            modifiers.attack_pool -= 1  # Numb hands, sluggish attacks
+            modifiers.observation_pool -= 1  # Frosted visors, breath mist
+
+        return modifiers
