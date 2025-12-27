@@ -29,12 +29,12 @@ The game uses an **event-driven, multi-agent architecture** where 8+ independent
 
 ---
 
-## Tier 3: Gameplay Enhancements
+## Tier 3: Gameplay Enhancements - PARTIAL
 
-- [ ] **3.1** Add difficulty settings (infection rate, mask decay, starting paranoia)
+- [x] **3.1** Add difficulty settings (Easy/Normal/Hard with infection rates, mask decay, paranoia)
 - [ ] **3.2** Expand combat system with initiative, cover, and retreat mechanics
-- [ ] **3.3** Add more rooms (Radio Room, Storage, Lab, Sleeping Quarters)
-- [ ] **3.4** Implement Thing-creature combat AI when revealed
+- [x] **3.3** Add more rooms (Radio Room, Storage, Lab, Sleeping Quarters, Mess Hall)
+- [x] **3.4** Implement Thing-creature combat AI when revealed (hunting, attacking, infection)
 - [ ] **3.5** Add interrogation/accusation dialogue system
 - [ ] **3.6** Implement barricade entry mechanics
 

@@ -2,13 +2,47 @@
 
 from core.resolution import Attribute, Skill
 from core.event_system import event_bus, EventType, GameEvent
+from systems.architect import Difficulty, DifficultySettings
 from audio.audio_manager import Sound
 from engine import GameState
 
 
+def _select_difficulty():
+    """Display difficulty selection menu and return chosen difficulty."""
+    print("\n" + "=" * 50)
+    print("   THE THING: ANTARCTIC RESEARCH STATION 31")
+    print("=" * 50)
+    print("\nSelect Difficulty:")
+    print()
+
+    for i, diff in enumerate(Difficulty, 1):
+        settings = DifficultySettings.get_all(diff)
+        print(f"  [{i}] {diff.value}")
+        print(f"      {settings['description']}")
+        print()
+
+    while True:
+        try:
+            choice = input("Enter choice (1-3) [2]: ").strip()
+            if not choice:
+                return Difficulty.NORMAL
+            choice = int(choice)
+            if 1 <= choice <= 3:
+                return list(Difficulty)[choice - 1]
+            print("Invalid choice. Enter 1, 2, or 3.")
+        except ValueError:
+            print("Invalid input. Enter a number.")
+        except EOFError:
+            return Difficulty.NORMAL
+
+
 def main():
     """Main game loop - can be called from launcher or run directly."""
-    game = GameState(seed=None)
+    # Select difficulty before starting
+    difficulty = _select_difficulty()
+    print(f"\nStarting game on {difficulty.value} difficulty...")
+
+    game = GameState(seed=None, difficulty=difficulty)
 
     # Agent 5 Boot Sequence
     game.crt.boot_sequence()

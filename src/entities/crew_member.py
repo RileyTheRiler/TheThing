@@ -121,12 +121,17 @@ class CrewMember:
     def update_ai(self, game_state):
         """
         Agent 2/8: NPC AI Logic.
-        Priority: Lynch Mob > Schedule > Wander
+        Priority: Thing AI > Lynch Mob > Schedule > Wander
         """
-        if not self.is_alive or self.is_revealed:
+        if not self.is_alive:
             return
 
         current_turn = game_state.turn
+
+        # THING AI: Revealed Things actively hunt humans
+        if self.is_revealed:
+            self._update_thing_ai(game_state, current_turn)
+            return
 
         # 0. PRIORITY: Lynch Mob Hunting (Agent 2)
         if game_state.lynch_mob.active_mob and game_state.lynch_mob.target:
@@ -169,6 +174,69 @@ class CrewMember:
             dx = game_state.rng.choose([-1, 0, 1])
             dy = game_state.rng.choose([-1, 0, 1])
             self.move(dx, dy, game_state.station_map)
+
+    def _update_thing_ai(self, game_state, current_turn):
+        """AI behavior for revealed Things - actively hunt and attack humans."""
+        rng = game_state.rng
+
+        # Find nearest living human
+        humans = [m for m in game_state.crew
+                  if m.is_alive and not m.is_infected and m != self]
+
+        if not humans:
+            # No humans left, wander aimlessly
+            dx = rng.choose([-1, 0, 1])
+            dy = rng.choose([-1, 0, 1])
+            self.move(dx, dy, game_state.station_map)
+            return
+
+        # Find closest human
+        closest = min(humans, key=lambda h: abs(h.location[0] - self.location[0]) +
+                                            abs(h.location[1] - self.location[1]))
+
+        # Check if in same location - ATTACK!
+        if closest.location == self.location:
+            self._thing_attack(closest, game_state)
+            return
+
+        # Move toward closest human
+        tx, ty = closest.location
+        self._pathfind_step(tx, ty, game_state.station_map, current_turn)
+
+    def _thing_attack(self, target, game_state):
+        """The Thing attacks a human target."""
+        rng = game_state.rng
+
+        # Thing gets bonus attack dice (representing its alien nature)
+        thing_attack_bonus = 3
+        attack_pool = self.attributes.get(Attribute.PROWESS, 2) + thing_attack_bonus
+        attack_result = rng.calculate_success(attack_pool)
+
+        # Target defends
+        defense_pool = target.attributes.get(Attribute.PROWESS, 1) + target.skills.get(Skill.MELEE, 0)
+        defense_result = rng.calculate_success(defense_pool)
+
+        thing_name = f"The-Thing-That-Was-{self.name}"
+
+        if attack_result['success_count'] > defense_result['success_count']:
+            # Hit! Deal damage
+            net_hits = attack_result['success_count'] - defense_result['success_count']
+            damage = 2 + net_hits  # Base Thing damage + net hits
+            died = target.take_damage(damage)
+
+            print(f"\n[COMBAT] {thing_name} ATTACKS {target.name}!")
+            print(f"[COMBAT] Attack: {attack_result['success_count']} vs Defense: {defense_result['success_count']}")
+            print(f"[COMBAT] HIT! {target.name} takes {damage} damage!")
+
+            if died:
+                print(f"[COMBAT] *** {target.name} HAS BEEN KILLED BY THE THING! ***")
+
+            # Chance to infect on hit (grapple attack)
+            if not died and rng.random_float() < 0.3:
+                target.is_infected = True
+                print(f"[COMBAT] {target.name} has been INFECTED during the attack!")
+        else:
+            print(f"\n[COMBAT] {thing_name} lunges at {target.name} but MISSES!")
 
     def _pathfind_step(self, target_x, target_y, station_map, current_turn=0):
         """Take one step toward target using A* pathfinding.

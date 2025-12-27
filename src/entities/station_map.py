@@ -14,11 +14,19 @@ class StationMap:
         self.width = width
         self.height = height
         self.grid = [['.' for _ in range(width)] for _ in range(height)]
+        # Station layout - 9 rooms across the 20x20 grid
         self.rooms = {
-            "Rec Room": (5, 5, 10, 10),
-            "Infirmary": (0, 0, 4, 4),
-            "Generator": (15, 15, 19, 19),
-            "Kennel": (0, 15, 4, 19)
+            # Original rooms
+            "Rec Room": (5, 5, 10, 10),       # Central gathering area
+            "Infirmary": (0, 0, 4, 4),        # Medical bay (northwest)
+            "Generator": (15, 15, 19, 19),    # Power room (southeast)
+            "Kennel": (0, 15, 4, 19),         # Dog housing (southwest)
+            # New rooms
+            "Radio Room": (11, 0, 14, 4),     # Communications (north)
+            "Storage": (15, 0, 19, 4),        # Supplies and fuel (northeast)
+            "Lab": (11, 11, 14, 14),          # Scientific research (center-east)
+            "Sleeping Quarters": (0, 6, 4, 10),  # Crew bunks (west)
+            "Mess Hall": (5, 0, 9, 4),        # Food and kitchen (north-center)
         }
         self.room_items = {}
 
