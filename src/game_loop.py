@@ -450,11 +450,15 @@ def _execute_command(game, cmd):
         game.save_manager.save_game(game, slot)
     elif action == "LOAD":
         slot = cmd[1] if len(cmd) > 1 else "auto"
-        data = game.save_manager.load_game(slot)
-        if data:
+        new_game_state = game.save_manager.load_game(slot)
+        if new_game_state:
             # Note: This modifies the local game variable but won't affect the caller
             # For a proper implementation, we'd need to return the new game state
-            game.__dict__.update(GameState.from_dict(data).__dict__)
+            # If load_game returned a dict (legacy fallback), rehydrate it
+            if isinstance(new_game_state, dict):
+                 new_game_state = GameState.from_dict(new_game_state)
+
+            game.__dict__.update(new_game_state.__dict__)
             print("*** GAME LOADED ***")
     elif action == "STATUS":
         for m in game.crew:
