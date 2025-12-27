@@ -1,0 +1,108 @@
+{
+    "items": [
+        {
+            "id": "flamethrower",
+            "name": "Flamethrower",
+            "description": "Standard issue M2A1-7. The only way to be sure.",
+            "category": "weapon",
+            "weapon_skill": "FIREARMS",
+            "damage": 3,
+            "uses": -1,
+            "spawn_room": "Rec Room"
+        },
+        {
+            "id": "scalpel",
+            "name": "Scalpel",
+            "description": "Surgical steel. Copper keeps it sterile.",
+            "category": "weapon",
+            "weapon_skill": "MELEE",
+            "damage": 1,
+            "uses": -1,
+            "spawn_room": "Infirmary"
+        },
+        {
+            "id": "dynamite",
+            "name": "Dynamite",
+            "description": "Norwegian explosive. Handle with extreme care.",
+            "category": "consumable",
+            "effect": "destroy_room",
+            "effect_desc": "Destroys the current room and everything in it.",
+            "uses": 1,
+            "spawn_room": "Generator"
+        },
+        {
+            "id": "blood_bag_macready",
+            "name": "Blood Bag (MacReady)",
+            "description": "Labeled sample from Copper's blood bank.",
+            "category": "evidence",
+            "owner": "MacReady",
+            "is_evidence": true,
+            "uses": 1,
+            "spawn_room": "Infirmary"
+        },
+        {
+            "id": "blood_bag_childs",
+            "name": "Blood Bag (Childs)",
+            "description": "Labeled sample from Copper's blood bank.",
+            "category": "evidence",
+            "owner": "Childs",
+            "is_evidence": true,
+            "uses": 1,
+            "spawn_room": "Infirmary"
+        },
+        {
+            "id": "blood_bag_garry",
+            "name": "Blood Bag (Garry)",
+            "description": "Labeled sample from Copper's blood bank.",
+            "category": "evidence",
+            "owner": "Garry",
+            "is_evidence": true,
+            "uses": 1,
+            "spawn_room": "Infirmary"
+        },
+        {
+            "id": "jb_scotch",
+            "name": "J&B Scotch",
+            "description": "MacReady's preferred blend. Warms the soul.",
+            "category": "consumable",
+            "effect": "reduce_stress",
+            "effect_value": 10,
+            "effect_desc": "Reduces stress by 10 points.",
+            "uses": 3,
+            "spawn_room": "Rec Room"
+        },
+        {
+            "id": "copper_wire",
+            "name": "Copper Wire",
+            "description": "A roll of copper wire. Useful for rigging tests.",
+            "category": "tool",
+            "uses": -1,
+            "spawn_room": "Generator"
+        },
+        {
+            "id": "petri_dish",
+            "name": "Petri Dish",
+            "description": "For collecting and testing samples.",
+            "category": "tool",
+            "uses": 5,
+            "spawn_room": "Infirmary"
+        },
+        {
+            "id": "keys_garry",
+            "name": "Master Keys",
+            "description": "Garry's keyring. Opens everything on the station.",
+            "category": "key",
+            "uses": -1,
+            "spawn_room": null
+        },
+        {
+            "id": "lantern",
+            "name": "Oil Lantern",
+            "description": "Provides light in dark areas.",
+            "category": "tool",
+            "effect": "provide_light",
+            "uses": 10,
+            "spawn_room": "Generator"
+        }
+    ]
+}

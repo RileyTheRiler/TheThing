@@ -1,4 +1,4 @@
-import random
+from src.core.event_system import event_bus, EventType, GameEvent
 
 def check_for_communion(game_state):
     """
@@ -31,16 +31,29 @@ def check_for_communion(game_state):
         if not infected_present:
             continue
             
-        # Determine infection chance
-        infection_chance = 0.10
-        if not game_state.power_on:
-            infection_chance = 0.50
-            
         # Try to infect non-infected members
         for member in members:
             if not member.is_infected:
-                roll = random.random()
-                if roll < infection_chance:
+                # Use ResolutionSystem for calculation (Source of Truth)
+                # We need a resolution instance, normally passed or instantiated
+                from src.core.resolution import ResolutionSystem
+                res = ResolutionSystem()
+                
+                # Determine lighting (mocked for now, or derived from power)
+                lighting = "DARK" if not game_state.power_on else "LIGHT"
+                
+                risk = res.calculate_infection_risk(game_state, lighting, member.mask_integrity, game_state.paranoia_level)
+                
+                rng = game_state.rng
+                if rng.random_float() < risk:
                     member.is_infected = True
-                    # In a real game, we might log this to a hidden GM log
-                    # print(f"[DEBUG] {member.name} has been assimilated at {loc}.")
+                    # Emit event for other systems (e.g., forensics)
+                    event_bus.emit(GameEvent(EventType.COMMUNION_SUCCESS, {"target": member.name, "location": loc}))
+
+def on_turn_advance(event: GameEvent):
+    game_state = event.payload.get("game_state")
+    if game_state:
+        check_for_communion(game_state)
+
+# Register the listener
+event_bus.subscribe(EventType.TURN_ADVANCE, on_turn_advance)

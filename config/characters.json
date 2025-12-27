@@ -1,0 +1,449 @@
+[
+    {
+        "name": "MacReady",
+        "role": "Pilot",
+        "behavior": "Cynical",
+        "attributes": {
+            "Prowess": 3,
+            "Logic": 3,
+            "Influence": 3
+        },
+        "skills": {
+            "Pilot": 3,
+            "Firearms": 2,
+            "Observation": 2
+        },
+        "schedule": [
+            {
+                "start": 8,
+                "end": 20,
+                "room": "Rec Room"
+            },
+            {
+                "start": 20,
+                "end": 8,
+                "room": "Rec Room"
+            }
+        ],
+        "invariants": [
+            {
+                "type": "dialogue",
+                "baseline": "complaining about the whiskey",
+                "slip_desc": "oddly sober and focused",
+                "slip_chance": 0.3
+            },
+            {
+                "type": "visual",
+                "baseline": "clutching a glass of whiskey",
+                "slip_desc": "staring at the empty glass with clinical detachment",
+                "slip_chance": 0.4
+            }
+        ]
+    },
+    {
+        "name": "Childs",
+        "role": "Mechanic",
+        "behavior": "Pragmatic",
+        "attributes": {
+            "Prowess": 5,
+            "Logic": 2,
+            "Influence": 2
+        },
+        "skills": {
+            "Melee": 3,
+            "Repair": 2
+        },
+        "schedule": [
+            {
+                "start": 8,
+                "end": 18,
+                "room": "Generator"
+            },
+            {
+                "start": 18,
+                "end": 8,
+                "room": "Rec Room"
+            }
+        ],
+        "forbidden_rooms": [
+            "Infirmary"
+        ],
+        "invariants": [
+            {
+                "type": "dialogue",
+                "baseline": "questioning MacReady's authority",
+                "slip_desc": "strangely compliant and quiet",
+                "slip_chance": 0.3
+            },
+            {
+                "type": "visual",
+                "baseline": "sharpening a blowtorch",
+                "slip_desc": "holding the torch but not looking at it",
+                "slip_chance": 0.4
+            }
+        ]
+    },
+    {
+        "name": "Blair",
+        "role": "Biologist",
+        "behavior": "Sensitive",
+        "attributes": {
+            "Prowess": 2,
+            "Logic": 5,
+            "Influence": 2
+        },
+        "skills": {
+            "Medicine": 3,
+            "Empathy": 1
+        },
+        "schedule": [
+            {
+                "start": 8,
+                "end": 18,
+                "room": "Infirmary"
+            },
+            {
+                "start": 18,
+                "end": 8,
+                "room": "Rec Room"
+            }
+        ],
+        "forbidden_rooms": [
+            "Generator",
+            "Kennel"
+        ],
+        "invariants": [
+            {
+                "type": "dialogue",
+                "baseline": "muttering about cells and probability",
+                "slip_desc": "explaining everything is fine with a fixed smile",
+                "slip_chance": 0.5
+            },
+            {
+                "type": "visual",
+                "baseline": "hunched over a microscope",
+                "slip_desc": "looking through the microscope but it's not even on",
+                "slip_chance": 0.4
+            }
+        ]
+    },
+    {
+        "name": "Garry",
+        "role": "Commander",
+        "behavior": "Stiff",
+        "attributes": {
+            "Prowess": 3,
+            "Logic": 3,
+            "Influence": 2
+        },
+        "skills": {
+            "Firearms": 2,
+            "Persuasion": 2
+        },
+        "schedule": [
+            {
+                "start": 8,
+                "end": 20,
+                "room": "Rec Room"
+            },
+            {
+                "start": 20,
+                "end": 8,
+                "room": "Rec Room"
+            }
+        ],
+        "forbidden_rooms": [
+            "Kennel",
+            "Generator"
+        ],
+        "invariants": [
+            {
+                "type": "dialogue",
+                "baseline": "insisting on protocol",
+                "slip_desc": "ignoring safety procedures entirely",
+                "slip_chance": 0.3
+            },
+            {
+                "type": "visual",
+                "baseline": "cleaning his handgun",
+                "slip_desc": "staring blankly at the wall with the handgun in pieces",
+                "slip_chance": 0.4
+            }
+        ]
+    },
+    {
+        "name": "Nauls",
+        "role": "Cook",
+        "behavior": "Erratic",
+        "attributes": {
+            "Prowess": 4,
+            "Logic": 2,
+            "Influence": 4
+        },
+        "skills": {
+            "Melee": 2,
+            "Empathy": 2
+        },
+        "schedule": [
+            {
+                "start": 6,
+                "end": 22,
+                "room": "Rec Room"
+            },
+            {
+                "start": 22,
+                "end": 6,
+                "room": "Rec Room"
+            }
+        ],
+        "invariants": [
+            {
+                "type": "dialogue",
+                "baseline": "humming a tune while checking the pantry",
+                "slip_desc": "standing perfectly still in the dark",
+                "slip_chance": 0.4
+            }
+        ]
+    },
+    {
+        "name": "Fuchs",
+        "role": "Biologist",
+        "behavior": "Anxious",
+        "attributes": {
+            "Prowess": 2,
+            "Logic": 5,
+            "Influence": 1
+        },
+        "skills": {
+            "Medicine": 2,
+            "Observation": 3
+        },
+        "schedule": [
+            {
+                "start": 8,
+                "end": 20,
+                "room": "Infirmary"
+            },
+            {
+                "start": 20,
+                "end": 8,
+                "room": "Rec Room"
+            }
+        ],
+        "invariants": [
+            {
+                "type": "dialogue",
+                "baseline": "whispering about Blair's notes",
+                "slip_desc": "burning papers and acting calm",
+                "slip_chance": 0.4
+            }
+        ]
+    },
+    {
+        "name": "Windows",
+        "role": "Radio Op",
+        "behavior": "Paranoid",
+        "attributes": {
+            "Prowess": 2,
+            "Logic": 2,
+            "Influence": 2
+        },
+        "skills": {
+            "Repair": 3,
+            "Observation": 2
+        },
+        "schedule": [
+            {
+                "start": 8,
+                "end": 20,
+                "room": "Rec Room"
+            },
+            {
+                "start": 20,
+                "end": 8,
+                "room": "Rec Room"
+            }
+        ],
+        "invariants": [
+            {
+                "type": "dialogue",
+                "baseline": "cursing the radio static",
+                "slip_desc": "listening to the static with rapt attention",
+                "slip_chance": 0.4
+            }
+        ]
+    },
+    {
+        "name": "Copper",
+        "role": "Doctor",
+        "behavior": "Professional",
+        "attributes": {
+            "Prowess": 2,
+            "Logic": 4,
+            "Influence": 3
+        },
+        "skills": {
+            "Medicine": 3,
+            "Persuasion": 1
+        },
+        "schedule": [
+            {
+                "start": 8,
+                "end": 18,
+                "room": "Infirmary"
+            },
+            {
+                "start": 18,
+                "end": 8,
+                "room": "Rec Room"
+            }
+        ],
+        "forbidden_rooms": [
+            "Generator",
+            "Kitchen"
+        ],
+        "invariants": [
+            {
+                "type": "dialogue",
+                "baseline": "checking medical inventory",
+                "slip_desc": "staring at the blood bank with a strange hunger",
+                "slip_chance": 0.2
+            }
+        ]
+    },
+    {
+        "name": "Norris",
+        "role": "Geologist",
+        "behavior": "Weak",
+        "attributes": {
+            "Prowess": 1,
+            "Logic": 4,
+            "Influence": 3
+        },
+        "skills": {
+            "Observation": 3,
+            "Empathy": 2
+        },
+        "schedule": [
+            {
+                "start": 8,
+                "end": 18,
+                "room": "Rec Room"
+            },
+            {
+                "start": 18,
+                "end": 8,
+                "room": "Rec Room"
+            }
+        ],
+        "invariants": [
+            {
+                "type": "visual",
+                "baseline": "clutching his chest",
+                "slip_desc": "standing rigidly upright and strong",
+                "slip_chance": 0.5
+            }
+        ]
+    },
+    {
+        "name": "Bennings",
+        "role": "Meteorologist",
+        "behavior": "Complaining",
+        "attributes": {
+            "Prowess": 2,
+            "Logic": 3,
+            "Influence": 2
+        },
+        "skills": {
+            "Observation": 2
+        },
+        "schedule": [
+            {
+                "start": 8,
+                "end": 18,
+                "room": "Rec Room"
+            },
+            {
+                "start": 18,
+                "end": 8,
+                "room": "Rec Room"
+            }
+        ],
+        "invariants": [
+            {
+                "type": "dialogue",
+                "baseline": "complaining about the temperature",
+                "slip_desc": "telling everyone it's actually quite warm",
+                "slip_chance": 0.4
+            }
+        ]
+    },
+    {
+        "name": "Clark",
+        "role": "Dog Handler",
+        "behavior": "Introverted",
+        "attributes": {
+            "Prowess": 3,
+            "Logic": 2,
+            "Influence": 1
+        },
+        "skills": {
+            "Melee": 2,
+            "Empathy": 3
+        },
+        "schedule": [
+            {
+                "start": 8,
+                "end": 20,
+                "room": "Kennel"
+            },
+            {
+                "start": 20,
+                "end": 8,
+                "room": "Rec Room"
+            }
+        ],
+        "invariants": [
+            {
+                "type": "visual",
+                "baseline": "petting a dog",
+                "slip_desc": "staring at the dogs with a predatory gaze",
+                "slip_chance": 0.4
+            }
+        ]
+    },
+    {
+        "name": "Palmer",
+        "role": "Assistant Mechanic",
+        "behavior": "Stoned",
+        "attributes": {
+            "Prowess": 3,
+            "Logic": 2,
+            "Influence": 3
+        },
+        "skills": {
+            "Repair": 2,
+            "Pilot": 1
+        },
+        "schedule": [
+            {
+                "start": 12,
+                "end": 24,
+                "room": "Rec Room"
+            },
+            {
+                "start": 0,
+                "end": 12,
+                "room": "Rec Room"
+            }
+        ],
+        "invariants": [
+            {
+                "type": "dialogue",
+                "baseline": "talking about 'Chariots of the Gods'",
+                "slip_desc": "speaking in complex scientific jargon",
+                "slip_chance": 0.3
+            }
+        ]
+    }
+]

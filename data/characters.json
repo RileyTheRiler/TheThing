@@ -1,0 +1,302 @@
+[
+  {
+    "name": "MacReady",
+    "role": "Pilot",
+    "behavior_type": "Cynical",
+    "health": 4,
+    "attributes": {
+      "Prowess": 3,
+      "Logic": 3,
+      "Influence": 3
+    },
+    "skills": {
+      "Pilot": 3,
+      "Firearms": 2,
+      "Observation": 2
+    },
+    "invariants": [
+      {
+        "type": "visual",
+        "baseline": "He tilts his head when listening, squinting slightly.",
+        "slip_desc": "He stares unblinking, head perfectly level.",
+        "slip_chance": 0.4
+      },
+      {
+        "type": "dialogue",
+        "baseline": "cynical and weary",
+        "slip_desc": "flat and purely information-based",
+        "slip_chance": 0.3
+      }
+    ]
+  },
+  {
+    "name": "Childs",
+    "role": "Mechanic",
+    "behavior_type": "Pragmatic",
+    "health": 4,
+    "attributes": {
+      "Prowess": 5,
+      "Logic": 2,
+      "Influence": 2
+    },
+    "skills": {
+      "Melee": 3,
+      "Repair": 2
+    },
+    "invariants": [
+      {
+        "type": "visual",
+        "baseline": "He chews on a toothpick, shifting his weight constantly.",
+        "slip_desc": "He stands rigid, the toothpick motionless in his mouth.",
+        "slip_chance": 0.5
+      },
+      {
+        "type": "dialogue",
+        "baseline": "aggressive and doubting",
+        "slip_desc": "oddly calm and accepting",
+        "slip_chance": 0.2
+      }
+    ]
+  },
+  {
+    "name": "Blair",
+    "role": "Biologist",
+    "behavior_type": "Sensitive",
+    "health": 3,
+    "attributes": {
+      "Prowess": 2,
+      "Logic": 5,
+      "Influence": 2
+    },
+    "skills": {
+      "Medicine": 3,
+      "Empathy": 1
+    },
+    "invariants": [
+      {
+        "type": "visual",
+        "baseline": "He wrings his hands nervously.",
+        "slip_desc": "His hands hang limp and still by his sides.",
+        "slip_chance": 0.6
+      },
+      {
+        "type": "dialogue",
+        "baseline": "spiraling logic",
+        "slip_desc": "disconnected statements",
+        "slip_chance": 0.4
+      }
+    ]
+  },
+  {
+    "name": "Garry",
+    "role": "Commander",
+    "behavior_type": "Stiff",
+    "health": 3,
+    "attributes": {
+      "Prowess": 3,
+      "Logic": 3,
+      "Influence": 2
+    },
+    "skills": {
+      "Firearms": 2,
+      "Persuasion": 2
+    },
+    "invariants": [
+      {
+        "type": "visual",
+        "baseline": "He stands with perfect posture, hand near his holster.",
+        "slip_desc": "He slumps slightly, ignoring his weapon.",
+        "slip_chance": 0.3
+      }
+    ]
+  },
+  {
+    "name": "Nauls",
+    "role": "Cook",
+    "behavior_type": "Erratic",
+    "health": 3,
+    "attributes": {
+      "Prowess": 4,
+      "Logic": 2,
+      "Influence": 4
+    },
+    "skills": {
+      "Melee": 2,
+      "Empathy": 2
+    },
+    "invariants": [
+      {
+        "type": "visual",
+        "baseline": "He taps his foot to imaginary music.",
+        "slip_desc": "He stands perfectly still, no rhythm.",
+        "slip_chance": 0.5
+      }
+    ]
+  },
+  {
+    "name": "Fuchs",
+    "role": "Biologist",
+    "behavior_type": "Anxious",
+    "health": 3,
+    "attributes": {
+      "Prowess": 2,
+      "Logic": 5,
+      "Influence": 1
+    },
+    "skills": {
+      "Medicine": 2,
+      "Observation": 3
+    },
+    "invariants": [
+      {
+        "type": "visual",
+        "baseline": "He adjusts his glasses repeatedly.",
+        "slip_desc": "He stares over the rim of his glasses without blinking.",
+        "slip_chance": 0.4
+      }
+    ]
+  },
+  {
+    "name": "Windows",
+    "role": "Radio Op",
+    "behavior_type": "Paranoid",
+    "health": 3,
+    "attributes": {
+      "Prowess": 2,
+      "Logic": 2,
+      "Influence": 2
+    },
+    "skills": {
+      "Repair": 3,
+      "Observation": 2
+    },
+    "invariants": [
+      {
+        "type": "visual",
+        "baseline": "He glances over his shoulder constantly.",
+        "slip_desc": "He stares at the wall, ignoring everything behind him.",
+        "slip_chance": 0.5
+      }
+    ]
+  },
+  {
+    "name": "Copper",
+    "role": "Doctor",
+    "behavior_type": "Professional",
+    "health": 3,
+    "attributes": {
+      "Prowess": 2,
+      "Logic": 4,
+      "Influence": 3
+    },
+    "skills": {
+      "Medicine": 3,
+      "Persuasion": 1
+    },
+    "invariants": [
+      {
+        "type": "visual",
+        "baseline": "He inspects his fingernails cleanly.",
+        "slip_desc": "He scratches at the table mindlessly.",
+        "slip_chance": 0.3
+      }
+    ]
+  },
+  {
+    "name": "Norris",
+    "role": "Geologist",
+    "behavior_type": "Weak",
+    "health": 2,
+    "attributes": {
+      "Prowess": 1,
+      "Logic": 4,
+      "Influence": 3
+    },
+    "skills": {
+      "Observation": 3,
+      "Empathy": 2
+    },
+    "invariants": [
+      {
+        "type": "visual",
+        "baseline": "He holds his chest occasionally (heart condition).",
+        "slip_desc": "He breathes deep and steady without pain.",
+        "slip_chance": 0.7
+      }
+    ]
+  },
+  {
+    "name": "Bennings",
+    "role": "Meteorologist",
+    "behavior_type": "Complaining",
+    "health": 3,
+    "attributes": {
+      "Prowess": 2,
+      "Logic": 3,
+      "Influence": 2
+    },
+    "skills": {
+      "Observation": 2
+    },
+    "invariants": [
+      {
+        "type": "visual",
+        "baseline": "He rubs his hands together to stay warm.",
+        "slip_desc": "His hands are idle at his sides despite the cold.",
+        "slip_chance": 0.5
+      }
+    ]
+  },
+  {
+    "name": "Clark",
+    "role": "Dog Handler",
+    "behavior_type": "Introverted",
+    "health": 4,
+    "attributes": {
+      "Prowess": 3,
+      "Logic": 2,
+      "Influence": 1
+    },
+    "skills": {
+      "Melee": 2,
+      "Empathy": 3
+    },
+    "invariants": [
+      {
+        "type": "visual",
+        "baseline": "He watches the others from under his brow.",
+        "slip_desc": "His gaze is vacant and unfocused.",
+        "slip_chance": 0.4
+      }
+    ]
+  },
+  {
+    "name": "Palmer",
+    "role": "Assistant Mechanic",
+    "behavior_type": "Stoned",
+    "health": 3,
+    "attributes": {
+      "Prowess": 3,
+      "Logic": 2,
+      "Influence": 3
+    },
+    "skills": {
+      "Repair": 2,
+      "Pilot": 1
+    },
+    "invariants": [
+      {
+        "type": "visual",
+        "baseline": "He grins lazily, eyes half-closed.",
+        "slip_desc": "His eyes are wide alert, the grin gone.",
+        "slip_chance": 0.6
+      },
+      {
+        "type": "dialogue",
+        "baseline": "stoned reasoning",
+        "slip_desc": "sharp and precise",
+        "slip_chance": 0.3
+      }
+    ]
+  }
+]
