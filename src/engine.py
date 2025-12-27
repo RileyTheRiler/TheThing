@@ -400,7 +400,7 @@ class GameState:
     def __init__(self, seed=None):
         self.rng = RandomnessEngine(seed)
         self.time_system = TimeSystem()
-        self.save_manager = SaveManager()
+        self.save_manager = SaveManager(game_state_factory=GameState.from_dict)
         
         self.turn = 1
         self.power_on = True
@@ -679,9 +679,9 @@ def main():
             game.save_manager.save_game(game, slot)
         elif action == "LOAD":
             slot = cmd[1] if len(cmd) > 1 else "auto"
-            data = game.save_manager.load_game(slot)
-            if data:
-                game = GameState.from_dict(data)
+            loaded_game = game.save_manager.load_game(slot)
+            if loaded_game:
+                game = loaded_game
                 print("*** GAME LOADED ***")
         elif action == "STATUS":
             for m in game.crew:

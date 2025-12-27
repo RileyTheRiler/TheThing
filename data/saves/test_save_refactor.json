@@ -1,0 +1,832 @@
+{
+    "turn": 1,
+    "power_on": true,
+    "paranoia_level": 0,
+    "mode": "Investigative",
+    "temperature": -40,
+    "rng": {
+        "seed": 123,
+        "state_b64": "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"
+    },
+    "time_system": {
+        "temperature": -40,
+        "turn_count": 0
+    },
+    "station_map": {
+        "width": 20,
+        "height": 20,
+        "room_items": {
+            "Rec Room": [
+                {
+                    "name": "Whiskey",
+                    "description": "J&B Scotch Bottle.",
+                    "is_evidence": false,
+                    "weapon_skill": null,
+                    "damage": 0,
+                    "uses": -1,
+                    "effect": null,
+                    "effect_value": 0,
+                    "category": "misc",
+                    "history": [
+                        "[Turn 0] Dropped in Rec Room"
+                    ]
+                },
+                {
+                    "name": "Flamethrower",
+                    "description": "Standard issue M2A1.",
+                    "is_evidence": false,
+                    "weapon_skill": "FIREARMS",
+                    "damage": 3,
+                    "uses": -1,
+                    "effect": null,
+                    "effect_value": 0,
+                    "category": "misc",
+                    "history": [
+                        "[Turn 0] Dropped in Rec Room"
+                    ]
+                }
+            ],
+            "Infirmary": [
+                {
+                    "name": "Scalpel",
+                    "description": "Surgical steel.",
+                    "is_evidence": false,
+                    "weapon_skill": "MELEE",
+                    "damage": 1,
+                    "uses": -1,
+                    "effect": null,
+                    "effect_value": 0,
+                    "category": "misc",
+                    "history": [
+                        "[Turn 0] Dropped in Infirmary"
+                    ]
+                }
+            ],
+            "Generator": [
+                {
+                    "name": "Wire",
+                    "description": "Copper wire roll.",
+                    "is_evidence": false,
+                    "weapon_skill": null,
+                    "damage": 0,
+                    "uses": -1,
+                    "effect": null,
+                    "effect_value": 0,
+                    "category": "misc",
+                    "history": [
+                        "[Turn 0] Dropped in Generator"
+                    ]
+                }
+            ]
+        }
+    },
+    "crew": [
+        {
+            "name": "TestPlayer",
+            "role": "Pilot",
+            "behavior_type": "Cynical",
+            "is_infected": false,
+            "trust_score": 50,
+            "location": [
+                5,
+                7
+            ],
+            "is_alive": true,
+            "health": 3,
+            "stress": 0,
+            "mask_integrity": 100.0,
+            "is_revealed": false,
+            "attributes": {
+                "PROWESS": 3,
+                "LOGIC": 3,
+                "INFLUENCE": 3
+            },
+            "skills": {
+                "PILOT": 3,
+                "FIREARMS": 2,
+                "OBSERVATION": 2
+            },
+            "inventory": [],
+            "schedule": [
+                {
+                    "start": 8,
+                    "end": 20,
+                    "room": "Rec Room"
+                },
+                {
+                    "start": 20,
+                    "end": 8,
+                    "room": "Rec Room"
+                }
+            ],
+            "invariants": [
+                {
+                    "type": "dialogue",
+                    "baseline": "complaining about the whiskey",
+                    "slip_desc": "oddly sober and focused",
+                    "slip_chance": 0.3
+                },
+                {
+                    "type": "visual",
+                    "baseline": "clutching a glass of whiskey",
+                    "slip_desc": "staring at the empty glass with clinical detachment",
+                    "slip_chance": 0.4
+                }
+            ]
+        },
+        {
+            "name": "Childs",
+            "role": "Mechanic",
+            "behavior_type": "Pragmatic",
+            "is_infected": false,
+            "trust_score": 50,
+            "location": [
+                5,
+                8
+            ],
+            "is_alive": true,
+            "health": 3,
+            "stress": 0,
+            "mask_integrity": 100.0,
+            "is_revealed": false,
+            "attributes": {
+                "PROWESS": 5,
+                "LOGIC": 2,
+                "INFLUENCE": 2
+            },
+            "skills": {
+                "MELEE": 3,
+                "REPAIR": 2
+            },
+            "inventory": [],
+            "schedule": [
+                {
+                    "start": 8,
+                    "end": 18,
+                    "room": "Generator"
+                },
+                {
+                    "start": 18,
+                    "end": 8,
+                    "room": "Rec Room"
+                }
+            ],
+            "invariants": [
+                {
+                    "type": "dialogue",
+                    "baseline": "questioning MacReady's authority",
+                    "slip_desc": "strangely compliant and quiet",
+                    "slip_chance": 0.3
+                },
+                {
+                    "type": "visual",
+                    "baseline": "sharpening a blowtorch",
+                    "slip_desc": "holding the torch but not looking at it",
+                    "slip_chance": 0.4
+                }
+            ]
+        },
+        {
+            "name": "Blair",
+            "role": "Biologist",
+            "behavior_type": "Sensitive",
+            "is_infected": false,
+            "trust_score": 50,
+            "location": [
+                7,
+                5
+            ],
+            "is_alive": true,
+            "health": 3,
+            "stress": 0,
+            "mask_integrity": 100.0,
+            "is_revealed": false,
+            "attributes": {
+                "PROWESS": 2,
+                "LOGIC": 5,
+                "INFLUENCE": 2
+            },
+            "skills": {
+                "MEDICINE": 3,
+                "EMPATHY": 1
+            },
+            "inventory": [],
+            "schedule": [
+                {
+                    "start": 8,
+                    "end": 18,
+                    "room": "Infirmary"
+                },
+                {
+                    "start": 18,
+                    "end": 8,
+                    "room": "Rec Room"
+                }
+            ],
+            "invariants": [
+                {
+                    "type": "dialogue",
+                    "baseline": "muttering about cells and probability",
+                    "slip_desc": "explaining everything is fine with a fixed smile",
+                    "slip_chance": 0.5
+                },
+                {
+                    "type": "visual",
+                    "baseline": "hunched over a microscope",
+                    "slip_desc": "looking through the microscope but it's not even on",
+                    "slip_chance": 0.4
+                }
+            ]
+        },
+        {
+            "name": "Garry",
+            "role": "Commander",
+            "behavior_type": "Stiff",
+            "is_infected": false,
+            "trust_score": 50,
+            "location": [
+                5,
+                8
+            ],
+            "is_alive": true,
+            "health": 3,
+            "stress": 0,
+            "mask_integrity": 100.0,
+            "is_revealed": false,
+            "attributes": {
+                "PROWESS": 3,
+                "LOGIC": 3,
+                "INFLUENCE": 2
+            },
+            "skills": {
+                "FIREARMS": 2,
+                "PERSUASION": 2
+            },
+            "inventory": [],
+            "schedule": [
+                {
+                    "start": 8,
+                    "end": 20,
+                    "room": "Rec Room"
+                },
+                {
+                    "start": 20,
+                    "end": 8,
+                    "room": "Rec Room"
+                }
+            ],
+            "invariants": [
+                {
+                    "type": "dialogue",
+                    "baseline": "insisting on protocol",
+                    "slip_desc": "ignoring safety procedures entirely",
+                    "slip_chance": 0.3
+                },
+                {
+                    "type": "visual",
+                    "baseline": "cleaning his handgun",
+                    "slip_desc": "staring blankly at the wall with the handgun in pieces",
+                    "slip_chance": 0.4
+                }
+            ]
+        },
+        {
+            "name": "Nauls",
+            "role": "Cook",
+            "behavior_type": "Erratic",
+            "is_infected": false,
+            "trust_score": 50,
+            "location": [
+                9,
+                9
+            ],
+            "is_alive": true,
+            "health": 3,
+            "stress": 0,
+            "mask_integrity": 100.0,
+            "is_revealed": false,
+            "attributes": {
+                "PROWESS": 4,
+                "LOGIC": 2,
+                "INFLUENCE": 4
+            },
+            "skills": {
+                "MELEE": 2,
+                "EMPATHY": 2
+            },
+            "inventory": [],
+            "schedule": [
+                {
+                    "start": 6,
+                    "end": 22,
+                    "room": "Rec Room"
+                },
+                {
+                    "start": 22,
+                    "end": 6,
+                    "room": "Rec Room"
+                }
+            ],
+            "invariants": [
+                {
+                    "type": "dialogue",
+                    "baseline": "humming a tune while checking the pantry",
+                    "slip_desc": "standing perfectly still in the dark",
+                    "slip_chance": 0.4
+                }
+            ]
+        },
+        {
+            "name": "Fuchs",
+            "role": "Biologist",
+            "behavior_type": "Anxious",
+            "is_infected": false,
+            "trust_score": 50,
+            "location": [
+                7,
+                7
+            ],
+            "is_alive": true,
+            "health": 3,
+            "stress": 0,
+            "mask_integrity": 100.0,
+            "is_revealed": false,
+            "attributes": {
+                "PROWESS": 2,
+                "LOGIC": 5,
+                "INFLUENCE": 1
+            },
+            "skills": {
+                "MEDICINE": 2,
+                "OBSERVATION": 3
+            },
+            "inventory": [],
+            "schedule": [
+                {
+                    "start": 8,
+                    "end": 20,
+                    "room": "Infirmary"
+                },
+                {
+                    "start": 20,
+                    "end": 8,
+                    "room": "Rec Room"
+                }
+            ],
+            "invariants": [
+                {
+                    "type": "dialogue",
+                    "baseline": "whispering about Blair's notes",
+                    "slip_desc": "burning papers and acting calm",
+                    "slip_chance": 0.4
+                }
+            ]
+        },
+        {
+            "name": "Windows",
+            "role": "Radio Op",
+            "behavior_type": "Paranoid",
+            "is_infected": false,
+            "trust_score": 50,
+            "location": [
+                5,
+                6
+            ],
+            "is_alive": true,
+            "health": 3,
+            "stress": 0,
+            "mask_integrity": 100.0,
+            "is_revealed": false,
+            "attributes": {
+                "PROWESS": 2,
+                "LOGIC": 2,
+                "INFLUENCE": 2
+            },
+            "skills": {
+                "REPAIR": 3,
+                "OBSERVATION": 2
+            },
+            "inventory": [],
+            "schedule": [
+                {
+                    "start": 8,
+                    "end": 20,
+                    "room": "Rec Room"
+                },
+                {
+                    "start": 20,
+                    "end": 8,
+                    "room": "Rec Room"
+                }
+            ],
+            "invariants": [
+                {
+                    "type": "dialogue",
+                    "baseline": "cursing the radio static",
+                    "slip_desc": "listening to the static with rapt attention",
+                    "slip_chance": 0.4
+                }
+            ]
+        },
+        {
+            "name": "Copper",
+            "role": "Doctor",
+            "behavior_type": "Professional",
+            "is_infected": false,
+            "trust_score": 50,
+            "location": [
+                6,
+                7
+            ],
+            "is_alive": true,
+            "health": 3,
+            "stress": 0,
+            "mask_integrity": 100.0,
+            "is_revealed": false,
+            "attributes": {
+                "PROWESS": 2,
+                "LOGIC": 4,
+                "INFLUENCE": 3
+            },
+            "skills": {
+                "MEDICINE": 3,
+                "PERSUASION": 1
+            },
+            "inventory": [],
+            "schedule": [
+                {
+                    "start": 8,
+                    "end": 18,
+                    "room": "Infirmary"
+                },
+                {
+                    "start": 18,
+                    "end": 8,
+                    "room": "Rec Room"
+                }
+            ],
+            "invariants": [
+                {
+                    "type": "dialogue",
+                    "baseline": "checking medical inventory",
+                    "slip_desc": "staring at the blood bank with a strange hunger",
+                    "slip_chance": 0.2
+                }
+            ]
+        },
+        {
+            "name": "Norris",
+            "role": "Geologist",
+            "behavior_type": "Weak",
+            "is_infected": false,
+            "trust_score": 50,
+            "location": [
+                9,
+                7
+            ],
+            "is_alive": true,
+            "health": 3,
+            "stress": 0,
+            "mask_integrity": 100.0,
+            "is_revealed": false,
+            "attributes": {
+                "PROWESS": 1,
+                "LOGIC": 4,
+                "INFLUENCE": 3
+            },
+            "skills": {
+                "OBSERVATION": 3,
+                "EMPATHY": 2
+            },
+            "inventory": [],
+            "schedule": [
+                {
+                    "start": 8,
+                    "end": 18,
+                    "room": "Rec Room"
+                },
+                {
+                    "start": 18,
+                    "end": 8,
+                    "room": "Rec Room"
+                }
+            ],
+            "invariants": [
+                {
+                    "type": "visual",
+                    "baseline": "clutching his chest",
+                    "slip_desc": "standing rigidly upright and strong",
+                    "slip_chance": 0.5
+                }
+            ]
+        },
+        {
+            "name": "Bennings",
+            "role": "Meteorologist",
+            "behavior_type": "Complaining",
+            "is_infected": false,
+            "trust_score": 50,
+            "location": [
+                10,
+                6
+            ],
+            "is_alive": true,
+            "health": 3,
+            "stress": 0,
+            "mask_integrity": 100.0,
+            "is_revealed": false,
+            "attributes": {
+                "PROWESS": 2,
+                "LOGIC": 3,
+                "INFLUENCE": 2
+            },
+            "skills": {
+                "OBSERVATION": 2
+            },
+            "inventory": [],
+            "schedule": [
+                {
+                    "start": 8,
+                    "end": 18,
+                    "room": "Rec Room"
+                },
+                {
+                    "start": 18,
+                    "end": 8,
+                    "room": "Rec Room"
+                }
+            ],
+            "invariants": [
+                {
+                    "type": "dialogue",
+                    "baseline": "complaining about the temperature",
+                    "slip_desc": "telling everyone it's actually quite warm",
+                    "slip_chance": 0.4
+                }
+            ]
+        },
+        {
+            "name": "Clark",
+            "role": "Dog Handler",
+            "behavior_type": "Introverted",
+            "is_infected": false,
+            "trust_score": 50,
+            "location": [
+                6,
+                5
+            ],
+            "is_alive": true,
+            "health": 3,
+            "stress": 0,
+            "mask_integrity": 100.0,
+            "is_revealed": false,
+            "attributes": {
+                "PROWESS": 3,
+                "LOGIC": 2,
+                "INFLUENCE": 1
+            },
+            "skills": {
+                "MELEE": 2,
+                "EMPATHY": 3
+            },
+            "inventory": [],
+            "schedule": [
+                {
+                    "start": 8,
+                    "end": 20,
+                    "room": "Kennel"
+                },
+                {
+                    "start": 20,
+                    "end": 8,
+                    "room": "Rec Room"
+                }
+            ],
+            "invariants": [
+                {
+                    "type": "visual",
+                    "baseline": "petting a dog",
+                    "slip_desc": "staring at the dogs with a predatory gaze",
+                    "slip_chance": 0.4
+                }
+            ]
+        },
+        {
+            "name": "Palmer",
+            "role": "Assistant Mechanic",
+            "behavior_type": "Stoned",
+            "is_infected": false,
+            "trust_score": 50,
+            "location": [
+                8,
+                5
+            ],
+            "is_alive": true,
+            "health": 3,
+            "stress": 0,
+            "mask_integrity": 100.0,
+            "is_revealed": false,
+            "attributes": {
+                "PROWESS": 3,
+                "LOGIC": 2,
+                "INFLUENCE": 3
+            },
+            "skills": {
+                "REPAIR": 2,
+                "PILOT": 1
+            },
+            "inventory": [],
+            "schedule": [
+                {
+                    "start": 12,
+                    "end": 24,
+                    "room": "Rec Room"
+                },
+                {
+                    "start": 0,
+                    "end": 12,
+                    "room": "Rec Room"
+                }
+            ],
+            "invariants": [
+                {
+                    "type": "dialogue",
+                    "baseline": "talking about 'Chariots of the Gods'",
+                    "slip_desc": "speaking in complex scientific jargon",
+                    "slip_chance": 0.3
+                }
+            ]
+        }
+    ],
+    "journal": [],
+    "trust": {
+        "MacReady": {
+            "MacReady": 40,
+            "Childs": 50,
+            "Blair": 50,
+            "Garry": 50,
+            "Nauls": 50,
+            "Fuchs": 50,
+            "Windows": 50,
+            "Copper": 50,
+            "Norris": 50,
+            "Bennings": 50,
+            "Clark": 40,
+            "Palmer": 50
+        },
+        "Childs": {
+            "MacReady": 40,
+            "Childs": 50,
+            "Blair": 50,
+            "Garry": 30,
+            "Nauls": 50,
+            "Fuchs": 50,
+            "Windows": 50,
+            "Copper": 50,
+            "Norris": 50,
+            "Bennings": 50,
+            "Clark": 40,
+            "Palmer": 50
+        },
+        "Blair": {
+            "MacReady": 40,
+            "Childs": 50,
+            "Blair": 50,
+            "Garry": 50,
+            "Nauls": 50,
+            "Fuchs": 75,
+            "Windows": 50,
+            "Copper": 75,
+            "Norris": 50,
+            "Bennings": 50,
+            "Clark": 40,
+            "Palmer": 50
+        },
+        "Garry": {
+            "MacReady": 40,
+            "Childs": 50,
+            "Blair": 50,
+            "Garry": 50,
+            "Nauls": 50,
+            "Fuchs": 50,
+            "Windows": 50,
+            "Copper": 50,
+            "Norris": 50,
+            "Bennings": 50,
+            "Clark": 40,
+            "Palmer": 50
+        },
+        "Nauls": {
+            "MacReady": 40,
+            "Childs": 50,
+            "Blair": 50,
+            "Garry": 50,
+            "Nauls": 50,
+            "Fuchs": 50,
+            "Windows": 50,
+            "Copper": 50,
+            "Norris": 50,
+            "Bennings": 50,
+            "Clark": 40,
+            "Palmer": 50
+        },
+        "Fuchs": {
+            "MacReady": 40,
+            "Childs": 50,
+            "Blair": 75,
+            "Garry": 50,
+            "Nauls": 50,
+            "Fuchs": 50,
+            "Windows": 50,
+            "Copper": 75,
+            "Norris": 50,
+            "Bennings": 50,
+            "Clark": 40,
+            "Palmer": 50
+        },
+        "Windows": {
+            "MacReady": 40,
+            "Childs": 50,
+            "Blair": 50,
+            "Garry": 50,
+            "Nauls": 50,
+            "Fuchs": 50,
+            "Windows": 50,
+            "Copper": 50,
+            "Norris": 50,
+            "Bennings": 50,
+            "Clark": 40,
+            "Palmer": 50
+        },
+        "Copper": {
+            "MacReady": 40,
+            "Childs": 50,
+            "Blair": 75,
+            "Garry": 50,
+            "Nauls": 50,
+            "Fuchs": 75,
+            "Windows": 50,
+            "Copper": 50,
+            "Norris": 50,
+            "Bennings": 50,
+            "Clark": 40,
+            "Palmer": 50
+        },
+        "Norris": {
+            "MacReady": 40,
+            "Childs": 50,
+            "Blair": 50,
+            "Garry": 50,
+            "Nauls": 50,
+            "Fuchs": 50,
+            "Windows": 50,
+            "Copper": 50,
+            "Norris": 50,
+            "Bennings": 50,
+            "Clark": 40,
+            "Palmer": 50
+        },
+        "Bennings": {
+            "MacReady": 40,
+            "Childs": 50,
+            "Blair": 50,
+            "Garry": 50,
+            "Nauls": 50,
+            "Fuchs": 50,
+            "Windows": 50,
+            "Copper": 50,
+            "Norris": 50,
+            "Bennings": 50,
+            "Clark": 40,
+            "Palmer": 50
+        },
+        "Clark": {
+            "MacReady": 40,
+            "Childs": 50,
+            "Blair": 50,
+            "Garry": 50,
+            "Nauls": 50,
+            "Fuchs": 50,
+            "Windows": 50,
+            "Copper": 50,
+            "Norris": 50,
+            "Bennings": 50,
+            "Clark": 40,
+            "Palmer": 50
+        },
+        "Palmer": {
+            "MacReady": 40,
+            "Childs": 50,
+            "Blair": 50,
+            "Garry": 25,
+            "Nauls": 50,
+            "Fuchs": 50,
+            "Windows": 50,
+            "Copper": 50,
+            "Norris": 50,
+            "Bennings": 50,
+            "Clark": 40,
+            "Palmer": 50
+        }
+    }
+}

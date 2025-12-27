@@ -69,6 +69,13 @@ class TimeSystem:
         self.temperature = start_temp
         self.points_per_turn = 1
         self.turn_count = 0
+
+    @property
+    def hour(self):
+        # Assuming 1 turn = 1 hour for now, starting at 8 AM (08:00)
+        # Or just turn count if that's the logic.
+        # Let's map turn 1 to 08:00.
+        return (8 + self.turn_count) % 24
         
     def tick(self):
         """Advance time by one turn."""
