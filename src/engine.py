@@ -18,7 +18,6 @@ from entities.crew_member import CrewMember
 from entities.item import Item
 from entities.station_map import StationMap
 from systems.ai import AISystem
-<<<<<<< HEAD
 
 # Agent 4: Forensics
 from systems.random_events import RandomEventSystem
@@ -31,9 +30,7 @@ from ui.renderer import TerminalRenderer
 from ui.crt_effects import CRTOutput
 from ui.command_parser import CommandParser
 from audio.audio_manager import AudioManager, Sound
-=======
 from systems.architect import Difficulty, DifficultySettings, GameMode, RandomnessEngine, TimeSystem
->>>>>>> 8955dd991f45dd39cbbdb368c0ddf168d7372a50
 from systems.commands import CommandDispatcher, GameContext
 from systems.crafting import CraftingSystem
 from systems.endgame import EndgameSystem
@@ -80,6 +77,15 @@ class GameState:
         self.paranoia_level = self.difficulty_settings["starting_paranoia"]
         self.mode = GameMode.INVESTIGATIVE
         self.design_registry = DesignBriefRegistry()
+
+        # Track which per-turn behaviors executed during TURN_ADVANCE
+        self.turn_behavior_inventory = {
+            "weather": 0,
+            "sabotage": 0,
+            "ai": 0,
+            "random_events": 0,
+            "random_event_triggered": None,
+        }
 
         self.station_map = StationMap()
         self.crew = self._initialize_crew()
@@ -289,10 +295,15 @@ class GameState:
         
 
 
+        # Track per-turn behaviors (weather, sabotage, AI, random events)
+        turn_inventory = {k: 0 for k in self.turn_behavior_inventory}
+        turn_inventory["random_event_triggered"] = None
+
         # 1. Emit TURN_ADVANCE Event (Triggers TimeSystem, WeatherSystem, InfectionSystem, etc.)
         event_bus.emit(GameEvent(EventType.TURN_ADVANCE, {
             "game_state": self,
-            "rng": self.rng
+            "rng": self.rng,
+            "turn_inventory": turn_inventory
         }))
         
         # 3. Process Local Environment Effects
@@ -303,9 +314,22 @@ class GameState:
         
 
         
+        # 5. NPC AI Update
+        self.ai_system.update(self)
+        turn_inventory["ai"] += 1
+
+        # 6. Random Events Check (Tier 6.2)
+        random_event = self.random_events.check_for_event(self)
+        turn_inventory["random_events"] += 1
+        if random_event:
+            turn_inventory["random_event_triggered"] = random_event.id
+            self.random_events.execute_event(random_event, self)
 
 
 
+
+        # Expose per-turn behavior inventory for debugging/tests
+        self.turn_behavior_inventory = turn_inventory
 
         # 7. Update Rescue Timer
         if self.rescue_signal_active and self.rescue_turns_remaining is not None:
