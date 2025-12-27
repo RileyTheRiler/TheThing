@@ -150,11 +150,6 @@ class TimeSystem:
         """Current in-game hour (0-23)."""
         return (self.start_hour + self.turn_count) % 24
         self.start_hour = start_hour  # Start at 7 PM by default
-
-    @property
-    def hour(self):
-        """Calculate the in-game hour (0-23) based on turns elapsed."""
-        return (self.start_hour + self.turn_count) % 24
         self._start_hour = start_hour
         self._hour = start_hour
 
@@ -173,6 +168,7 @@ class TimeSystem:
         self.turn_count += 1
 
         self._hour = (self._start_hour + self.turn_count) % 24
+
     def update_environment(self, power_on):
         """
         Updates environmental factors based on power state.
@@ -214,8 +210,6 @@ class TimeSystem:
 
         ts = cls(temp, start_hour=start_hour)
         ts.turn_count = turn_count
-        ts = cls(data.get("temperature", -40), start_hour=data.get("hour", 19))
-        ts.turn_count = data.get("turn_count", 0)
         # Recompute hour from stored value to keep normalization consistent.
-        ts.hour = data.get("hour", ts._start_hour)
+        ts.hour = saved_hour
         return ts
