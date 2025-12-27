@@ -42,6 +42,8 @@ class SaveManager:
                 data = json.load(f)
 
             # Use factory if provided to avoid circular dependencies
+            if self.game_state_factory:
+                return self.game_state_factory(data)
             hydrator = factory if factory else self.game_state_factory
             if hydrator:
                 return hydrator(data)

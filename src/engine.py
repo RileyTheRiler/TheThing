@@ -417,6 +417,7 @@ class GameState:
         self.rng = RandomnessEngine(seed)
         self.time_system = TimeSystem()
         self.save_manager = SaveManager(game_state_factory=GameState.from_dict)
+        
 
         # Store difficulty and get settings
         self.difficulty = difficulty
@@ -478,6 +479,11 @@ class GameState:
         event_bus.subscribe(EventType.BIOLOGICAL_SLIP, self.on_biological_slip)
         event_bus.subscribe(EventType.LYNCH_MOB_TRIGGER, self.on_lynch_mob_trigger)
         event_bus.subscribe(EventType.LYNCH_MOB_UPDATE, self.on_lynch_mob_update)
+
+    def cleanup(self):
+        """Cleanup resources before destruction."""
+        if hasattr(self, 'audio'):
+            self.audio.shutdown()
 
     def on_biological_slip(self, event: GameEvent):
         char_name = event.payload.get("character_name")
@@ -953,6 +959,7 @@ def main():
             slot = cmd[1] if len(cmd) > 1 else "auto"
             loaded_game = game.save_manager.load_game(slot)
             if loaded_game:
+                game.cleanup()
                 game = loaded_game
                 print("*** GAME LOADED ***")
         elif action == "STATUS":
