@@ -5,13 +5,10 @@ importable without sys.path tweaks or `src.` prefixes.
 """
 
 import random
-<<<<<<< HEAD
 import json
 from core.event_system import event_bus, EventType, GameEvent
 from core.resolution import ResolutionSystem
-=======
 from enum import Enum
->>>>>>> 8955dd991f45dd39cbbdb368c0ddf168d7372a50
 
 
 class Difficulty(Enum):
@@ -123,15 +120,12 @@ class RandomnessEngine:
         }
 
     def from_dict(self, data):
-        self.seed = data.get("seed")
+        if not data:
+            return
+        self.seed = data.get("seed", self.seed)
         rng_state = data.get("rng_state")
 
-        # Handle legacy pickle format (for backward compatibility if needed,
-        # but for security we should probably drop it or strictly validate.
-        # Given the instruction to fix security, we will NOT support the vulnerable format.)
         if rng_state:
-            # Reconstruct tuple structure required by random.setstate
-            # (version, internal_state_tuple, gaussian_state)
             try:
                 state = (
                     rng_state[0],
@@ -139,17 +133,17 @@ class RandomnessEngine:
                     rng_state[2]
                 )
                 random.setstate(state)
+                return
             except (TypeError, ValueError, IndexError) as e:
                 print(f"Warning: Failed to restore RNG state: {e}")
-                if self.seed:
-                    random.seed(self.seed)
+        if self.seed is not None:
+            random.seed(self.seed)
 
 class TimeSystem:
     def __init__(self, start_temp=-40, start_hour=19):
         self.temperature = start_temp
         self.points_per_turn = 1
         self.turn_count = 0
-<<<<<<< HEAD
         
         # Subscribe to Turn Advance
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
@@ -168,9 +162,7 @@ class TimeSystem:
     def hour(self):
         # Start at 19:00 (7 PM), 1 turn = 1 hour
         return (19 + self.turn_count) % 24
-=======
         self.start_hour = start_hour
->>>>>>> 8955dd991f45dd39cbbdb368c0ddf168d7372a50
 
     @property
     def hour(self):
@@ -223,6 +215,9 @@ class TimeSystem:
 
     @classmethod
     def from_dict(cls, data):
+        if not data:
+            return cls()
+
         turn_count = data.get("turn_count", 0)
         saved_hour = data.get("hour", 19)
         start_hour = (saved_hour - turn_count) % 24
@@ -232,7 +227,6 @@ class TimeSystem:
         turn_count = data.get("turn_count", 0)
         saved_hour = data.get("hour", 19)
 
-        # Recalculate start hour so property math remains consistent
         start_hour = (saved_hour - turn_count) % 24
 
         ts = cls(temp, start_hour=start_hour)

@@ -67,6 +67,134 @@ class GameState:
     def paranoia_level(self):
         return getattr(self, "_paranoia_level", 0)
 
+    @classmethod
+    def from_dict(cls, data):
+        if not isinstance(data, dict):
+            raise ValueError("Item data must be a dictionary.")
+        name = data.get("name")
+        description = data.get("description")
+        if not name or not description:
+            raise ValueError("Item data missing required fields 'name' and 'description'.")
+
+        skill = None
+        if data.get("weapon_skill"):
+             try:
+                 skill = Skill[data["weapon_skill"]]
+             except KeyError:
+                 skill = None
+                 
+        item = cls(
+            name=name,
+            description=description,
+            is_evidence=data.get("is_evidence", False),
+            weapon_skill=skill,
+            damage=data.get("damage", 0),
+            uses=data.get("uses", -1),
+            effect=data.get("effect"),
+            effect_value=data.get("effect_value", 0),
+            category=data.get("category", "misc")
+        )
+        item.history = data.get("history", [])
+        return item
+
+class CrewMember:
+    def __init__(self, name, role, behavior_type, attributes=None, skills=None, schedule=None, invariants=None):
+        self.name = name
+        self.role = role
+        self.behavior_type = behavior_type
+        self.is_infected = False  # The "Truth" hidden from the player
+        self.trust_score = 50      # 0 to 100
+        self.location = (0, 0)
+        self.is_alive = True
+        
+        # Stats
+        self.attributes = attributes if attributes else {}
+        self.skills = skills if skills else {}
+        self.schedule = schedule if schedule else []
+        self.invariants = invariants if invariants else []
+        self.forbidden_rooms = [] # Hydrated from JSON
+        self.stress = 0
+        self.inventory = []
+        self.knowledge_tags = [] # Agent 3: Mimicry Data
+        self.health = 3 # Base health
+        self.mask_integrity = 100.0 # Agent 3: Mask Tracking
+        self.is_revealed = False    # Agent 3: Violent Reveal
+        self.slipped_vapor = False  # Hook: Biological Slip flag
+
+    def take_damage(self, amount):
+        self.health -= amount
+        if self.health <= 0:
+            self.health = 0
+            self.is_alive = False
+            return True # Died
+        return False
+
+    def add_item(self, item, turn=0):
+        self.inventory.append(item)
+        item.add_history(turn, f"Picked up by {self.name}")
+    
+    def remove_item(self, item_name):
+        for i, item in enumerate(self.inventory):
+            if item.name.upper() == item_name.upper():
+                return self.inventory.pop(i)
+        return None
+
+    def roll_check(self, attribute, skill=None, rng=None):
+        attr_val = self.attributes.get(attribute, 1) 
+        skill_val = self.skills.get(skill, 0)
+        pool_size = attr_val + skill_val
+        
+        # Use a temporary ResolutionSystem if one isn't provided (usually from GameState)
+        res = ResolutionSystem()
+        return res.roll_check(pool_size)
+
+    def move(self, dx, dy, station_map):
+        new_x = self.location[0] + dx
+        new_y = self.location[1] + dy
+        if station_map.is_walkable(new_x, new_y):
+            self.location = (new_x, new_y)
+            return True
+        return False
+
+    def get_description(self, game_state):
+        rng = game_state.rng
+        desc = [f"This is {self.name}, the {self.role}."]
+        
+        # 1. Spatial Slip Check
+        current_room = game_state.station_map.get_room_name(*self.location)
+        if hasattr(self, 'forbidden_rooms') and current_room in self.forbidden_rooms:
+            desc.append(f"Something is wrong. {self.name} shouldn't be in the {current_room}. They look out of place, almost defensive.")
+
+        # 2. Invariant Visual Slips (Base Behavioral Patterns)
+        for inv in [i for i in self.invariants if i.get('type') == 'visual']:
+            if self.is_infected and rng.random_float() < inv.get('slip_chance', 0.5):
+                desc.append(inv['slip_desc'])
+            else:
+                desc.append(inv['baseline'])
+
+        # 3. Agent 3/4 biological slips and sensory tells
+        if self.is_infected and not self.is_revealed:
+            # Chance to show a sensory tell increases as mask integrity drops
+            if self.mask_integrity < 80:
+                slip_chance = (80 - self.mask_integrity) / 80.0
+                if rng.random_float() < slip_chance:
+                    slip = BiologicalSlipGenerator.get_visual_slip(rng)
+                    desc.append(f"You notice they are {slip}.")
+            
+            # Specific hint for infected NPCs
+            if self.mask_integrity < 50 and rng.random_float() < 0.3:
+                 desc.append("Their eyes seem strange... almost like lusterless black spheres.")
+        
+        # 4. State based on stress and environment
+        state = "shivering in the cold"
+        if self.stress > 3:
+            state = "visibly shaking and hyperventilating"
+        elif self.is_infected and self.mask_integrity < 40:
+             state = "unnaturally still, staring through you"
+             
+        desc.append(f"State: {state.capitalize()}.")
+        
+        return " ".join(desc)
     @paranoia_level.setter
     def paranoia_level(self, value):
         clamped = max(0, min(100, int(value)))
@@ -76,6 +204,149 @@ class GameState:
         if not hasattr(self, "social_thresholds"):
             return
 
+    def to_dict(self):
+        return {
+            "name": self.name,
+            "role": self.role,
+            "behavior_type": self.behavior_type,
+            "is_infected": self.is_infected,
+            "trust_score": self.trust_score,
+            "location": self.location,
+            "is_alive": self.is_alive,
+            "health": self.health,
+            "stress": self.stress,
+            "mask_integrity": self.mask_integrity,
+            "is_revealed": self.is_revealed,
+            "attributes": {k.name: v for k, v in self.attributes.items()},
+            "skills": {k.name: v for k, v in self.skills.items()},
+            "inventory": [i.to_dict() for i in self.inventory],
+            "knowledge_tags": self.knowledge_tags,
+            "schedule": self.schedule,
+            "invariants": self.invariants
+        }
+    
+    @classmethod
+    def from_dict(cls, data):
+        if not isinstance(data, dict):
+            raise ValueError("Crew member data must be a dictionary.")
+
+        name = data.get("name")
+        role = data.get("role")
+        behavior_type = data.get("behavior_type")
+        if not all([name, role, behavior_type]):
+            raise ValueError("Crew member data missing required fields 'name', 'role', or 'behavior_type'.")
+
+        attrs = {}
+        for key, value in data.get("attributes", {}).items():
+            try:
+                attrs[Attribute[key]] = value
+            except KeyError:
+                continue
+        skills = {}
+        for key, value in data.get("skills", {}).items():
+            try:
+                skills[Skill[key]] = value
+            except KeyError:
+                continue
+
+        m = cls(
+            name=name,
+            role=role,
+            behavior_type=behavior_type,
+            attributes=attrs,
+            skills=skills
+        )
+        m.is_infected = data.get("is_infected", False)
+        m.trust_score = data.get("trust_score", 50)
+        m.location = tuple(data.get("location", (0, 0)))
+        m.is_alive = data.get("is_alive", True)
+        m.health = data.get("health", 3)
+        m.stress = data.get("stress", 0)
+        m.mask_integrity = data.get("mask_integrity", 100.0)
+        m.is_revealed = data.get("is_revealed", False)
+        m.schedule = data.get("schedule", [])
+        m.invariants = data.get("invariants", [])
+        m.knowledge_tags = data.get("knowledge_tags", [])
+        m.inventory = [Item.from_dict(i) for i in data.get("inventory", []) if i]
+        return m
+
+class StationMap:
+    def __init__(self, width=20, height=20):
+        self.width = width
+        self.height = height
+        self.grid = [['.' for _ in range(width)] for _ in range(height)]
+        self.rooms = {
+            "Rec Room": (5, 5, 10, 10),
+            "Infirmary": (0, 0, 4, 4),
+            "Generator": (15, 15, 19, 19),
+            "Kennel": (0, 15, 4, 19)
+        }
+        self.room_items = {} 
+
+    def add_item_to_room(self, item, x, y, turn=0):
+        room_name = self.get_room_name(x, y)
+        if room_name not in self.room_items:
+            self.room_items[room_name] = []
+        self.room_items[room_name].append(item)
+        item.add_history(turn, f"Dropped in {room_name}")
+
+    def get_items_in_room(self, x, y):
+        room_name = self.get_room_name(x, y)
+        return self.room_items.get(room_name, [])
+
+    def remove_item_from_room(self, item_name, x, y):
+        room_name = self.get_room_name(x, y)
+        if room_name in self.room_items:
+            for i, item in enumerate(self.room_items[room_name]):
+                if item.name.upper() == item_name.upper():
+                    return self.room_items[room_name].pop(i)
+        return None
+
+    def is_walkable(self, x, y):
+        return 0 <= x < self.width and 0 <= y < self.height
+
+    def get_room_name(self, x, y):
+        for name, (x1, y1, x2, y2) in self.rooms.items():
+            if x1 <= x <= x2 and y1 <= y <= y2:
+                return name
+        return "Corridor (Sector {},{})".format(x, y)
+
+    def render(self, crew):
+        display_grid = [row[:] for row in self.grid]
+        for member in crew:
+            if member.is_alive:
+                x, y = member.location
+                if 0 <= x < self.width and 0 <= y < self.height:
+                    display_grid[y][x] = member.name[0] 
+        output = []
+        for row in display_grid:
+            output.append(" ".join(row))
+        return "\n".join(output)
+    
+    def to_dict(self):
+        # Serialize room_items
+        # room_items is Dict[RoomName, List[Item]]
+        items_dict = {}
+        for room, items in self.room_items.items():
+            items_dict[room] = [i.to_dict() for i in items]
+            
+        return {
+            "width": self.width,
+            "height": self.height,
+            "room_items": items_dict
+            # rooms and grid are static/derived for now, so we don't save grid unless it changes
+        }
+
+    @classmethod
+    def from_dict(cls, data):
+        if not isinstance(data, dict):
+            raise ValueError("Station map data must be a dictionary.")
+
+        sm = cls(data.get("width", 20), data.get("height", 20))
+        items_dict = data.get("room_items", {}) if isinstance(data.get("room_items", {}), dict) else {}
+        for room, items_data in items_dict.items():
+            sm.room_items[room] = [Item.from_dict(i) for i in items_data if i]
+        return sm
         if previous_value is None:
             self._paranoia_bucket = bucket_for_thresholds(clamped, self.social_thresholds.paranoia_thresholds)
             return
@@ -589,30 +860,56 @@ class GameState:
 
     @classmethod
     def from_dict(cls, data):
-        # Get difficulty from save or default to NORMAL
-        difficulty_value = data.get("difficulty", "Normal")
-        difficulty = Difficulty(difficulty_value)
+        data = data or {}
+        difficulty_value = data.get("difficulty", Difficulty.NORMAL.value)
+        try:
+            difficulty = Difficulty(difficulty_value)
+        except ValueError:
+            difficulty = Difficulty.NORMAL
 
-        game = cls(difficulty=difficulty)  # Init with saved difficulty
-        # Overwrite content
-        game.turn = data["turn"]
-        game.power_on = data["power_on"]
-        game.paranoia_level = data["paranoia_level"]
-        game.mode = GameMode(data["mode"])
+        game = cls(difficulty=difficulty)
+        game.turn = data.get("turn", game.turn)
+        game.power_on = data.get("power_on", game.power_on)
+        game.paranoia_level = data.get("paranoia_level", game.paranoia_level)
 
-        game.helicopter_status = data.get("helicopter_status", "BROKEN")
-        game.rescue_signal_active = data.get("rescue_signal_active", False)
-        game.rescue_turns_remaining = data.get("rescue_turns_remaining")
+        mode_value = data.get("mode")
+        if mode_value:
+            try:
+                game.mode = GameMode(mode_value)
+            except ValueError:
+                pass
 
-        game.rng.from_dict(data["rng"])
-        game.time_system = TimeSystem.from_dict(data["time_system"])
+        game.helicopter_status = data.get("helicopter_status", game.helicopter_status)
+        game.rescue_signal_active = data.get("rescue_signal_active", game.rescue_signal_active)
+        game.rescue_turns_remaining = data.get("rescue_turns_remaining", game.rescue_turns_remaining)
 
-        game.station_map = StationMap.from_dict(data["station_map"])
+        rng_data = data.get("rng")
+        if rng_data:
+            game.rng.from_dict(rng_data)
 
-        game.crew = [CrewMember.from_dict(m) for m in data["crew"]]
-        # Re-link player
+        time_data = data.get("time_system")
+        if time_data:
+            game.time_system = TimeSystem.from_dict(time_data)
+
+        station_data = data.get("station_map")
+        if station_data:
+            game.station_map = StationMap.from_dict(station_data)
+
+        crew_data = data.get("crew")
+        if crew_data:
+            game.crew = [CrewMember.from_dict(m) for m in crew_data if m]
+
         game.player = next((m for m in game.crew if m.name == "MacReady"), None)
 
+        game.journal = data.get("journal", game.journal)
+        if hasattr(game, "trust_system"):
+            game.trust_system.cleanup()
+        game.trust_system = TrustMatrix(game.crew)
+        trust_matrix = data.get("trust")
+        if isinstance(trust_matrix, dict):
+            game.trust_system.matrix = trust_matrix
+        if hasattr(game, "lynch_mob"):
+            game.lynch_mob.trust_system = game.trust_system
         game.journal = data["journal"]
         game.trust_system.matrix = data.get("trust", {})
         if hasattr(game.trust_system, "rebuild_buckets"):
