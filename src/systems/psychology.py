@@ -25,7 +25,21 @@ class PsychologySystem:
                     stress_gain = abs(game_state.temperature) // 20
                     self.add_stress(m, max(1, int(stress_gain)))
 
-        # 2. Panic Resolution
+        # 2. Isolation Checks
+        # Humans gain stress when alone (fear of being picked off)
+        room_counts = {}
+        for m in game_state.crew:
+            if m.is_alive:
+                room_name = game_state.station_map.get_room_name(*m.location)
+                room_counts[room_name] = room_counts.get(room_name, 0) + 1
+        
+        for m in game_state.crew:
+            if m.is_alive and not m.is_infected: # Things don't feel isolation stress
+                room_name = game_state.station_map.get_room_name(*m.location)
+                if room_counts[room_name] == 1:
+                    self.add_stress(m, 1)
+
+        # 3. Panic Resolution & Cascades
         for m in game_state.crew:
             if m.is_alive:
                 is_panic, effect = self.resolve_panic(m, game_state)
@@ -33,6 +47,16 @@ class PsychologySystem:
                     game_state.journal.append(f"[TURN {game_state.turn}] {m.name} PANICKED: {effect}!")
                     if m == game_state.player:
                         print(f"\n*** SYSTEM WARNING: {m.name.upper()} IS PANICKING! Effect: {effect.upper()} ***")
+                    
+                    # Panic Cascade: Everyone in the same room gains stress
+                    room_name = game_state.station_map.get_room_name(*m.location)
+                    for witness in game_state.crew:
+                        if witness != m and witness.is_alive:
+                            witness_room = game_state.station_map.get_room_name(*witness.location)
+                            if witness_room == room_name:
+                                self.add_stress(witness, 2)
+                                if witness == game_state.player:
+                                    print(f"Seeing {m.name} lose it makes you uneasy. (+2 Stress)")
 
     def calculate_panic_threshold(self, character):
         """

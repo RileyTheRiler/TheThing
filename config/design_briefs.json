@@ -4,6 +4,10 @@
         "hook": "stealth",
         "summary": "Hiding and evasion let the player survive encounters with revealed or suspicious crew by using darkness, cover, and timing instead of open conflict.",
         "base_detection_chance": 0.35,
+        "base_detection_pool": 1,
+        "darkness_modifier": 0.5,
+        "lights_off_modifier": 0.6,
+        "noise_step": 0.25,
         "cooldown_turns": 2,
         "signals": [
             "TURN_ADVANCE",

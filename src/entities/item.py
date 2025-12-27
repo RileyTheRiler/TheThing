@@ -63,6 +63,14 @@ class Item:
     @classmethod
     def from_dict(cls, data):
         """Deserialize item from dictionary."""
+        if not isinstance(data, dict):
+            raise ValueError("Item data must be a dictionary.")
+
+        name = data.get("name")
+        description = data.get("description")
+        if not name or not description:
+            raise ValueError("Item data missing required fields 'name' and 'description'.")
+
         skill = None
         if data.get("weapon_skill"):
             try:
@@ -71,11 +79,11 @@ class Item:
                 skill = None
 
         item = cls(
-            name=data["name"],
-            description=data["description"],
-            is_evidence=data["is_evidence"],
+            name=name,
+            description=description,
+            is_evidence=data.get("is_evidence", False),
             weapon_skill=skill,
-            damage=data["damage"],
+            damage=data.get("damage", 0),
             uses=data.get("uses", -1),
             effect=data.get("effect"),
             effect_value=data.get("effect_value", 0),

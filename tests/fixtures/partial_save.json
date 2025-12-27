@@ -1,0 +1,18 @@
+{
+    "turn": 3,
+    "power_on": false,
+    "rng": {
+        "seed": 9876
+    },
+    "station_map": {
+        "width": 10,
+        "height": 10
+    },
+    "crew": [],
+    "journal": [
+        "Sighting near the kennel."
+    ],
+    "trust": {
+        "MacReady->Childs": 10
+    }
+}

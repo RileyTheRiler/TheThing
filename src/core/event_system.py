@@ -25,6 +25,10 @@ class EventType(Enum):
     # Sabotage
     POWER_FAILURE = auto()
 
+    # Social thresholds
+    TRUST_THRESHOLD = auto()
+    PARANOIA_THRESHOLD = auto()
+
     # === REPORTING PATTERN (Tier 2.6) ===
     # Systems emit these instead of returning strings
 
@@ -48,6 +52,7 @@ class EventType(Enum):
     REPAIR_COMPLETE = auto()  # Helicopter repair/escape status updates
     SOS_SENT = auto()         # Radio rescue signal/arrival
     ENDING_REPORT = auto()    # Ending triggers/results
+    INTERROGATION_RESULT = auto() # Interrogation dialogue/results
 
 @dataclass
 class GameEvent:

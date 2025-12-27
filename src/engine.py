@@ -1,39 +1,55 @@
+import json
+import os
+import random
 from systems.missionary import MissionarySystem
 from systems.psychology import PsychologySystem
 from core.resolution import Attribute, Skill, ResolutionSystem
-from systems.social import TrustMatrix, LynchMobSystem, DialogueManager
+from systems.social import TrustMatrix, LynchMobSystem, DialogueManager, SocialThresholds, bucket_for_thresholds, bucket_label
 from systems.architect import RandomnessEngine, GameMode, TimeSystem
+from systems.social import TrustMatrix, LynchMobSystem, DialogueManager
 from systems.architect import RandomnessEngine, GameMode, TimeSystem, Difficulty, DifficultySettings
 from systems.persistence import SaveManager
 from core.event_system import event_bus, EventType, GameEvent
 from core.design_briefs import DesignBriefRegistry
 
-# Agent 6: Dungeon Master Systems
-from systems.weather import WeatherSystem
-from systems.sabotage import SabotageManager
-from systems.room_state import RoomStateManager, RoomState
-from systems.stealth import StealthSystem
-from systems.crafting import CraftingSystem
-from systems.endgame import EndgameSystem
-
-# Agent 8: AI System
+from audio.audio_manager import AudioManager, Sound
+from core.design_briefs import DesignBriefRegistry
+from core.event_system import EventType, GameEvent, event_bus
+from core.resolution import Attribute, ResolutionSystem, Skill
+from entities.crew_member import CrewMember
+from entities.item import Item
+from entities.station_map import StationMap
 from systems.ai import AISystem
 
 # Agent 4: Forensics
 from systems.random_events import RandomEventSystem
 
 # Agent 4: Forensics
-from src.systems.forensics import BiologicalSlipGenerator, BloodTestSim, ForensicDatabase, EvidenceLog, ForensicsSystem
-from systems.forensics import BiologicalSlipGenerator, BloodTestSim, ForensicDatabase, EvidenceLog
+from systems.forensics import BiologicalSlipGenerator, BloodTestSim, ForensicDatabase, EvidenceLog, ForensicsSystem
 
 # Terminal Designer Systems (Agent 5)
 from ui.renderer import TerminalRenderer
 from ui.crt_effects import CRTOutput
 from ui.command_parser import CommandParser
 from audio.audio_manager import AudioManager, Sound
+from systems.architect import Difficulty, DifficultySettings, GameMode, RandomnessEngine, TimeSystem
 from systems.commands import CommandDispatcher, GameContext
+from systems.crafting import CraftingSystem
+from systems.endgame import EndgameSystem
+from systems.forensics import BiologicalSlipGenerator, BloodTestSim, EvidenceLog, ForensicDatabase, ForensicsSystem
+from systems.missionary import MissionarySystem
+from systems.persistence import SaveManager
+from systems.psychology import PsychologySystem
+from systems.random_events import RandomEventSystem
+from systems.room_state import RoomState, RoomStateManager
+from systems.sabotage import SabotageManager
+from systems.social import DialogueManager, LynchMobSystem, TrustMatrix
+from systems.stealth import StealthSystem
+from systems.weather import WeatherSystem
+from ui.command_parser import CommandParser
+from ui.crt_effects import CRTOutput
 from ui.message_reporter import MessageReporter
-from audio.audio_manager import AudioManager, Sound
+from ui.renderer import TerminalRenderer
 
 # Entity Classes
 from entities.item import Item
@@ -43,58 +59,22 @@ from entities.station_map import StationMap
 import json
 import os
 import sys
-import random
 import time
 
-class Item:
-    def __init__(self, name, description, is_evidence=False, weapon_skill=None, damage=0,
-                 uses=-1, effect=None, effect_value=0, category="misc"):
-        self.name = name
-        self.description = description
-        self.is_evidence = is_evidence
-        self.weapon_skill = weapon_skill
-        self.damage = damage
-        self.uses = uses
-        self.effect = effect
-        self.effect_value = effect_value
-        self.category = category
-        self.history = []
-
-    def add_history(self, turn, location):
-        self.history.append(f"[Turn {turn}] {location}")
-
-    def is_consumable(self):
-        return self.uses > 0
-
-    def consume(self):
-        if self.uses > 0:
-            self.uses -= 1
-            return self.uses >= 0
-        return True
-
-    def __str__(self):
-        if self.damage > 0:
-            return f"{self.name} (DMG: {self.damage})"
-        elif self.uses > 0:
-            return f"{self.name} ({self.uses} uses)"
-        return self.name
-    
-    def to_dict(self):
-        return {
-            "name": self.name,
-            "description": self.description,
-            "is_evidence": self.is_evidence,
-            "weapon_skill": self.weapon_skill.name if self.weapon_skill else None,
-            "damage": self.damage,
-            "uses": self.uses,
-            "effect": self.effect,
-            "effect_value": self.effect_value,
-            "category": self.category,
-            "history": self.history
-        }
+class GameState:
+    @property
+    def paranoia_level(self):
+        return getattr(self, "_paranoia_level", 0)
 
     @classmethod
     def from_dict(cls, data):
+        if not isinstance(data, dict):
+            raise ValueError("Item data must be a dictionary.")
+        name = data.get("name")
+        description = data.get("description")
+        if not name or not description:
+            raise ValueError("Item data missing required fields 'name' and 'description'.")
+
         skill = None
         if data.get("weapon_skill"):
              try:
@@ -103,11 +83,11 @@ class Item:
                  skill = None
                  
         item = cls(
-            name=data["name"],
-            description=data["description"],
-            is_evidence=data["is_evidence"],
+            name=name,
+            description=description,
+            is_evidence=data.get("is_evidence", False),
             weapon_skill=skill,
-            damage=data["damage"],
+            damage=data.get("damage", 0),
             uses=data.get("uses", -1),
             effect=data.get("effect"),
             effect_value=data.get("effect_value", 0),
@@ -214,6 +194,11 @@ class CrewMember:
         desc.append(f"State: {state.capitalize()}.")
         
         return " ".join(desc)
+    @paranoia_level.setter
+    def paranoia_level(self, value):
+        clamped = max(0, min(100, int(value)))
+        previous_value = getattr(self, "_paranoia_level", None)
+        self._paranoia_level = clamped
 
     def get_dialogue(self, game_state):
         rng = game_state.rng
@@ -221,7 +206,7 @@ class CrewMember:
         # Dialogue Invariants
         dialogue_invariants = [i for i in self.invariants if i.get('type') == 'dialogue']
         if dialogue_invariants:
-            inv = rng.choose(dialogue_invariants) if hasattr(rng, 'choose') else random.choice(dialogue_invariants)
+            inv = rng.choose(dialogue_invariants)
             if self.is_infected and rng.random_float() < inv.get('slip_chance', 0.5):
                 base_dialogue = f"Speaking {inv['slip_desc']}."
             else:
@@ -231,7 +216,7 @@ class CrewMember:
         
         # Advanced Mimicry: Use Knowledge Tags
         if self.is_infected and self.knowledge_tags and rng.random_float() < 0.4:
-            tag = rng.choose(self.knowledge_tags) if hasattr(rng, 'choose') else random.choice(self.knowledge_tags)
+            tag = rng.choose(self.knowledge_tags)
             base_dialogue += f" I remember {tag}."
 
         if game_state.time_system.temperature < 0:
@@ -245,6 +230,8 @@ class CrewMember:
             else:
                 base_dialogue += " [NO VAPOR]"
         return base_dialogue
+        if not hasattr(self, "social_thresholds"):
+            return
 
     def to_dict(self):
         return {
@@ -269,28 +256,47 @@ class CrewMember:
     
     @classmethod
     def from_dict(cls, data):
-        attrs = {Attribute[k]: v for k, v in data.get("attributes", {}).items()}
-        skills = {Skill[k]: v for k, v in data.get("skills", {}).items()}
-                    
+        if not isinstance(data, dict):
+            raise ValueError("Crew member data must be a dictionary.")
+
+        name = data.get("name")
+        role = data.get("role")
+        behavior_type = data.get("behavior_type")
+        if not all([name, role, behavior_type]):
+            raise ValueError("Crew member data missing required fields 'name', 'role', or 'behavior_type'.")
+
+        attrs = {}
+        for key, value in data.get("attributes", {}).items():
+            try:
+                attrs[Attribute[key]] = value
+            except KeyError:
+                continue
+        skills = {}
+        for key, value in data.get("skills", {}).items():
+            try:
+                skills[Skill[key]] = value
+            except KeyError:
+                continue
+
         m = cls(
-            name=data["name"],
-            role=data["role"],
-            behavior_type=data["behavior_type"],
+            name=name,
+            role=role,
+            behavior_type=behavior_type,
             attributes=attrs,
             skills=skills
         )
-        m.is_infected = data["is_infected"]
-        m.trust_score = data["trust_score"]
-        m.location = tuple(data["location"])
-        m.is_alive = data["is_alive"]
-        m.health = data["health"]
-        m.stress = data["stress"]
+        m.is_infected = data.get("is_infected", False)
+        m.trust_score = data.get("trust_score", 50)
+        m.location = tuple(data.get("location", (0, 0)))
+        m.is_alive = data.get("is_alive", True)
+        m.health = data.get("health", 3)
+        m.stress = data.get("stress", 0)
         m.mask_integrity = data.get("mask_integrity", 100.0)
         m.is_revealed = data.get("is_revealed", False)
         m.schedule = data.get("schedule", [])
         m.invariants = data.get("invariants", [])
         m.knowledge_tags = data.get("knowledge_tags", [])
-        m.inventory = [Item.from_dict(i) for i in data.get("inventory", [])]
+        m.inventory = [Item.from_dict(i) for i in data.get("inventory", []) if i]
         return m
 
 class StationMap:
@@ -378,14 +384,35 @@ class StationMap:
 
     @classmethod
     def from_dict(cls, data):
-        sm = cls(data["width"], data["height"])
-        items_dict = data.get("room_items", {})
-        for room, items_data in items_dict.items():
-            sm.room_items[room] = [Item.from_dict(i) for i in items_data]
-        return sm
+        if not isinstance(data, dict):
+            raise ValueError("Station map data must be a dictionary.")
 
-class GameState:
-    def __init__(self, seed=None, difficulty=Difficulty.NORMAL):
+        sm = cls(data.get("width", 20), data.get("height", 20))
+        items_dict = data.get("room_items", {}) if isinstance(data.get("room_items", {}), dict) else {}
+        for room, items_data in items_dict.items():
+            sm.room_items[room] = [Item.from_dict(i) for i in items_data if i]
+        return sm
+        if previous_value is None:
+            self._paranoia_bucket = bucket_for_thresholds(clamped, self.social_thresholds.paranoia_thresholds)
+            return
+
+        new_bucket = bucket_for_thresholds(clamped, self.social_thresholds.paranoia_thresholds)
+        previous_bucket = getattr(self, "_paranoia_bucket", new_bucket)
+        if new_bucket != previous_bucket:
+            self._paranoia_bucket = new_bucket
+            direction = "up" if clamped > previous_value else "down"
+            event_bus.emit(GameEvent(EventType.PARANOIA_THRESHOLD, {
+                "value": clamped,
+                "previous_value": previous_value,
+                "bucket": bucket_label(new_bucket),
+                "thresholds": list(self.social_thresholds.paranoia_thresholds),
+                "direction": direction
+            }))
+        else:
+            self._paranoia_bucket = new_bucket
+
+    def __init__(self, seed=None, difficulty=Difficulty.NORMAL, thresholds: SocialThresholds = None):
+        self.social_thresholds = thresholds or SocialThresholds()
         self.rng = RandomnessEngine(seed)
         self.time_system = TimeSystem()
         self.save_manager = SaveManager(game_state_factory=GameState.from_dict)
@@ -402,6 +429,15 @@ class GameState:
         self.mode = GameMode.INVESTIGATIVE
         self.design_registry = DesignBriefRegistry()
 
+        # Track which per-turn behaviors executed during TURN_ADVANCE
+        self.turn_behavior_inventory = {
+            "weather": 0,
+            "sabotage": 0,
+            "ai": 0,
+            "random_events": 0,
+            "random_event_triggered": None,
+        }
+
         self.station_map = StationMap()
         self.crew = self._initialize_crew()
         self.journal = []
@@ -415,10 +451,10 @@ class GameState:
         self._initialize_items()
         self._initialize_infection()
         
-        self.trust_system = TrustMatrix(self.crew)
+        self.trust_system = TrustMatrix(self.crew, thresholds=self.social_thresholds)
         
         # Agent 2: Social Psychologist
-        self.lynch_mob = LynchMobSystem(self.trust_system)
+        self.lynch_mob = LynchMobSystem(self.trust_system, thresholds=self.social_thresholds)
         self.dialogue_manager = DialogueManager()
         
         # Agent 3: Missionary System
@@ -430,13 +466,13 @@ class GameState:
         # Agent 4: Forensics
         self.forensic_db = ForensicDatabase()
         self.evidence_log = EvidenceLog()
-        self.forensics = ForensicsSystem()
+        self.forensics = ForensicsSystem(rng=self.rng)
         
         # Terminal Designer Systems (Agent 5)
         self.renderer = TerminalRenderer(self.station_map)
-        self.crt = CRTOutput(palette="amber", crawl_speed=0.015)
+        self.crt = CRTOutput(palette="amber", crawl_speed=0.015, rng=self.rng)
         self.parser = CommandParser(known_names=[m.name for m in self.crew])
-        self.audio = AudioManager(enabled=True)
+        self.audio = AudioManager(enabled=True, rng=self.rng)
         self.command_dispatcher = CommandDispatcher()
         self.reporter = MessageReporter(self.crt)  # Tier 2.6: Event-based reporting
         
@@ -447,7 +483,7 @@ class GameState:
         
         self.ai_system = AISystem()
         self.random_events = RandomEventSystem(self.rng)  # Tier 6.2
-        self.stealth_system = StealthSystem(self.design_registry)
+        self.stealth_system = StealthSystem(self.design_registry, self.room_states)
         self.crafting_system = CraftingSystem(self.design_registry)
         self.endgame_system = EndgameSystem(self.design_registry)
 
@@ -458,11 +494,6 @@ class GameState:
         event_bus.subscribe(EventType.BIOLOGICAL_SLIP, self.on_biological_slip)
         event_bus.subscribe(EventType.LYNCH_MOB_TRIGGER, self.on_lynch_mob_trigger)
         event_bus.subscribe(EventType.LYNCH_MOB_UPDATE, self.on_lynch_mob_update)
-
-    def cleanup(self):
-        """Cleanup resources before destruction."""
-        if hasattr(self, 'audio'):
-            self.audio.shutdown()
 
     def on_biological_slip(self, event: GameEvent):
         char_name = event.payload.get("character_name")
@@ -496,6 +527,10 @@ class GameState:
         """Unsubscribe from event bus to prevent leaks."""
         event_bus.unsubscribe(EventType.BIOLOGICAL_SLIP, self.on_biological_slip)
         event_bus.unsubscribe(EventType.LYNCH_MOB_TRIGGER, self.on_lynch_mob_trigger)
+        event_bus.unsubscribe(EventType.LYNCH_MOB_UPDATE, self.on_lynch_mob_update)
+
+        if hasattr(self, 'audio'):
+            self.audio.shutdown()
 
         # Cleanup subsystems if they have cleanup
         if hasattr(self.weather, 'cleanup'): self.weather.cleanup()
@@ -562,8 +597,8 @@ class GameState:
                 data = json.load(f)
             for char_data in data:
                 # Use Attribute and Skill names directly from JSON as per standards
-                attrs = {Attribute(k): v for k, v in char_data.get("attributes", {}).items()}
-                skills = {Skill(k): v for k, v in char_data.get("skills", {}).items()}
+                attrs = {Attribute[k]: v for k, v in char_data.get("attributes", {}).items()}
+                skills = {Skill[k]: v for k, v in char_data.get("skills", {}).items()}
                 
                 m = CrewMember(
                     name=char_data["name"],
@@ -593,10 +628,10 @@ class GameState:
         # Determine how many to infect based on difficulty
         min_infected = self.difficulty_settings["initial_infected_min"]
         max_infected = self.difficulty_settings["initial_infected_max"]
-        num_infected = random.randint(min_infected, min(max_infected, len(eligible)))
+        num_infected = self.rng.randint(min_infected, min(max_infected, len(eligible)))
 
         # Randomly select crew to infect
-        infected_crew = random.sample(eligible, num_infected)
+        infected_crew = self.rng.sample(eligible, num_infected)
         for member in infected_crew:
             member.is_infected = True
 
@@ -609,14 +644,17 @@ class GameState:
         
         self.paranoia_level = min(100, self.paranoia_level + 1)
         
-        # Update TimeSystem (manual tick if not event-driven)
-        self.time_system.tick()
-        self.time_system.update_environment(self.power_on)
+
+
+        # Track per-turn behaviors (weather, sabotage, AI, random events)
+        turn_inventory = {k: 0 for k in self.turn_behavior_inventory}
+        turn_inventory["random_event_triggered"] = None
 
         # 1. Emit TURN_ADVANCE Event (Triggers TimeSystem, WeatherSystem, InfectionSystem, etc.)
         event_bus.emit(GameEvent(EventType.TURN_ADVANCE, {
             "game_state": self,
-            "rng": self.rng
+            "rng": self.rng,
+            "turn_inventory": turn_inventory
         }))
         
         # 3. Process Local Environment Effects
@@ -626,18 +664,28 @@ class GameState:
             self.paranoia_level = min(100, self.paranoia_level + paranoia_mod)
         
         # 4. Lynch Mob Check (Agent 2)
-        lynch_target = self.lynch_mob.check_thresholds(self.crew)
+        lynch_target = self.lynch_mob.check_thresholds(self.crew, current_paranoia=self.paranoia_level)
         if lynch_target:
             # Mob is active, NPCs will converge via event handler
             pass
+
         
         # 5. NPC AI Update
         self.ai_system.update(self)
+        turn_inventory["ai"] += 1
 
         # 6. Random Events Check (Tier 6.2)
         random_event = self.random_events.check_for_event(self)
+        turn_inventory["random_events"] += 1
         if random_event:
+            turn_inventory["random_event_triggered"] = random_event.id
             self.random_events.execute_event(random_event, self)
+
+
+
+
+        # Expose per-turn behavior inventory for debugging/tests
+        self.turn_behavior_inventory = turn_inventory
 
         # 7. Update Rescue Timer
         if self.rescue_signal_active and self.rescue_turns_remaining is not None:
@@ -886,32 +934,69 @@ class GameState:
 
     @classmethod
     def from_dict(cls, data):
-        # Get difficulty from save or default to NORMAL
-        difficulty_value = data.get("difficulty", "Normal")
-        difficulty = Difficulty(difficulty_value)
+        data = data or {}
+        difficulty_value = data.get("difficulty", Difficulty.NORMAL.value)
+        try:
+            difficulty = Difficulty(difficulty_value)
+        except ValueError:
+            difficulty = Difficulty.NORMAL
 
-        game = cls(difficulty=difficulty)  # Init with saved difficulty
-        # Overwrite content
-        game.turn = data["turn"]
-        game.power_on = data["power_on"]
-        game.paranoia_level = data["paranoia_level"]
-        game.mode = GameMode(data["mode"])
+        game = cls(difficulty=difficulty)
+        game.turn = data.get("turn", game.turn)
+        game.power_on = data.get("power_on", game.power_on)
+        game.paranoia_level = data.get("paranoia_level", game.paranoia_level)
 
-        game.helicopter_status = data.get("helicopter_status", "BROKEN")
-        game.rescue_signal_active = data.get("rescue_signal_active", False)
-        game.rescue_turns_remaining = data.get("rescue_turns_remaining")
+        mode_value = data.get("mode")
+        if mode_value:
+            try:
+                game.mode = GameMode(mode_value)
+            except ValueError:
+                pass
 
-        game.rng.from_dict(data["rng"])
-        game.time_system = TimeSystem.from_dict(data["time_system"])
+        game.helicopter_status = data.get("helicopter_status", game.helicopter_status)
+        game.rescue_signal_active = data.get("rescue_signal_active", game.rescue_signal_active)
+        game.rescue_turns_remaining = data.get("rescue_turns_remaining", game.rescue_turns_remaining)
 
-        game.station_map = StationMap.from_dict(data["station_map"])
+        rng_data = data.get("rng")
+        if rng_data:
+            game.rng.from_dict(rng_data)
 
-        game.crew = [CrewMember.from_dict(m) for m in data["crew"]]
-        # Re-link player
+        time_data = data.get("time_system")
+        if time_data:
+            game.time_system = TimeSystem.from_dict(time_data)
+
+        station_data = data.get("station_map")
+        if station_data:
+            game.station_map = StationMap.from_dict(station_data)
+
+        crew_data = data.get("crew")
+        if crew_data:
+            game.crew = [CrewMember.from_dict(m) for m in crew_data if m]
+
         game.player = next((m for m in game.crew if m.name == "MacReady"), None)
 
+        game.journal = data.get("journal", game.journal)
+        if hasattr(game, "trust_system"):
+            game.trust_system.cleanup()
+        game.trust_system = TrustMatrix(game.crew)
+        trust_matrix = data.get("trust")
+        if isinstance(trust_matrix, dict):
+            game.trust_system.matrix = trust_matrix
+        if hasattr(game, "lynch_mob"):
+            game.lynch_mob.trust_system = game.trust_system
         game.journal = data["journal"]
         game.trust_system.matrix = data.get("trust", {})
+        if hasattr(game.trust_system, "rebuild_buckets"):
+            game.trust_system.rebuild_buckets()
+        if hasattr(game, "trust_system"):
+            game.trust_system.cleanup()
+        game.trust_system = TrustMatrix(game.crew)
+        if data.get("trust"):
+            game.trust_system.matrix.update(data["trust"])
+        game.lynch_mob = LynchMobSystem(game.trust_system)
+        game.renderer.map = game.station_map
+        game.parser.set_known_names([m.name for m in game.crew])
+        game.room_states = RoomStateManager(list(game.station_map.rooms.keys()))
         
         return game
 
