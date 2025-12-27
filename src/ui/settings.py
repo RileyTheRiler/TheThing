@@ -15,6 +15,7 @@ DEFAULT_SETTINGS = {
     "palette": "amber",
     "text_speed": "normal",  # slow, normal, fast, instant
     "audio_enabled": True,
+    "audio_volume": 1.0,
     "effects_enabled": True,  # CRT effects (scanlines, glitch)
     "auto_save": True,
     "auto_save_interval": 5,  # turns between auto-saves
@@ -80,6 +81,7 @@ class SettingsManager:
 
         # Apply audio settings
         game_state.audio.enabled = self.settings.get("audio_enabled", True)
+        game_state.audio.set_volume(self.settings.get("audio_volume", 1.0))
 
         # Apply CRT effects
         game_state.crt.enabled = self.settings.get("effects_enabled", True)
@@ -108,14 +110,16 @@ def show_settings_menu(game_state, settings_manager):
         palette = settings_manager.get("palette")
         text_speed = settings_manager.get("text_speed")
         audio = "ON" if settings_manager.get("audio_enabled") else "OFF"
+        volume = int(settings_manager.get("audio_volume", 1.0) * 100)
         effects = "ON" if settings_manager.get("effects_enabled") else "OFF"
         auto_save = "ON" if settings_manager.get("auto_save") else "OFF"
 
         print(f"\n  [1] Color Palette: {palette.upper()}")
         print(f"  [2] Text Speed: {text_speed.upper()}")
         print(f"  [3] Audio: {audio}")
-        print(f"  [4] CRT Effects: {effects}")
-        print(f"  [5] Auto-Save: {auto_save}")
+        print(f"  [4] Audio Volume: {volume}%")
+        print(f"  [5] CRT Effects: {effects}")
+        print(f"  [6] Auto-Save: {auto_save}")
         print(f"\n  [0] Return to Game")
 
         print("\n" + "-" * 50)
@@ -178,6 +182,20 @@ def show_settings_menu(game_state, settings_manager):
             changed = True
 
         elif choice == "4":
+            # Set volume
+            try:
+                vol_str = input("Enter volume (0-100): ").strip()
+                vol = int(vol_str)
+                vol = max(0, min(100, vol))
+                new_vol = vol / 100.0
+                settings_manager.set("audio_volume", new_vol)
+                game_state.audio.set_volume(new_vol)
+                print(f"Volume set to {vol}%.")
+                changed = True
+            except (ValueError, EOFError):
+                print("Invalid volume level.")
+
+        elif choice == "5":
             # Toggle CRT effects
             current = settings_manager.get("effects_enabled")
             settings_manager.set("effects_enabled", not current)
@@ -186,7 +204,7 @@ def show_settings_menu(game_state, settings_manager):
             print(f"CRT effects turned {status}.")
             changed = True
 
-        elif choice == "5":
+        elif choice == "6":
             # Toggle auto-save
             current = settings_manager.get("auto_save")
             settings_manager.set("auto_save", not current)
