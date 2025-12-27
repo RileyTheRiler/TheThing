@@ -1,5 +1,6 @@
 import random
 from src.core.event_system import event_bus, EventType, GameEvent
+from src.core.logger import hidden_logger
 
 class MissionarySystem:
     def __init__(self):
@@ -198,7 +199,7 @@ class MissionarySystem:
         target.mask_integrity = 100 # Fresh mask
         
         # Log to hidden state (or debug)
-        # print(f"[DEBUG] {target.name} ASSIMILATED by {agent.name}")
+        hidden_logger.info(f"{target.name} ASSIMILATED by {agent.name}")
 
     def searchlight_harvest(self, agent, target):
         """
