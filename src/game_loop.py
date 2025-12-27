@@ -56,7 +56,9 @@ from core.event_system import event_bus, EventType, GameEvent
 from systems.architect import Difficulty, DifficultySettings
 from systems.combat import CombatSystem, CoverType, CombatEncounter
 from systems.interrogation import InterrogationSystem, InterrogationTopic
+from systems.statistics import stats
 from audio.audio_manager import Sound
+from ui.settings import settings, show_settings_menu
 from engine import GameState
 
 
@@ -196,6 +198,12 @@ def main():
 
     game = GameState(seed=None, difficulty=difficulty)
 
+    # Start statistics tracking (Tier 6.4)
+    stats.start_session(difficulty.value)
+
+    # Apply saved settings (palette, text speed, audio)
+    settings.apply_to_game(game)
+
     # Agent 5 Boot Sequence
     game.crt.boot_sequence()
     game.audio.ambient_loop(Sound.THRUM)
@@ -222,6 +230,19 @@ def main():
 
 def _handle_game_over(game, won, message):
     """Display game over screen with final statistics."""
+    # Determine outcome for statistics
+    if won:
+        outcome = "victory"
+    elif game.player and not game.player.is_alive:
+        outcome = "death"
+    elif game.player and game.player.is_infected:
+        outcome = "infection"
+    else:
+        outcome = "quit"
+
+    # End statistics session
+    stats.end_session(outcome, game.turn)
+
     game.crt.output("\n" + "=" * 50)
     if won:
         game.crt.output("*** VICTORY ***", crawl=True)
@@ -231,10 +252,21 @@ def _handle_game_over(game, won, message):
         game.audio.trigger_event('alert')
     game.crt.output(message, crawl=True)
     game.crt.output("=" * 50)
-    game.crt.output(f"\nFinal Statistics:")
+
+    # Session statistics
+    game.crt.output(f"\nSession Statistics:")
     game.crt.output(f"  Turns Survived: {game.turn}")
     living = len([m for m in game.crew if m.is_alive])
     game.crt.output(f"  Crew Remaining: {living}/{len(game.crew)}")
+
+    if stats.current_session:
+        s = stats.current_session
+        game.crt.output(f"  Things Killed: {s.things_killed}")
+        game.crt.output(f"  Blood Tests: {s.blood_tests_performed}")
+
+    # Career highlights
+    game.crt.output(f"\nCareer: {stats.career.victories} victories / {stats.career.total_games} games")
+
     game.crt.output("\nPress ENTER to exit...")
     try:
         input()
@@ -352,6 +384,8 @@ JOURNAL       - View MacReady's journal entries
 === SYSTEM ===
 SAVE [SLOT]   - Save game (default: auto)
 LOAD [SLOT]   - Load game (default: auto)
+SETTINGS      - Open settings menu (palette, text speed, audio)
+STATS         - View game statistics (session and career)
 EXIT          - Quit the game
 HELP [TOPIC]  - Show help (topics: MOVEMENT, COMBAT, SOCIAL, FORENSICS,
                            INVENTORY, ENVIRONMENT, SYSTEM)
@@ -402,6 +436,15 @@ def _execute_command(game, cmd):
 
     elif action == "ADVANCE":
         game.advance_turn()
+    elif action == "SETTINGS":
+        show_settings_menu(game, settings)
+    elif action == "STATS":
+        # Update session stats before display
+        if stats.current_session:
+            stats.current_session.turns_survived = game.turn
+        print(stats.get_current_session_summary())
+        print()
+        print(stats.get_career_summary())
     elif action == "SAVE":
         slot = cmd[1] if len(cmd) > 1 else "auto"
         game.save_manager.save_game(game, slot)

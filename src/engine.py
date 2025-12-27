@@ -10,6 +10,7 @@ from core.event_system import event_bus, EventType, GameEvent
 from systems.weather import WeatherSystem
 from systems.sabotage import SabotageManager
 from systems.room_state import RoomStateManager, RoomState
+from systems.random_events import RandomEventSystem
 
 # Agent 4: Forensics
 from systems.forensics import BiologicalSlipGenerator, BloodTestSim, ForensicDatabase, EvidenceLog
@@ -85,7 +86,8 @@ class GameState:
         self.weather = WeatherSystem()
         self.sabotage = SabotageManager()
         self.room_states = RoomStateManager(list(self.station_map.rooms.keys()))
-        
+        self.random_events = RandomEventSystem(self.rng)  # Tier 6.2
+
         # Integration helper
         self.resolution = ResolutionSystem()
         
@@ -240,7 +242,12 @@ class GameState:
             if member != self.player:
                 member.update_ai(self)
 
-        # 6. Auto-save every 5 turns
+        # 6. Random Events Check (Tier 6.2)
+        random_event = self.random_events.check_for_event(self)
+        if random_event:
+            self.random_events.execute_event(random_event, self)
+
+        # 7. Auto-save every 5 turns
         if self.turn % 5 == 0 and hasattr(self, 'save_manager'):
             try:
                 self.save_manager.save_game(self, "autosave")
