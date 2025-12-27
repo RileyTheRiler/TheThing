@@ -388,7 +388,7 @@ class TestItem:
         key.add_history(5, "Picked up by MacReady")
 
         assert len(key.history) == 2
-        assert key.history[0]['turn'] == 1
+        assert "[Turn 1]" in key.history[0]
 
     def test_serialization(self):
         """Items should serialize and deserialize correctly."""
