@@ -137,14 +137,15 @@ class CrewMember:
                 return self.inventory.pop(i)
         return None
 
-    def roll_check(self, attribute, skill=None, rng=None):
+    def roll_check(self, attribute, skill=None, rng=None, resolution_system=None):
         attr_val = self.attributes.get(attribute, 1) 
         skill_val = self.skills.get(skill, 0)
         pool_size = attr_val + skill_val
         
-        # Use a temporary ResolutionSystem if one isn't provided (usually from GameState)
-        res = ResolutionSystem()
-        return res.roll_check(pool_size)
+        # Use provided ResolutionSystem or fallback to static class method
+        if resolution_system:
+            return resolution_system.roll_check(pool_size, rng)
+        return ResolutionSystem.roll_check(pool_size, rng)
 
     def move(self, dx, dy, station_map):
         new_x = self.location[0] + dx
@@ -828,7 +829,7 @@ def main():
                     skill_enum = next((s for s in Skill if s.value.upper() == skill_name.upper()), None)
                     if skill_enum:
                         assoc_attr = Skill.get_attribute(skill_enum)
-                        result = game.player.roll_check(assoc_attr, skill_enum, game.rng)
+                        result = game.player.roll_check(assoc_attr, skill_enum, game.rng, game.resolution)
                         outcome = "SUCCESS" if result['success'] else "FAILURE"
                         print(f"Checking {skill_name} ({assoc_attr.value} + Skill)...")
                         print(f"Pool: {len(result['dice'])} dice -> {result['dice']}")
@@ -888,12 +889,12 @@ def main():
                     
                     print(f"Attacking {target.name} with {w_name}...")
                     att_attr = Skill.get_attribute(w_skill)
-                    att_res = game.player.roll_check(att_attr, w_skill, game.rng)
+                    att_res = game.player.roll_check(att_attr, w_skill, game.rng, game.resolution)
                     
                     def_skill = Skill.MELEE
                     def_attr = Attribute.PROWESS 
 
-                    def_res = target.roll_check(def_attr, def_skill, game.rng)
+                    def_res = target.roll_check(def_attr, def_skill, game.rng, game.resolution)
                     
                     print(f"Attack: {att_res['success_count']} vs Defense: {def_res['success_count']}")
                     
