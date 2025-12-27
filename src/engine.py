@@ -616,6 +616,13 @@ def main():
     game.crt.boot_sequence()
     game.audio.ambient_loop(Sound.THRUM)
 
+    # PALETTE UX: Situation Report (One-time)
+    print("\n--- SITUATION REPORT ---")
+    print("MISSION: Survive the winter. Trust no one.")
+    print("OBJECTIVE: Identify the infected. Do not let them escape.")
+    print("HINT: Type 'HELP' for a list of commands. Start by looking around.")
+    print("------------------------\n")
+
     while True:
         # Update CRT glitch based on paranoia
         game.crt.set_glitch_level(game.paranoia_level)
@@ -672,6 +679,8 @@ def main():
         
         if action == "EXIT":
             break
+        elif action == "HELP":
+            print(game.parser.get_help_text())
         elif action == "ADVANCE":
             game.advance_turn()
         elif action == "SAVE":
