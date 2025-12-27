@@ -155,6 +155,9 @@ class TimeSystem:
         
     @property
     def hour(self):
+        # Assume game starts at 08:00 (8 AM) and each turn is 1 hour
+        start_hour = 8
+        return (start_hour + self.turn_count) % 24
         # Start at 08:00
         return (8 + self.turn_count) % 24
 
