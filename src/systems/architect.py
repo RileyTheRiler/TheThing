@@ -79,17 +79,13 @@ class TimeSystem:
         Updates environmental factors based on power state.
         Returns: Tuple (temperature_change, new_temperature)
         """
-        temp_change = 0
-        if not power_on:
-            # Thermal Decay
-            temp_change = -5
-            self.temperature += temp_change
-        else:
-            # Heating recovery (slow)
-            if self.temperature < 20:
-                temp_change = 2
-                self.temperature += temp_change
-                
+        old_temp = self.temperature
+
+        # Delegate to ResolutionSystem for consistent thermal decay physics
+        res = ResolutionSystem()
+        self.temperature = res.calculate_thermal_decay(self.temperature, power_on)
+
+        temp_change = self.temperature - old_temp
         return temp_change, self.temperature
 
     def to_dict(self):
