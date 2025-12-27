@@ -7,7 +7,17 @@ sys.path.append(os.path.join(os.getcwd(), 'src'))
 
 from src.systems.weather import WeatherSystem
 from src.core.event_system import event_bus, EventType, GameEvent
-from src.systems.architect import RandomnessEngine
+from src.systems.architect import RandomnessEngine, TimeSystem
+from src.systems.random_events import RandomEventSystem
+
+class MockGameState:
+    def __init__(self):
+        self.weather = WeatherSystem()
+        self.time_system = TimeSystem()
+        self.paranoia_level = 0
+        self.turn = 1
+        self.power_on = True
+        self.crew = []
 
 def verify_weather_display():
     print("Testing Weather Display Integration...")
@@ -23,36 +33,44 @@ def verify_weather_display():
 
     # Initialize WeatherSystem
     weather = WeatherSystem()
-
-    # Mock RNG
     rng = RandomnessEngine(seed=123)
 
+    print("\n--- TEST 1: Direct Weather Tick ---")
     # Force a weather event message by manipulating internal state
-    # We want the Northeasterly to end
     weather.northeasterly_active = True
     weather.northeasterly_turns_remaining = 1
-    # Next tick should return "The Northeasterly subsides. Visibility improves."
 
-    # Create a dummy event
     event = GameEvent(EventType.TURN_ADVANCE, payload={'rng': rng})
-
-    print("Triggering turn advance...")
     weather.on_turn_advance(event)
 
-    print(f"Captured events: {len(captured_events)}")
-    for e in captured_events:
-        print(f"Type: {e.type}, Payload: {e.payload}")
-
-    success = False
+    found_tick = False
     for e in captured_events:
         if e.type == EventType.MESSAGE and "The Northeasterly subsides" in e.payload['text']:
-            success = True
-            break
+            found_tick = True
 
-    if success:
-        print("PASS: Weather event emitted and captured.")
+    if found_tick:
+        print("PASS: Weather tick event captured.")
     else:
-        print("FAIL: Expected weather event not found.")
+        print("FAIL: Weather tick event not captured.")
+        sys.exit(1)
+
+    print("\n--- TEST 2: Random Event (Blizzard) ---")
+    # This verifies the fix in random_events.py calling the correct method
+    game = MockGameState()
+    res = RandomEventSystem(rng)
+
+    try:
+        res._effect_blizzard(game)
+        print("PASS: _effect_blizzard executed without crash.")
+
+        if game.weather.northeasterly_active:
+             print("PASS: Blizzard triggered Northeasterly.")
+        else:
+             print("FAIL: Blizzard did not trigger Northeasterly.")
+             sys.exit(1)
+
+    except Exception as e:
+        print(f"FAIL: _effect_blizzard crashed: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":
