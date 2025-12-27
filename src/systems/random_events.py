@@ -247,13 +247,8 @@ class RandomEventSystem:
         # Base chance of event (increases with paranoia)
         base_chance = 0.15 + (game_state.paranoia_level / 200)
 
-        # Fix: RandomnessEngine wraps random but does not expose random() directly.
-        # Use random_float() if available or random.random()
-        if hasattr(self.rng, 'random_float'):
-            val = self.rng.random_float()
-        else:
-             import random
-             val = random.random()
+        # Use the shared RNG for determinism
+        val = self.rng.random_float()
 
         if val > base_chance:
             return None
@@ -289,11 +284,7 @@ class RandomEventSystem:
 
         # Weighted random selection
         total_weight = sum(e.weight for e in eligible)
-        if hasattr(self.rng, 'random_float'):
-            roll = self.rng.random_float() * total_weight
-        else:
-            import random
-            roll = random.random() * total_weight
+        roll = self.rng.random_float() * total_weight
 
         cumulative = 0
         for event in eligible:

@@ -59,7 +59,6 @@ from entities.station_map import StationMap
 import json
 import os
 import sys
-import random
 import time
 
 class GameState:
@@ -201,6 +200,36 @@ class CrewMember:
         previous_value = getattr(self, "_paranoia_level", None)
         self._paranoia_level = clamped
 
+    def get_dialogue(self, game_state):
+        rng = game_state.rng
+        
+        # Dialogue Invariants
+        dialogue_invariants = [i for i in self.invariants if i.get('type') == 'dialogue']
+        if dialogue_invariants:
+            inv = rng.choose(dialogue_invariants)
+            if self.is_infected and rng.random_float() < inv.get('slip_chance', 0.5):
+                base_dialogue = f"Speaking {inv['slip_desc']}."
+            else:
+                base_dialogue = f"Wait, {inv['baseline']}." # Simple flavor
+        else:
+            base_dialogue = f"I'm {self.behavior_type}."
+        
+        # Advanced Mimicry: Use Knowledge Tags
+        if self.is_infected and self.knowledge_tags and rng.random_float() < 0.4:
+            tag = rng.choose(self.knowledge_tags)
+            base_dialogue += f" I remember {tag}."
+
+        if game_state.time_system.temperature < 0:
+            show_vapor = True
+            # BIOLOGICAL SLIP HOOK
+            if self.is_infected and self.slipped_vapor:
+                show_vapor = False
+            
+            if show_vapor:
+                base_dialogue += " [VAPOR]"
+            else:
+                base_dialogue += " [NO VAPOR]"
+        return base_dialogue
         if not hasattr(self, "social_thresholds"):
             return
 
@@ -421,13 +450,13 @@ class StationMap:
         # Agent 4: Forensics
         self.forensic_db = ForensicDatabase()
         self.evidence_log = EvidenceLog()
-        self.forensics = ForensicsSystem()
+        self.forensics = ForensicsSystem(rng=self.rng)
         
         # Terminal Designer Systems (Agent 5)
         self.renderer = TerminalRenderer(self.station_map)
-        self.crt = CRTOutput(palette="amber", crawl_speed=0.015)
+        self.crt = CRTOutput(palette="amber", crawl_speed=0.015, rng=self.rng)
         self.parser = CommandParser(known_names=[m.name for m in self.crew])
-        self.audio = AudioManager(enabled=True)
+        self.audio = AudioManager(enabled=True, rng=self.rng)
         self.command_dispatcher = CommandDispatcher()
         self.reporter = MessageReporter(self.crt)  # Tier 2.6: Event-based reporting
         
@@ -583,10 +612,10 @@ class StationMap:
         # Determine how many to infect based on difficulty
         min_infected = self.difficulty_settings["initial_infected_min"]
         max_infected = self.difficulty_settings["initial_infected_max"]
-        num_infected = random.randint(min_infected, min(max_infected, len(eligible)))
+        num_infected = self.rng.randint(min_infected, min(max_infected, len(eligible)))
 
         # Randomly select crew to infect
-        infected_crew = random.sample(eligible, num_infected)
+        infected_crew = self.rng.sample(eligible, num_infected)
         for member in infected_crew:
             member.is_infected = True
 
