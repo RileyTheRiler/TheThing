@@ -344,9 +344,6 @@ ADVANCE       - Pass time without moving
         "COMBAT": """
 === COMBAT ===
 ATTACK <NAME> - Attack a crew member (initiates combat with initiative rolls)
-COVER [TYPE]  - Take cover (LIGHT/HEAVY/FULL or auto-select best)
-RETREAT       - Attempt to flee from revealed Things
-BREAK <DIR>   - Break through a barricade in the given direction
 """,
         "SOCIAL": """
 === SOCIAL ===
@@ -354,7 +351,6 @@ TALK               - Hear dialogue from everyone in the room
 LOOK <NAME>        - Observe a crew member for visual tells
 INTERROGATE <NAME> [TOPIC] - Question someone
                      Topics: WHEREABOUTS, ALIBI, SUSPICION, BEHAVIOR, KNOWLEDGE
-ACCUSE <NAME>      - Make a formal accusation (triggers crew vote)
 """,
         "FORENSICS": """
 === FORENSICS ===
@@ -384,8 +380,6 @@ JOURNAL       - View MacReady's journal entries
 === SYSTEM ===
 SAVE [SLOT]   - Save game (default: auto)
 LOAD [SLOT]   - Load game (default: auto)
-SETTINGS      - Open settings menu (palette, text speed, audio)
-STATS         - View game statistics (session and career)
 EXIT          - Quit the game
 HELP [TOPIC]  - Show help (topics: MOVEMENT, COMBAT, SOCIAL, FORENSICS,
                            INVENTORY, ENVIRONMENT, SYSTEM)

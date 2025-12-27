@@ -157,6 +157,9 @@ class TimeSystem:
         self.temperature = start_temp
         self.points_per_turn = 1
         self.turn_count = 0
+        self.start_hour = start_hour  # Start at 7 PM by default
+        self._start_hour = start_hour
+        self._hour = start_hour
         self._start_hour = int(start_hour) % 24
         self._hour = self._start_hour
         self.start_hour = start_hour % 24  # Start at 7 PM by default

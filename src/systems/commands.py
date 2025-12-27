@@ -4,6 +4,7 @@ from typing import List, Dict, Optional, TYPE_CHECKING
 from dataclasses import dataclass
 from core.resolution import Attribute, Skill
 from core.event_system import event_bus, EventType, GameEvent
+from systems.interrogation import InterrogationSystem, InterrogationTopic
 
 if TYPE_CHECKING:
     from engine import GameState, CrewMember
@@ -34,6 +35,16 @@ class Command(ABC):
     def execute(self, context: GameContext, args: List[str]) -> None:
         pass
 
+
+def _get_blood_test_sim(game_state):
+    """Return the active blood test simulator, supporting legacy attributes."""
+    if hasattr(game_state, 'blood_test_sim'):
+        return game_state.blood_test_sim
+    if hasattr(game_state, 'forensics') and hasattr(game_state.forensics, 'blood_test'):
+        game_state.blood_test_sim = game_state.forensics.blood_test
+        return game_state.blood_test_sim
+    raise AttributeError("Game state missing blood test simulator")
+
 class MoveCommand(Command):
     name = "MOVE"
     aliases = ["N", "S", "E", "W", "NORTH", "SOUTH", "EAST", "WEST"]
@@ -43,26 +54,38 @@ class MoveCommand(Command):
         game_state = context.game
         direction = args[0] if args else None
 
-        # Handle alias direction
         if not direction:
-             pass
+            event_bus.emit(GameEvent(EventType.ERROR, {
+                "text": "Usage: MOVE <NORTH/SOUTH/EAST/WEST>"
+            }))
+            return
 
-        if not args:
-             print("Usage: MOVE <NORTH/SOUTH/EAST/WEST>")
-             return
-
-        direction = args[0].upper()
+        direction = direction.upper()
         dx, dy = 0, 0
-        if direction in ["NORTH", "N"]: dy = -1
-        elif direction in ["SOUTH", "S"]: dy = 1
-        elif direction in ["EAST", "E"]: dx = 1
-        elif direction in ["WEST", "W"]: dx = -1
+        if direction in ["NORTH", "N"]:
+            dy = -1
+        elif direction in ["SOUTH", "S"]:
+            dy = 1
+        elif direction in ["EAST", "E"]:
+            dx = 1
+        elif direction in ["WEST", "W"]:
+            dx = -1
+        else:
+            event_bus.emit(GameEvent(EventType.ERROR, {
+                "text": f"Invalid direction: {direction}"
+            }))
+            return
 
         if game_state.player.move(dx, dy, game_state.station_map):
-            print(f"You moved {direction}.")
+            destination = game_state.station_map.get_room_name(*game_state.player.location)
+            event_bus.emit(GameEvent(EventType.MOVEMENT, {
+                "actor": getattr(game_state.player, "name", "You"),
+                "direction": direction,
+                "destination": destination
+            }))
             game_state.advance_turn()
         else:
-            print("Blocked.")
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": "Blocked."}))
 
 class LookCommand(Command):
     name = "LOOK"
@@ -72,7 +95,7 @@ class LookCommand(Command):
     def execute(self, context: GameContext, args: List[str]) -> None:
         game_state = context.game
         if not args:
-            print("Usage: LOOK <NAME>")
+            event_bus.emit(GameEvent(EventType.ERROR, {"text": "Usage: LOOK <NAME>"}))
             return
 
         target_name = args[0].upper()
@@ -82,11 +105,17 @@ class LookCommand(Command):
 
         if target:
             if game_state.station_map.get_room_name(*target.location) == player_room:
-                print(target.get_description(game_state))
+                event_bus.emit(GameEvent(EventType.MESSAGE, {
+                    "text": target.get_description(game_state)
+                }))
             else:
-                print(f"There is no {target_name} here.")
+                event_bus.emit(GameEvent(EventType.WARNING, {
+                    "text": f"There is no {target_name} here."
+                }))
         else:
-            print(f"Unknown target: {target_name}")
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": f"Unknown target: {target_name}"
+            }))
 
 class InventoryCommand(Command):
     name = "INVENTORY"
@@ -188,6 +217,17 @@ class AttackCommand(Command):
         player_room = game_state.station_map.get_room_name(*game_state.player.location)
 
         if not target:
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": f"Unknown target: {target_name}"
+            }))
+        elif game_state.station_map.get_room_name(*target.location) != player_room:
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": f"{target.name} is not here."
+            }))
+        elif not target.is_alive:
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": f"{target.name} is already dead."
+            }))
             event_bus.emit(GameEvent(EventType.ERROR, {"text": f"Unknown target: {target_name}"}))
         elif game_state.station_map.get_room_name(*target.location) != player_room:
             event_bus.emit(GameEvent(EventType.WARNING, {"text": f"{target.name} is not here."}))
@@ -210,13 +250,26 @@ class AttackCommand(Command):
 
             def_res = target.roll_check(def_attr, def_skill, game_state.rng)
 
+            hit = att_res['success_count'] > def_res['success_count']
+            total_dmg = 0
+            killed = False
             event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
                 "text": f"Attack: {att_res['success_count']} vs Defense: {def_res['success_count']}"
             }))
 
-            if att_res['success_count'] > def_res['success_count']:
+            if hit:
                 net_hits = att_res['success_count'] - def_res['success_count']
                 total_dmg = w_dmg + net_hits
+                killed = target.take_damage(total_dmg)
+
+            event_bus.emit(GameEvent(EventType.ATTACK_RESULT, {
+                "attacker": getattr(game_state.player, "name", "You"),
+                "target": target.name,
+                "weapon": w_name,
+                "hit": hit,
+                "damage": total_dmg,
+                "killed": killed
+            }))
                 died = target.take_damage(total_dmg)
                 event_bus.emit(GameEvent(EventType.ATTACK_RESULT, {
                     "attacker": game_state.player.name,
@@ -298,7 +351,7 @@ class TestCommand(Command):
     def execute(self, context: GameContext, args: List[str]) -> None:
         game_state = context.game
         if not args:
-            print("Usage: TEST <NAME>")
+            event_bus.emit(GameEvent(EventType.ERROR, {"text": "Usage: TEST <NAME>"}))
             return
 
         target_name = args[0]
@@ -306,33 +359,94 @@ class TestCommand(Command):
         target = next((m for m in game_state.crew if m.name.upper() == target_name.upper()), None)
 
         if not target:
-            print(f"Unknown target: {target_name}")
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": f"Unknown target: {target_name}"}))
         elif game_state.station_map.get_room_name(*target.location) != player_room:
-            print(f"{target.name} is not here.")
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": f"{target.name} is not here."}))
         else:
             # Check for required items
             scalpel = next((i for i in game_state.player.inventory if "SCALPEL" in i.name.upper()), None)
             wire = next((i for i in game_state.player.inventory if "WIRE" in i.name.upper()), None)
 
             if not scalpel:
-                print("You need a SCALPEL to draw a blood sample.")
+                event_bus.emit(GameEvent(EventType.WARNING, {"text": "You need a SCALPEL to draw a blood sample."}))
             elif not wire:
-                print("You need COPPER WIRE for the test.")
+                event_bus.emit(GameEvent(EventType.WARNING, {"text": "You need COPPER WIRE for the test."}))
             else:
-                print(f"Drawing blood from {target.name}...")
-                print(game_state.blood_test_sim.start_test(target.name))
-                # Rapid heating and application
-                print(game_state.blood_test_sim.heat_wire())
-                print(game_state.blood_test_sim.heat_wire())
-                print(game_state.blood_test_sim.heat_wire())
-                print(game_state.blood_test_sim.heat_wire())
+                sim = _get_blood_test_sim(game_state)
+                event_bus.emit(GameEvent(EventType.MESSAGE, {
+                    "text": f"Drawing blood from {target.name}..."
+                }))
+                event_bus.emit(GameEvent(EventType.MESSAGE, {
+                    "text": sim.start_test(target.name)
+                }))
 
-                result = game_state.blood_test_sim.apply_wire(target.is_infected)
-                print(result)
+                # Rapid heating and application to keep legacy behavior
+                for _ in range(4):
+                    event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+                        "text": sim.heat_wire()
+                    }))
+
+                result = sim.apply_wire(target.is_infected)
+                event_bus.emit(GameEvent(EventType.TEST_RESULT, {
+                    "subject": target.name,
+                    "result": result,
+                    "infected": target.is_infected
+                }))
 
                 if target.is_infected:
-                    # Reveal infection!
                     game_state.missionary_system.trigger_reveal(target, "Blood Test Exposure")
+
+
+class HeatCommand(Command):
+    name = "HEAT"
+    aliases = []
+    description = "Heat the wire during a blood test."
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+        sim = _get_blood_test_sim(game_state)
+        if not sim.active:
+            event_bus.emit(GameEvent(EventType.ERROR, {"text": "No test in progress."}))
+            return
+        event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {"text": sim.heat_wire()}))
+
+
+class ApplyCommand(Command):
+    name = "APPLY"
+    aliases = []
+    description = "Apply the heated wire to the blood sample."
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+        sim = _get_blood_test_sim(game_state)
+        if not sim.active:
+            event_bus.emit(GameEvent(EventType.ERROR, {"text": "No test in progress."}))
+            return
+
+        sample_name = sim.current_sample
+        subject = next((m for m in game_state.crew if m.name == sample_name), None)
+        infected = subject.is_infected if subject else False
+
+        result = sim.apply_wire(infected)
+        event_bus.emit(GameEvent(EventType.TEST_RESULT, {
+            "subject": sample_name or "Unknown",
+            "result": result,
+            "infected": infected
+        }))
+
+
+class CancelTestCommand(Command):
+    name = "CANCEL"
+    aliases = []
+    description = "Cancel the current blood test."
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+        sim = _get_blood_test_sim(game_state)
+        if not sim.active:
+            event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "No test in progress."}))
+            return
+        event_bus.emit(GameEvent(EventType.MESSAGE, {"text": sim.cancel()}))
 
 class TalkCommand(Command):
     name = "TALK"
@@ -345,7 +459,77 @@ class TalkCommand(Command):
         for m in game_state.crew:
             room = game_state.station_map.get_room_name(*m.location)
             if room == player_room: # Only talk to people in the same room
-                print(f"{m.name}: {m.get_dialogue(game_state)}")
+                event_bus.emit(GameEvent(EventType.DIALOGUE, {
+                    "speaker": m.name,
+                    "text": m.get_dialogue(game_state)
+                }))
+
+
+class InterrogateCommand(Command):
+    name = "INTERROGATE"
+    aliases = ["ASK"]
+    description = "Question a crew member about a topic."
+
+    TOPIC_MAP = {
+        "WHEREABOUTS": InterrogationTopic.WHEREABOUTS,
+        "ALIBI": InterrogationTopic.ALIBI,
+        "SUSPICION": InterrogationTopic.SUSPICION,
+        "BEHAVIOR": InterrogationTopic.BEHAVIOR,
+        "KNOWLEDGE": InterrogationTopic.KNOWLEDGE
+    }
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+        player_room = game_state.station_map.get_room_name(*game_state.player.location)
+
+        if not args:
+            event_bus.emit(GameEvent(EventType.ERROR, {
+                "text": "Usage: INTERROGATE <NAME> [TOPIC]"
+            }))
+            return
+
+        target_name = args[0]
+        target = next((m for m in game_state.crew if m.name.upper() == target_name.upper()), None)
+
+        if not target:
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": f"Unknown target: {target_name}"}))
+            return
+        if game_state.station_map.get_room_name(*target.location) != player_room:
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": f"{target.name} is not here."}))
+            return
+        if not target.is_alive:
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": f"{target.name} cannot answer..."}))
+            return
+
+        if len(args) > 1:
+            topic_input = args[1].upper()
+            topic = self.TOPIC_MAP.get(topic_input, InterrogationTopic.WHEREABOUTS)
+        else:
+            topic = InterrogationTopic.WHEREABOUTS
+
+        if not hasattr(game_state, "interrogation_system"):
+            game_state.interrogation_system = InterrogationSystem(game_state.rng)
+
+        result = game_state.interrogation_system.interrogate(
+            game_state.player, target, topic, game_state
+        )
+
+        event_bus.emit(GameEvent(EventType.MESSAGE, {
+            "text": f"[INTERROGATE: {target.name} - {topic.value.upper()}]"
+        }))
+        event_bus.emit(GameEvent(EventType.DIALOGUE, {
+            "speaker": target.name,
+            "text": result.dialogue
+        }))
+
+        if result.tells:
+            for tell in result.tells:
+                event_bus.emit(GameEvent(EventType.MESSAGE, {"text": tell}))
+
+        if result.trust_change != 0:
+            game_state.trust_system.update_trust(target.name, game_state.player.name, result.trust_change)
+            change_str = f"+{result.trust_change}" if result.trust_change > 0 else str(result.trust_change)
+            event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {"text": f"Trust {change_str}"}))
 
 class BarricadeCommand(Command):
     name = "BARRICADE"
@@ -355,6 +539,8 @@ class BarricadeCommand(Command):
     def execute(self, context: GameContext, args: List[str]) -> None:
         game_state = context.game
         player_room = game_state.station_map.get_room_name(*game_state.player.location)
+        game_state.room_states.barricade_room(player_room, actor=getattr(game_state.player, "name", "You"))
+        game_state.advance_turn()
         game_state.room_states.barricade_room(player_room)
 
 class JournalCommand(Command):
@@ -498,7 +684,11 @@ class CommandDispatcher:
         self.register(LogCommand())
         self.register(DossierCommand())
         self.register(TestCommand())
+        self.register(HeatCommand())
+        self.register(ApplyCommand())
+        self.register(CancelTestCommand())
         self.register(TalkCommand())
+        self.register(InterrogateCommand())
         self.register(BarricadeCommand())
         self.register(JournalCommand())
         self.register(StatusCommand())

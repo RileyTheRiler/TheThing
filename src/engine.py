@@ -147,7 +147,7 @@ class CrewMember:
         
         # Use a temporary ResolutionSystem if one isn't provided (usually from GameState)
         res = ResolutionSystem()
-        return res.roll_check(pool_size)
+        return res.roll_check(pool_size, rng=rng)
 
     def move(self, dx, dy, station_map):
         new_x = self.location[0] + dx
@@ -471,6 +471,9 @@ class GameState:
         # Agent 4: Forensics
         self.forensic_db = ForensicDatabase()
         self.evidence_log = EvidenceLog()
+        self.forensics = ForensicsSystem()
+        # Legacy/compat: expose blood test simulator directly
+        self.blood_test_sim = self.forensics.blood_test
         self.forensics = ForensicsSystem(rng=self.rng)
         
         # Terminal Designer Systems (Agent 5)
