@@ -41,6 +41,7 @@ class MessageReporter:
         event_bus.subscribe(EventType.STEALTH_REPORT, self._handle_stealth)
         event_bus.subscribe(EventType.CRAFTING_REPORT, self._handle_crafting)
         event_bus.subscribe(EventType.ENDING_REPORT, self._handle_ending)
+        event_bus.subscribe(EventType.INTERROGATION_RESULT, self._handle_interrogation)
 
     def _handle_message(self, event: GameEvent):
         """Handle general messages."""
@@ -173,8 +174,19 @@ class MessageReporter:
         item_name = event.payload.get('item_name')
         if event_stage == "completed" and item_name:
             self.crt.output(f"{actor} completed {recipe}: {item_name}.")
+        elif event_stage == "invalid":
+            missing = event.payload.get('missing', [])
+            if missing:
+                missing_list = ", ".join(missing)
+                self.crt.output(f"{actor} cannot craft {recipe}: missing {missing_list}.")
+            else:
+                self.crt.output(f"{actor} cannot craft {recipe}.")
         elif event_stage == "queued":
-            self.crt.output(f"{actor} starts crafting {recipe}.")
+            turns = event.payload.get('turns')
+            if turns and turns > 1:
+                self.crt.output(f"{actor} starts crafting {recipe} ({turns} turns).")
+            else:
+                self.crt.output(f"{actor} starts crafting {recipe}.")
 
     def _handle_ending(self, event: GameEvent):
         """Handle ending triggers."""
@@ -182,6 +194,32 @@ class MessageReporter:
         result = event.payload.get('result', 'win')
         label = "VICTORY" if result == "win" else "DEFEAT"
         self.crt.output(f"[{label}] {message}", crawl=True)
+
+    def _handle_interrogation(self, event: GameEvent):
+        """Handle interrogation dialogues/results."""
+        interrogator = event.payload.get('interrogator', 'You')
+        subject = event.payload.get('subject', 'Someone')
+        topic = event.payload.get('topic', '').upper()
+        dialogue = event.payload.get('dialogue', '')
+        response_type = event.payload.get('response_type', '').upper()
+        tells = event.payload.get('tells', [])
+        trust_change = event.payload.get('trust_change', 0)
+
+        header = f"[INTERROGATION: {subject}"
+        if topic:
+            header += f" - {topic}"
+        header += "]"
+        self.crt.output(header)
+        self.crt.output(f"\"{dialogue}\"")
+        if response_type:
+            self.crt.output(f"[Response: {response_type}]")
+        if tells:
+            self.crt.output("[OBSERVATION]")
+            for tell in tells:
+                self.crt.output(f"  - {tell}")
+        if trust_change:
+            change_str = f"+{trust_change}" if trust_change > 0 else str(trust_change)
+            self.crt.output(f"[Trust: {change_str}]")
 
 
 # Utility function to emit messages easily
