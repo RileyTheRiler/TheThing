@@ -450,6 +450,11 @@ class GameState:
         event_bus.subscribe(EventType.BIOLOGICAL_SLIP, self.on_biological_slip)
         event_bus.subscribe(EventType.LYNCH_MOB_TRIGGER, self.on_lynch_mob_trigger)
 
+    def cleanup(self):
+        """Cleanup resources before destruction."""
+        if hasattr(self, 'audio'):
+            self.audio.shutdown()
+
     def on_biological_slip(self, event: GameEvent):
         char_name = event.payload.get("character_name")
         slip_type = event.payload.get("type")
@@ -681,6 +686,7 @@ def main():
             slot = cmd[1] if len(cmd) > 1 else "auto"
             loaded_game = game.save_manager.load_game(slot)
             if loaded_game:
+                game.cleanup()
                 game = loaded_game
                 print("*** GAME LOADED ***")
         elif action == "STATUS":

@@ -81,6 +81,7 @@ class AudioManager:
         self.queue = queue.Queue()
         self.ambient_sound = None
         self.ambient_running = False
+        self._running = True  # Control flag for thread
         
         # Start audio thread
         if self.enabled:
@@ -89,7 +90,7 @@ class AudioManager:
     
     def _audio_worker(self):
         """Background thread for processing audio queue."""
-        while True:
+        while self._running:
             try:
                 sound, priority = self.queue.get(timeout=0.1)
                 if not self.muted:
@@ -175,6 +176,12 @@ class AudioManager:
         self.muted = not self.muted
         return self.muted
     
+    def shutdown(self):
+        """Stop the audio thread."""
+        self._running = False
+        if self.enabled and self._audio_thread.is_alive():
+            self._audio_thread.join(timeout=1.0)
+
     def trigger_event(self, event_type):
         """
         Trigger audio based on game events.
