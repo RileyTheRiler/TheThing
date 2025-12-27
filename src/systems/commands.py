@@ -1,3 +1,4 @@
+import sys
 from abc import ABC, abstractmethod
 from typing import List, Dict, Optional, TYPE_CHECKING
 from core.resolution import Attribute, Skill
@@ -283,6 +284,143 @@ class TestCommand(Command):
                     # Reveal infection!
                     game_state.missionary_system.trigger_reveal(target, "Blood Test Exposure")
 
+class TalkCommand(Command):
+    name = "TALK"
+    aliases = []
+    description = "Talk to crew members in the room."
+
+    def execute(self, game_state: 'GameState', args: List[str]) -> None:
+        player_room = game_state.station_map.get_room_name(*game_state.player.location)
+        for m in game_state.crew:
+            room = game_state.station_map.get_room_name(*m.location)
+            if room == player_room: # Only talk to people in the same room
+                print(f"{m.name}: {m.get_dialogue(game_state)}")
+
+class BarricadeCommand(Command):
+    name = "BARRICADE"
+    aliases = []
+    description = "Barricade the current room."
+
+    def execute(self, game_state: 'GameState', args: List[str]) -> None:
+        player_room = game_state.station_map.get_room_name(*game_state.player.location)
+        result = game_state.room_states.barricade_room(player_room)
+        print(result)
+
+class JournalCommand(Command):
+    name = "JOURNAL"
+    aliases = []
+    description = "Read MacReady's journal."
+
+    def execute(self, game_state: 'GameState', args: List[str]) -> None:
+        print("\n--- MACREADY'S JOURNAL ---")
+        if not game_state.journal:
+            print("(No direct diary entries - use DOSSIER for tags)")
+        for entry in game_state.journal:
+            print(entry)
+        print("--------------------------")
+
+class StatusCommand(Command):
+    name = "STATUS"
+    aliases = []
+    description = "Check crew status and trust."
+
+    def execute(self, game_state: 'GameState', args: List[str]) -> None:
+        for m in game_state.crew:
+            status = "Alive" if m.is_alive else "DEAD"
+            msg = f"{m.name} ({m.role}): Loc {m.location} | HP: {m.health} | {status}"
+            avg_trust = game_state.trust_system.get_average_trust(m.name)
+            msg += f" | Trust: {avg_trust:.1f}"
+            print(msg)
+
+class SaveCommand(Command):
+    name = "SAVE"
+    aliases = []
+    description = "Save the game."
+
+    def execute(self, game_state: 'GameState', args: List[str]) -> None:
+        slot = args[0] if args else "auto"
+        game_state.save_manager.save_game(game_state, slot)
+
+class LoadCommand(Command):
+    name = "LOAD"
+    aliases = []
+    description = "Load a saved game."
+
+    def execute(self, game_state: 'GameState', args: List[str]) -> None:
+        slot = args[0] if args else "auto"
+        data = game_state.save_manager.load_game(slot)
+        if data:
+            # This is tricky because we are inside a command execution
+            # and replacing the game_state instance passed to us won't affect the main loop directly
+            # unless we modify the object in place or return a signal.
+            # However, GameState.from_dict creates a new object.
+            # We can't easily swap the whole game_state from here without architectural support.
+
+            # WORKAROUND: We will update the current game_state object in-place.
+            new_game = game_state.from_dict(data)
+            game_state.__dict__.update(new_game.__dict__)
+            print("*** GAME LOADED ***")
+
+class AdvanceCommand(Command):
+    name = "ADVANCE"
+    aliases = []
+    description = "Wait and advance time."
+
+    def execute(self, game_state: 'GameState', args: List[str]) -> None:
+        game_state.advance_turn()
+
+class ExitCommand(Command):
+    name = "EXIT"
+    aliases = ["QUIT"]
+    description = "Exit the game."
+
+    def execute(self, game_state: 'GameState', args: List[str]) -> None:
+        print("Exiting...")
+        sys.exit(0)
+
+class TrustCommand(Command):
+    name = "TRUST"
+    aliases = []
+    description = "Check trust matrix for a character."
+
+    def execute(self, game_state: 'GameState', args: List[str]) -> None:
+        if not args:
+            print("Usage: TRUST <NAME>")
+            return
+
+        target_name = args[0]
+        print(f"--- TRUST MATRIX FOR {target_name.upper()} ---")
+        for m in game_state.crew:
+            if m.name in game_state.trust_system.matrix:
+                val = game_state.trust_system.matrix[m.name].get(target_name.title(), 50)
+                print(f"{m.name} -> {target_name.title()}: {val}")
+
+class CheckCommand(Command):
+    name = "CHECK"
+    aliases = []
+    description = "Perform a skill check."
+
+    def execute(self, game_state: 'GameState', args: List[str]) -> None:
+        if not args:
+            print("Usage: CHECK <SKILL> (e.g., CHECK MELEE)")
+            return
+
+        skill_name = args[0].title()
+        try:
+            skill_enum = next((s for s in Skill if s.value.upper() == skill_name.upper()), None)
+            if skill_enum:
+                assoc_attr = Skill.get_attribute(skill_enum)
+                result = game_state.player.roll_check(assoc_attr, skill_enum, game_state.rng)
+                outcome = "SUCCESS" if result['success'] else "FAILURE"
+                print(f"Checking {skill_name} ({assoc_attr.value} + Skill)...")
+                print(f"Pool: {len(result['dice'])} dice -> {result['dice']}")
+                print(f"[{outcome}] ({result['success_count']} successes)")
+            else:
+                print(f"Unknown skill: {skill_name}")
+                print("Available: " + ", ".join([s.value for s in Skill]))
+        except Exception as e:
+            print(f"Error resolving check: {e}")
+
 class CommandDispatcher:
     def __init__(self):
         self.commands: Dict[str, Command] = {}
@@ -299,6 +437,16 @@ class CommandDispatcher:
         self.register(LogCommand())
         self.register(DossierCommand())
         self.register(TestCommand())
+        self.register(TalkCommand())
+        self.register(BarricadeCommand())
+        self.register(JournalCommand())
+        self.register(StatusCommand())
+        self.register(SaveCommand())
+        self.register(LoadCommand())
+        self.register(AdvanceCommand())
+        self.register(ExitCommand())
+        self.register(TrustCommand())
+        self.register(CheckCommand())
 
     def register(self, command: Command):
         self.commands[command.name] = command
