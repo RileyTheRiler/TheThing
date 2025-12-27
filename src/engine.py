@@ -504,20 +504,8 @@ class GameState:
                 data = json.load(f)
             for char_data in data:
                 # Use Attribute and Skill names directly from JSON as per standards
-                attrs = {}
-                for k, v in char_data.get("attributes", {}).items():
-                    try:
-                        attrs[Attribute(k)] = v
-                    except ValueError:
-                        # Fallback for legacy keys if necessary, but preferred to be standard
-                        pass
-                
-                skills = {}
-                for k, v in char_data.get("skills", {}).items():
-                    try:
-                        skills[Skill(k)] = v
-                    except ValueError:
-                        pass
+                attrs = {Attribute(k): v for k, v in char_data.get("attributes", {}).items()}
+                skills = {Skill(k): v for k, v in char_data.get("skills", {}).items()}
                 
                 m = CrewMember(
                     name=char_data["name"],

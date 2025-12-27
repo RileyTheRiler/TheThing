@@ -70,6 +70,11 @@ class TimeSystem:
         self.points_per_turn = 1
         self.turn_count = 0
         
+    @property
+    def hour(self):
+        # Start at 08:00
+        return (8 + self.turn_count) % 24
+
     def tick(self):
         """Advance time by one turn."""
         self.turn_count += 1
