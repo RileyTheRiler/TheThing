@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Optional, TYPE_CHECKING
 from dataclasses import dataclass
 from core.resolution import Attribute, Skill
+from core.event_system import event_bus, EventType, GameEvent
 
 if TYPE_CHECKING:
     from engine import GameState, CrewMember
@@ -152,7 +153,7 @@ class AttackCommand(Command):
     def execute(self, context: GameContext, args: List[str]) -> None:
         game_state = context.game
         if not args:
-            print("Usage: ATTACK <NAME>")
+            event_bus.emit(GameEvent(EventType.ERROR, {"text": "Usage: ATTACK <NAME>"}))
             return
 
         target_name = args[0]
@@ -160,18 +161,20 @@ class AttackCommand(Command):
         player_room = game_state.station_map.get_room_name(*game_state.player.location)
 
         if not target:
-            print(f"Unknown target: {target_name}")
+            event_bus.emit(GameEvent(EventType.ERROR, {"text": f"Unknown target: {target_name}"}))
         elif game_state.station_map.get_room_name(*target.location) != player_room:
-            print(f"{target.name} is not here.")
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": f"{target.name} is not here."}))
         elif not target.is_alive:
-            print(f"{target.name} is already dead.")
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": f"{target.name} is already dead."}))
         else:
             weapon = next((i for i in game_state.player.inventory if i.damage > 0), None)
             w_name = weapon.name if weapon else "Fists"
             w_skill = weapon.weapon_skill if weapon else Skill.MELEE
             w_dmg = weapon.damage if weapon else 0
 
-            print(f"Attacking {target.name} with {w_name}...")
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": f"Attacking {target.name} with {w_name}..."
+            }))
             att_attr = Skill.get_attribute(w_skill)
             att_res = game_state.player.roll_check(att_attr, w_skill, game_state.rng)
 
@@ -180,17 +183,31 @@ class AttackCommand(Command):
 
             def_res = target.roll_check(def_attr, def_skill, game_state.rng)
 
-            print(f"Attack: {att_res['success_count']} vs Defense: {def_res['success_count']}")
+            event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+                "text": f"Attack: {att_res['success_count']} vs Defense: {def_res['success_count']}"
+            }))
 
             if att_res['success_count'] > def_res['success_count']:
                 net_hits = att_res['success_count'] - def_res['success_count']
                 total_dmg = w_dmg + net_hits
                 died = target.take_damage(total_dmg)
-                print(f"HIT! Dealt {total_dmg} damage.")
-                if died:
-                    print(f"*** {target.name} HAS DIED ***")
+                event_bus.emit(GameEvent(EventType.ATTACK_RESULT, {
+                    "attacker": game_state.player.name,
+                    "target": target.name,
+                    "weapon": w_name,
+                    "hit": True,
+                    "damage": total_dmg,
+                    "killed": died
+                }))
             else:
-                print("MISS/BLOCKED!")
+                event_bus.emit(GameEvent(EventType.ATTACK_RESULT, {
+                    "attacker": game_state.player.name,
+                    "target": target.name,
+                    "weapon": w_name,
+                    "hit": False,
+                    "damage": 0,
+                    "killed": False
+                }))
 
 class TagCommand(Command):
     name = "TAG"
@@ -311,8 +328,7 @@ class BarricadeCommand(Command):
     def execute(self, context: GameContext, args: List[str]) -> None:
         game_state = context.game
         player_room = game_state.station_map.get_room_name(*game_state.player.location)
-        result = game_state.room_states.barricade_room(player_room)
-        print(result)
+        game_state.room_states.barricade_room(player_room)
 
 class JournalCommand(Command):
     name = "JOURNAL"
