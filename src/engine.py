@@ -95,6 +95,13 @@ class Item:
 
     @classmethod
     def from_dict(cls, data):
+        if not isinstance(data, dict):
+            raise ValueError("Item data must be a dictionary.")
+        name = data.get("name")
+        description = data.get("description")
+        if not name or not description:
+            raise ValueError("Item data missing required fields 'name' and 'description'.")
+
         skill = None
         if data.get("weapon_skill"):
              try:
@@ -103,11 +110,11 @@ class Item:
                  skill = None
                  
         item = cls(
-            name=data["name"],
-            description=data["description"],
-            is_evidence=data["is_evidence"],
+            name=name,
+            description=description,
+            is_evidence=data.get("is_evidence", False),
             weapon_skill=skill,
-            damage=data["damage"],
+            damage=data.get("damage", 0),
             uses=data.get("uses", -1),
             effect=data.get("effect"),
             effect_value=data.get("effect_value", 0),
@@ -269,28 +276,47 @@ class CrewMember:
     
     @classmethod
     def from_dict(cls, data):
-        attrs = {Attribute[k]: v for k, v in data.get("attributes", {}).items()}
-        skills = {Skill[k]: v for k, v in data.get("skills", {}).items()}
-                    
+        if not isinstance(data, dict):
+            raise ValueError("Crew member data must be a dictionary.")
+
+        name = data.get("name")
+        role = data.get("role")
+        behavior_type = data.get("behavior_type")
+        if not all([name, role, behavior_type]):
+            raise ValueError("Crew member data missing required fields 'name', 'role', or 'behavior_type'.")
+
+        attrs = {}
+        for key, value in data.get("attributes", {}).items():
+            try:
+                attrs[Attribute[key]] = value
+            except KeyError:
+                continue
+        skills = {}
+        for key, value in data.get("skills", {}).items():
+            try:
+                skills[Skill[key]] = value
+            except KeyError:
+                continue
+
         m = cls(
-            name=data["name"],
-            role=data["role"],
-            behavior_type=data["behavior_type"],
+            name=name,
+            role=role,
+            behavior_type=behavior_type,
             attributes=attrs,
             skills=skills
         )
-        m.is_infected = data["is_infected"]
-        m.trust_score = data["trust_score"]
-        m.location = tuple(data["location"])
-        m.is_alive = data["is_alive"]
-        m.health = data["health"]
-        m.stress = data["stress"]
+        m.is_infected = data.get("is_infected", False)
+        m.trust_score = data.get("trust_score", 50)
+        m.location = tuple(data.get("location", (0, 0)))
+        m.is_alive = data.get("is_alive", True)
+        m.health = data.get("health", 3)
+        m.stress = data.get("stress", 0)
         m.mask_integrity = data.get("mask_integrity", 100.0)
         m.is_revealed = data.get("is_revealed", False)
         m.schedule = data.get("schedule", [])
         m.invariants = data.get("invariants", [])
         m.knowledge_tags = data.get("knowledge_tags", [])
-        m.inventory = [Item.from_dict(i) for i in data.get("inventory", [])]
+        m.inventory = [Item.from_dict(i) for i in data.get("inventory", []) if i]
         return m
 
 class StationMap:
@@ -362,10 +388,13 @@ class StationMap:
 
     @classmethod
     def from_dict(cls, data):
-        sm = cls(data["width"], data["height"])
-        items_dict = data.get("room_items", {})
+        if not isinstance(data, dict):
+            raise ValueError("Station map data must be a dictionary.")
+
+        sm = cls(data.get("width", 20), data.get("height", 20))
+        items_dict = data.get("room_items", {}) if isinstance(data.get("room_items", {}), dict) else {}
         for room, items_data in items_dict.items():
-            sm.room_items[room] = [Item.from_dict(i) for i in items_data]
+            sm.room_items[room] = [Item.from_dict(i) for i in items_data if i]
         return sm
 
 class GameState:
@@ -841,32 +870,56 @@ class GameState:
 
     @classmethod
     def from_dict(cls, data):
-        # Get difficulty from save or default to NORMAL
-        difficulty_value = data.get("difficulty", "Normal")
-        difficulty = Difficulty(difficulty_value)
+        data = data or {}
+        difficulty_value = data.get("difficulty", Difficulty.NORMAL.value)
+        try:
+            difficulty = Difficulty(difficulty_value)
+        except ValueError:
+            difficulty = Difficulty.NORMAL
 
-        game = cls(difficulty=difficulty)  # Init with saved difficulty
-        # Overwrite content
-        game.turn = data["turn"]
-        game.power_on = data["power_on"]
-        game.paranoia_level = data["paranoia_level"]
-        game.mode = GameMode(data["mode"])
+        game = cls(difficulty=difficulty)
+        game.turn = data.get("turn", game.turn)
+        game.power_on = data.get("power_on", game.power_on)
+        game.paranoia_level = data.get("paranoia_level", game.paranoia_level)
 
-        game.helicopter_status = data.get("helicopter_status", "BROKEN")
-        game.rescue_signal_active = data.get("rescue_signal_active", False)
-        game.rescue_turns_remaining = data.get("rescue_turns_remaining")
+        mode_value = data.get("mode")
+        if mode_value:
+            try:
+                game.mode = GameMode(mode_value)
+            except ValueError:
+                pass
 
-        game.rng.from_dict(data["rng"])
-        game.time_system = TimeSystem.from_dict(data["time_system"])
+        game.helicopter_status = data.get("helicopter_status", game.helicopter_status)
+        game.rescue_signal_active = data.get("rescue_signal_active", game.rescue_signal_active)
+        game.rescue_turns_remaining = data.get("rescue_turns_remaining", game.rescue_turns_remaining)
 
-        game.station_map = StationMap.from_dict(data["station_map"])
+        rng_data = data.get("rng")
+        if rng_data:
+            game.rng.from_dict(rng_data)
 
-        game.crew = [CrewMember.from_dict(m) for m in data["crew"]]
-        # Re-link player
+        time_data = data.get("time_system")
+        if time_data:
+            game.time_system = TimeSystem.from_dict(time_data)
+
+        station_data = data.get("station_map")
+        if station_data:
+            game.station_map = StationMap.from_dict(station_data)
+
+        crew_data = data.get("crew")
+        if crew_data:
+            game.crew = [CrewMember.from_dict(m) for m in crew_data if m]
+
         game.player = next((m for m in game.crew if m.name == "MacReady"), None)
 
-        game.journal = data["journal"]
-        game.trust_system.matrix = data.get("trust", {})
+        game.journal = data.get("journal", game.journal)
+        if hasattr(game, "trust_system"):
+            game.trust_system.cleanup()
+        game.trust_system = TrustMatrix(game.crew)
+        trust_matrix = data.get("trust")
+        if isinstance(trust_matrix, dict):
+            game.trust_system.matrix = trust_matrix
+        if hasattr(game, "lynch_mob"):
+            game.lynch_mob.trust_system = game.trust_system
         
         return game
 

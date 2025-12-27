@@ -123,15 +123,12 @@ class RandomnessEngine:
         }
 
     def from_dict(self, data):
-        self.seed = data.get("seed")
+        if not data:
+            return
+        self.seed = data.get("seed", self.seed)
         rng_state = data.get("rng_state")
 
-        # Handle legacy pickle format (for backward compatibility if needed,
-        # but for security we should probably drop it or strictly validate.
-        # Given the instruction to fix security, we will NOT support the vulnerable format.)
         if rng_state:
-            # Reconstruct tuple structure required by random.setstate
-            # (version, internal_state_tuple, gaussian_state)
             try:
                 state = (
                     rng_state[0],
@@ -139,10 +136,11 @@ class RandomnessEngine:
                     rng_state[2]
                 )
                 random.setstate(state)
+                return
             except (TypeError, ValueError, IndexError) as e:
                 print(f"Warning: Failed to restore RNG state: {e}")
-                if self.seed:
-                    random.seed(self.seed)
+        if self.seed is not None:
+            random.seed(self.seed)
 
 class TimeSystem:
     def __init__(self, start_temp=-40, start_hour=19):
@@ -200,17 +198,16 @@ class TimeSystem:
 
     @classmethod
     def from_dict(cls, data):
+        if not data:
+            return cls()
+
         temp = data.get("temperature", -40)
         turn_count = data.get("turn_count", 0)
         saved_hour = data.get("hour", 19)
 
-        # Recalculate start hour so property math remains consistent
         start_hour = (saved_hour - turn_count) % 24
 
         ts = cls(temp, start_hour=start_hour)
         ts.turn_count = turn_count
-        ts = cls(data.get("temperature", -40), start_hour=data.get("hour", 19))
-        ts.turn_count = data.get("turn_count", 0)
-        # Recompute hour from stored value to keep normalization consistent.
-        ts.hour = data.get("hour", ts._start_hour)
+        ts.hour = saved_hour
         return ts
