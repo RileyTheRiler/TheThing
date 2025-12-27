@@ -1,5 +1,5 @@
 import random
-from src.core.event_system import event_bus, EventType, GameEvent
+from core.event_system import event_bus, EventType, GameEvent
 
 class MissionarySystem:
     def __init__(self):
@@ -300,6 +300,13 @@ class MissionarySystem:
                 # 50% reduction in detection chance
                 inv['slip_chance'] *= 0.5
         
+        # Generate Knowledge Tags / Memory Logs
+        # The agent learns the target's role protocols and behaviors
+        role_tag = f"Protocol: {target.role}"
+        memory_tag = f"Memory: {target.name} interaction"
+
+        agent.add_knowledge_tag(role_tag)
+        agent.add_knowledge_tag(memory_tag)
         # Advanced Mimicry: Grant Knowledge Tags
         # The agent learns personal details to use in social defense
         memories = [
