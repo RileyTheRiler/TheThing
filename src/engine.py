@@ -19,8 +19,7 @@ from systems.ai import AISystem
 from systems.random_events import RandomEventSystem
 
 # Agent 4: Forensics
-from src.systems.forensics import BiologicalSlipGenerator, BloodTestSim, ForensicDatabase, EvidenceLog, ForensicsSystem
-from systems.forensics import BiologicalSlipGenerator, BloodTestSim, ForensicDatabase, EvidenceLog
+from systems.forensics import BiologicalSlipGenerator, BloodTestSim, ForensicDatabase, EvidenceLog, ForensicsSystem
 
 # Terminal Designer Systems (Agent 5)
 from ui.renderer import TerminalRenderer
@@ -582,9 +581,7 @@ class GameState:
         
         self.paranoia_level = min(100, self.paranoia_level + 1)
         
-        # Update TimeSystem (manual tick if not event-driven)
-        self.time_system.tick()
-        self.time_system.update_environment(self.power_on)
+
 
         # 1. Emit TURN_ADVANCE Event (Triggers TimeSystem, WeatherSystem, InfectionSystem, etc.)
         event_bus.emit(GameEvent(EventType.TURN_ADVANCE, {
@@ -598,19 +595,11 @@ class GameState:
         if paranoia_mod > 0:
             self.paranoia_level = min(100, self.paranoia_level + paranoia_mod)
         
-        # 4. Lynch Mob Check (Agent 2)
-        lynch_target = self.lynch_mob.check_thresholds(self.crew)
-        if lynch_target:
-            # Mob is active, NPCs will converge via event handler
-            pass
-        
-        # 5. NPC AI Update
-        self.ai_system.update(self)
 
-        # 6. Random Events Check (Tier 6.2)
-        random_event = self.random_events.check_for_event(self)
-        if random_event:
-            self.random_events.execute_event(random_event, self)
+        
+
+
+
 
         # 7. Update Rescue Timer
         if self.rescue_signal_active and self.rescue_turns_remaining is not None:

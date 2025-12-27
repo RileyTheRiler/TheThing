@@ -1,10 +1,6 @@
 from enum import Enum
 import random
 import json
-from src.core.event_system import event_bus, EventType, GameEvent
-from src.core.resolution import ResolutionSystem
-import pickle
-import base64
 from core.event_system import event_bus, EventType, GameEvent
 from core.resolution import ResolutionSystem
 
@@ -144,7 +140,24 @@ class TimeSystem:
         self.temperature = start_temp
         self.points_per_turn = 1
         self.turn_count = 0
-        self.hour = 19 # Start at 7 PM
+        
+        # Subscribe to Turn Advance
+        event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+
+    def cleanup(self):
+        event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+
+    def on_turn_advance(self, event: GameEvent):
+        """Handle turn advance event."""
+        self.tick()
+        game_state = event.payload.get("game_state")
+        power_on = game_state.power_on if game_state else True
+        self.update_environment(power_on)
+
+    @property
+    def hour(self):
+        # Start at 19:00 (7 PM), 1 turn = 1 hour
+        return (19 + self.turn_count) % 24
 
     @property
     def hour(self):
@@ -174,7 +187,6 @@ class TimeSystem:
     def tick(self):
         """Advance time by one turn."""
         self.turn_count += 1
-        self.hour = (self.hour + 1) % 24
 
     @property
     def hour(self):

@@ -11,7 +11,17 @@ class AISystem:
     """
 
     def __init__(self):
-        pass
+        from core.event_system import event_bus, EventType
+        event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+
+    def cleanup(self):
+        from core.event_system import event_bus, EventType
+        event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+
+    def on_turn_advance(self, event):
+        game_state = event.payload.get("game_state")
+        if game_state:
+            self.update(game_state)
 
     def update(self, game_state: 'GameState'):
         """Updates AI for all crew members."""
