@@ -450,11 +450,11 @@ def _execute_command(game, cmd):
         game.save_manager.save_game(game, slot)
     elif action == "LOAD":
         slot = cmd[1] if len(cmd) > 1 else "auto"
-        data = game.save_manager.load_game(slot)
-        if data:
-            # Note: This modifies the local game variable but won't affect the caller
-            # For a proper implementation, we'd need to return the new game state
-            game.__dict__.update(GameState.from_dict(data).__dict__)
+        # The save manager now hydrates the object automatically via the factory we injected
+        new_state = game.save_manager.load_game(slot)
+        if new_state:
+            # Update the existing game object with state from the loaded object
+            game.__dict__.update(new_state.__dict__)
             print("*** GAME LOADED ***")
     elif action == "STATUS":
         for m in game.crew:

@@ -38,7 +38,7 @@ class GameState:
     def __init__(self, seed=None, difficulty=Difficulty.NORMAL):
         self.rng = RandomnessEngine(seed)
         self.time_system = TimeSystem()
-        self.save_manager = SaveManager()
+        self.save_manager = SaveManager(state_factory=GameState.from_dict)
 
         # Store difficulty and get settings
         self.difficulty = difficulty
