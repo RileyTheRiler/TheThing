@@ -174,8 +174,19 @@ class MessageReporter:
         item_name = event.payload.get('item_name')
         if event_stage == "completed" and item_name:
             self.crt.output(f"{actor} completed {recipe}: {item_name}.")
+        elif event_stage == "invalid":
+            missing = event.payload.get('missing', [])
+            if missing:
+                missing_list = ", ".join(missing)
+                self.crt.output(f"{actor} cannot craft {recipe}: missing {missing_list}.")
+            else:
+                self.crt.output(f"{actor} cannot craft {recipe}.")
         elif event_stage == "queued":
-            self.crt.output(f"{actor} starts crafting {recipe}.")
+            turns = event.payload.get('turns')
+            if turns and turns > 1:
+                self.crt.output(f"{actor} starts crafting {recipe} ({turns} turns).")
+            else:
+                self.crt.output(f"{actor} starts crafting {recipe}.")
 
     def _handle_ending(self, event: GameEvent):
         """Handle ending triggers."""
