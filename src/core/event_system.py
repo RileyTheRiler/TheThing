@@ -42,6 +42,9 @@ class EventType(Enum):
     ATTACK_RESULT = auto()    # Attack outcome
     TEST_RESULT = auto()      # Blood test result
     BARRICADE_ACTION = auto() # Barricade built/broken
+    STEALTH_REPORT = auto()   # Stealth encounter updates
+    CRAFTING_REPORT = auto()  # Crafting queue/status updates
+    ENDING_REPORT = auto()    # Ending triggers/results
 
 @dataclass
 class GameEvent:

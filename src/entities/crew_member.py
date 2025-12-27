@@ -17,6 +17,8 @@ class CrewMember:
 
     def __init__(self, name, role, behavior_type, attributes=None, skills=None, schedule=None, invariants=None):
         self.name = name
+        self.original_name = name
+        self.revealed_name = None
         self.role = role
         self.behavior_type = behavior_type
         self.is_infected = False  # The "Truth" hidden from the player
