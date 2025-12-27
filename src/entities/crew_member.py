@@ -36,6 +36,12 @@ class CrewMember:
         self.mask_integrity = 100.0  # Agent 3: Mask Tracking
         self.is_revealed = False    # Agent 3: Violent Reveal
         self.slipped_vapor = False  # Hook: Biological Slip flag
+        self.knowledge_tags = []    # Agent 3: Searchlight Harvest
+
+    def add_knowledge_tag(self, tag):
+        """Add a knowledge tag/memory log if it doesn't already exist."""
+        if tag not in self.knowledge_tags:
+            self.knowledge_tags.append(tag)
 
     def take_damage(self, amount):
         """Apply damage to crew member. Returns True if they died."""
@@ -325,7 +331,8 @@ class CrewMember:
             "skills": {k.name: v for k, v in self.skills.items()},
             "inventory": [i.to_dict() for i in self.inventory],
             "schedule": self.schedule,
-            "invariants": self.invariants
+            "invariants": self.invariants,
+            "knowledge_tags": self.knowledge_tags
         }
 
     @classmethod
@@ -352,4 +359,5 @@ class CrewMember:
         m.schedule = data.get("schedule", [])
         m.invariants = data.get("invariants", [])
         m.inventory = [Item.from_dict(i) for i in data.get("inventory", [])]
+        m.knowledge_tags = data.get("knowledge_tags", [])
         return m

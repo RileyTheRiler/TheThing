@@ -214,5 +214,12 @@ class MissionarySystem:
                 # 50% reduction in detection chance
                 inv['slip_chance'] *= 0.5
         
-        # Note: In a deeper game, this would also grant 'Knowledge Tags' or 'Memory Logs'
-        # that the NPC can use in dialogue to prove they are 'human'.
+        # Generate Knowledge Tags / Memory Logs
+        # The agent learns the target's role protocols and behaviors
+        role_tag = f"Protocol: {target.role}"
+        memory_tag = f"Memory: {target.name} interaction"
+
+        agent.add_knowledge_tag(role_tag)
+        agent.add_knowledge_tag(memory_tag)
+
+        print(f">>> ACQUIRED KNOWLEDGE: {agent.name} learned '{role_tag}' and '{memory_tag}'")
