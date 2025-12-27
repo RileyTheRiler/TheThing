@@ -109,8 +109,11 @@ class StationMap:
     @classmethod
     def from_dict(cls, data):
         """Deserialize station map from dictionary."""
-        sm = cls(data["width"], data["height"])
-        items_dict = data.get("room_items", {})
+        if not isinstance(data, dict):
+            raise ValueError("Station map data must be a dictionary.")
+
+        sm = cls(data.get("width", 20), data.get("height", 20))
+        items_dict = data.get("room_items", {}) if isinstance(data.get("room_items", {}), dict) else {}
         for room, items_data in items_dict.items():
-            sm.room_items[room] = [Item.from_dict(i) for i in items_data]
+            sm.room_items[room] = [Item.from_dict(i) for i in items_data if i]
         return sm
