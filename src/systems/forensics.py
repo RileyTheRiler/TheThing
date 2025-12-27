@@ -111,6 +111,8 @@ class BloodTestSim:
         self.active = False
         self.wire_temp = self.ROOM_TEMP
         self.target_temp = self.TARGET_TEMP # Hot enough to burn
+        self.wire_temp = 20 # Room temp (approx)
+        self.target_temp = 90 # Hot enough to burn (lowered for gameplay reliability)
         self.current_sample = None # Name of crew member
         self.state = "IDLE" # IDLE, HEATING, READY, REACTION
         
@@ -135,6 +137,21 @@ class BloodTestSim:
             return f"Heating wire... ({self.wire_temp}C)"
 
             
+    def cool_down(self):
+        """
+        Simulate thermal decay of the wire over time.
+        """
+        if not self.active:
+            return
+
+        # Cooling rate (degrees per turn)
+        cooling_rate = 15
+        self.wire_temp = max(20, self.wire_temp - cooling_rate)
+
+        # Check state regression if temp drops below threshold
+        if self.state == "READY" and self.wire_temp < self.target_temp:
+            self.state = "HEATING"
+
     def apply_wire(self, is_infected):
         if not self.active:
             return "No test in progress."
@@ -193,7 +210,7 @@ class ForensicsSystem:
     def on_turn_advance(self, event: GameEvent):
         """
         Handle turn advancement.
-        Maybe the wire cools down or heating progresses?
+        The wire cools down over time.
         """
         if self.blood_test.active:
             self.blood_test.cool_down()

@@ -6,6 +6,7 @@ Cross-platform audio using winsound (Windows), terminal bell, or subprocess.
 
 import threading
 import queue
+import random
 import sys
 import os
 import subprocess
@@ -105,7 +106,7 @@ class AudioManager:
     def __init__(self, enabled=True):
         self.enabled = enabled and AUDIO_AVAILABLE
         self.muted = False
-        self.volume = 1.0  # Not actually used with winsound, but for future
+        self.volume = 1.0
         
         # Audio queue for async playback
         self.queue = queue.Queue()
@@ -128,11 +129,18 @@ class AudioManager:
             except queue.Empty:
                 # Play ambient if nothing in queue
                 if self.ambient_sound and self.ambient_running and not self.muted:
-                    self._play_sound(self.ambient_sound, ambient=True)
+                    # Use volume to control density of ambient sound
+                    # Lower volume = fewer loops play (creating gaps/sparser sound)
+                    if self.volume >= 1.0 or random.random() < self.volume:
+                        self._play_sound(self.ambient_sound, ambient=True)
     
     def _play_sound(self, sound, ambient=False):
         """Play sound using the available backend."""
         if not self.enabled or not AUDIO_AVAILABLE:
+            return
+        
+        # Check volume threshold - effectively mute if volume is zero
+        if self.volume <= 0.0:
             return
 
         freq_range = self.FREQUENCIES.get(sound, (440, 440))
@@ -223,6 +231,19 @@ class AudioManager:
         """Toggle mute state."""
         self.muted = not self.muted
         return self.muted
+
+    def set_volume(self, volume):
+        """
+        Set volume level (0.0 to 1.0).
+        Since winsound cannot control amplitude, this controls:
+        1. Whether sound plays at all (0.0 = mute)
+        2. Density of ambient loops (lower volume = sparser sound)
+        """
+        self.volume = max(0.0, min(1.0, float(volume)))
+
+    def get_volume(self):
+        """Get current volume level."""
+        return self.volume
     
     def trigger_event(self, event_type):
         """
