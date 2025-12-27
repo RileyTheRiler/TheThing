@@ -21,6 +21,10 @@ class RoomStateManager:
         # Subscribe to events
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
         event_bus.subscribe(EventType.POWER_FAILURE, self.on_power_failure)
+
+    def cleanup(self):
+        event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+        event_bus.unsubscribe(EventType.POWER_FAILURE, self.on_power_failure)
     
     def _set_initial_states(self):
         if "Kennel" in self.room_states:

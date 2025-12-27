@@ -36,6 +36,9 @@ class WeatherSystem:
         
         # Subscribe to turn advances
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+
+    def cleanup(self):
+        event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
     
     def _recalculate_modifiers(self):
         """Update visibility and temperature modifiers based on current conditions."""

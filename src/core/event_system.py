@@ -50,6 +50,11 @@ class EventBus:
             self._subscribers[event_type] = []
         self._subscribers[event_type].append(callback)
 
+    def unsubscribe(self, event_type: EventType, callback: Callable[[GameEvent], None]):
+        if event_type in self._subscribers:
+            if callback in self._subscribers[event_type]:
+                self._subscribers[event_type].remove(callback)
+
     def emit(self, event: GameEvent):
         """
         Pushes an event to all subscribers.

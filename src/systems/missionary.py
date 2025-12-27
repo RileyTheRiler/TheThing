@@ -7,9 +7,6 @@ class MissionarySystem:
         self.base_decay = 2.0     # Mask decay per turn
         self.stress_multiplier = 1.5 # Multiplier if in high-stress environment
         
-        # Subscribe to turn advance
-        event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
-        
         # Agent 3: Role Habits (Standard Habits)
         self.role_habits = {
             "Pilot": ["Rec Room", "Corridor"], # MacReady moves around
@@ -27,13 +24,8 @@ class MissionarySystem:
         # Register for turn advance
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
 
-    def on_turn_advance(self, event):
-        """
-        Triggered by the event bus.
-        """
-        game_state = event.payload.get("game_state")
-        if game_state:
-            self.update(game_state)
+    def cleanup(self):
+        event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
 
     def on_turn_advance(self, event: GameEvent):
         """

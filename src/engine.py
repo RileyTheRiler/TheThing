@@ -22,7 +22,7 @@ from ui.renderer import TerminalRenderer
 from ui.crt_effects import CRTOutput
 from ui.command_parser import CommandParser
 from audio.audio_manager import AudioManager, Sound
-from systems.commands import CommandDispatcher
+from systems.commands import CommandDispatcher, GameContext
 
 import json
 import os
@@ -421,6 +421,27 @@ class GameState:
                     m.location = target_member.location
                     print(f"[SOCIAL] {m.name} moves to confront {target_name}.")
 
+    def cleanup(self):
+        """Unsubscribe from event bus to prevent leaks."""
+        event_bus.unsubscribe(EventType.BIOLOGICAL_SLIP, self.on_biological_slip)
+        event_bus.unsubscribe(EventType.LYNCH_MOB_TRIGGER, self.on_lynch_mob_trigger)
+
+        # Cleanup subsystems if they have cleanup
+        if hasattr(self.weather, 'cleanup'): self.weather.cleanup()
+        if hasattr(self.sabotage, 'cleanup'): self.sabotage.cleanup()
+        if hasattr(self.room_states, 'cleanup'): self.room_states.cleanup()
+        if hasattr(self.lynch_mob, 'cleanup'): self.lynch_mob.cleanup()
+        if hasattr(self.trust_system, 'cleanup'): self.trust_system.cleanup()
+        if hasattr(self.missionary_system, 'cleanup'): self.missionary_system.cleanup()
+        if hasattr(self.psychology_system, 'cleanup'): self.psychology_system.cleanup()
+
+        # Note: ai_system, dialogue_manager, forensics usually don't subscribe?
+        # Check specific systems.
+        # forensics (BloodTestSim) doesn't subscribe.
+        # TrustMatrix subscribes.
+        # LynchMobSystem does not subscribe (it checks in advance_turn? No, it emits).
+        # WeatherSystem subscribes.
+
     @property
     def temperature(self):
         # Effective temperature includes wind chill
@@ -559,13 +580,15 @@ class GameState:
 # --- Game Loop ---
 def main():
     """Main game loop - can be called from launcher or run directly"""
-    game = GameState(seed=None)
+    game_state = GameState(seed=None)
+    context = GameContext(game=game_state)
     
     # Agent 5 Boot Sequence
-    game.crt.boot_sequence()
-    game.audio.ambient_loop(Sound.THRUM)
+    context.game.crt.boot_sequence()
+    context.game.audio.ambient_loop(Sound.THRUM)
 
     while True:
+        game = context.game
         # Update CRT glitch based on paranoia
         game.crt.set_glitch_level(game.paranoia_level)
         
@@ -621,5 +644,5 @@ def main():
         
         args = cmd[1:]
         # Try to dispatch using Command System first
-        if not game.command_dispatcher.dispatch(action, args, game):
+        if not game.command_dispatcher.dispatch(action, args, context):
              print("Unknown command. Try: MOVE, LOOK, GET, DROP, INV, TAG, TEST, ATTACK, STATUS, SAVE, LOAD, EXIT, TALK, BARRICADE, JOURNAL, CHECK")

@@ -1,10 +1,15 @@
 import sys
 from abc import ABC, abstractmethod
 from typing import List, Dict, Optional, TYPE_CHECKING
+from dataclasses import dataclass
 from core.resolution import Attribute, Skill
 
 if TYPE_CHECKING:
     from engine import GameState, CrewMember
+
+@dataclass
+class GameContext:
+    game: 'GameState'
 
 class Command(ABC):
     """Base class for all game commands."""
@@ -25,7 +30,7 @@ class Command(ABC):
         pass
 
     @abstractmethod
-    def execute(self, game_state: 'GameState', args: List[str]) -> None:
+    def execute(self, context: GameContext, args: List[str]) -> None:
         pass
 
 class MoveCommand(Command):
@@ -33,22 +38,14 @@ class MoveCommand(Command):
     aliases = ["N", "S", "E", "W", "NORTH", "SOUTH", "EAST", "WEST"]
     description = "Move in a direction."
 
-    def execute(self, game_state: 'GameState', args: List[str]) -> None:
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
         direction = args[0] if args else None
 
         # Handle alias direction
         if not direction:
-             # If command was alias (e.g. "N"), we need to know what triggered it.
-             # This design assumes args[0] is the direction.
              pass
 
-        # We will need to pass the full command string or handle aliases in Dispatcher
-        # For now, let's assume args[0] is the direction if provided, otherwise fail
-
-        # Actually, let's redesign slightly: Dispatcher should normalize aliases.
-        # But wait, if I type "N", the command is "N".
-
-        # Let's trust the args.
         if not args:
              print("Usage: MOVE <NORTH/SOUTH/EAST/WEST>")
              return
@@ -71,7 +68,8 @@ class LookCommand(Command):
     aliases = []
     description = "Look at a character or object."
 
-    def execute(self, game_state: 'GameState', args: List[str]) -> None:
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
         if not args:
             print("Usage: LOOK <NAME>")
             return
@@ -94,7 +92,8 @@ class InventoryCommand(Command):
     aliases = ["INV"]
     description = "Check your inventory."
 
-    def execute(self, game_state: 'GameState', args: List[str]) -> None:
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
         print(f"\n--- {game_state.player.name}'s INVENTORY ---")
         if not game_state.player.inventory:
             print("(Empty)")
@@ -106,7 +105,8 @@ class GetCommand(Command):
     aliases = []
     description = "Pick up an item."
 
-    def execute(self, game_state: 'GameState', args: List[str]) -> None:
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
         if not args:
             print("Usage: GET <ITEM NAME>")
             return
@@ -127,7 +127,8 @@ class DropCommand(Command):
     aliases = []
     description = "Drop an item."
 
-    def execute(self, game_state: 'GameState', args: List[str]) -> None:
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
         if not args:
             print("Usage: DROP <ITEM NAME>")
             return
@@ -148,7 +149,8 @@ class AttackCommand(Command):
     aliases = []
     description = "Attack a target."
 
-    def execute(self, game_state: 'GameState', args: List[str]) -> None:
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
         if not args:
             print("Usage: ATTACK <NAME>")
             return
@@ -195,7 +197,8 @@ class TagCommand(Command):
     aliases = []
     description = "Tag a character with forensic notes."
 
-    def execute(self, game_state: 'GameState', args: List[str]) -> None:
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
         if len(args) < 3:
             print("Usage: TAG <NAME> <CATEGORY> <NOTE...>")
             print("Categories: IDENTITY, TRUST, SUSPICION, BEHAVIOR")
@@ -220,7 +223,8 @@ class LogCommand(Command):
     aliases = []
     description = "Check evidence log for an item."
 
-    def execute(self, game_state: 'GameState', args: List[str]) -> None:
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
         if not args:
             print("Usage: LOG <ITEM NAME>")
             return
@@ -233,7 +237,8 @@ class DossierCommand(Command):
     aliases = []
     description = "View forensic dossier for a character."
 
-    def execute(self, game_state: 'GameState', args: List[str]) -> None:
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
         if not args:
             print("Usage: DOSSIER <NAME>")
             return
@@ -246,7 +251,8 @@ class TestCommand(Command):
     aliases = []
     description = "Perform a blood test."
 
-    def execute(self, game_state: 'GameState', args: List[str]) -> None:
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
         if not args:
             print("Usage: TEST <NAME>")
             return
@@ -289,7 +295,8 @@ class TalkCommand(Command):
     aliases = []
     description = "Talk to crew members in the room."
 
-    def execute(self, game_state: 'GameState', args: List[str]) -> None:
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
         player_room = game_state.station_map.get_room_name(*game_state.player.location)
         for m in game_state.crew:
             room = game_state.station_map.get_room_name(*m.location)
@@ -301,7 +308,8 @@ class BarricadeCommand(Command):
     aliases = []
     description = "Barricade the current room."
 
-    def execute(self, game_state: 'GameState', args: List[str]) -> None:
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
         player_room = game_state.station_map.get_room_name(*game_state.player.location)
         result = game_state.room_states.barricade_room(player_room)
         print(result)
@@ -311,7 +319,8 @@ class JournalCommand(Command):
     aliases = []
     description = "Read MacReady's journal."
 
-    def execute(self, game_state: 'GameState', args: List[str]) -> None:
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
         print("\n--- MACREADY'S JOURNAL ---")
         if not game_state.journal:
             print("(No direct diary entries - use DOSSIER for tags)")
@@ -324,7 +333,8 @@ class StatusCommand(Command):
     aliases = []
     description = "Check crew status and trust."
 
-    def execute(self, game_state: 'GameState', args: List[str]) -> None:
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
         for m in game_state.crew:
             status = "Alive" if m.is_alive else "DEAD"
             msg = f"{m.name} ({m.role}): Loc {m.location} | HP: {m.health} | {status}"
@@ -337,7 +347,8 @@ class SaveCommand(Command):
     aliases = []
     description = "Save the game."
 
-    def execute(self, game_state: 'GameState', args: List[str]) -> None:
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
         slot = args[0] if args else "auto"
         game_state.save_manager.save_game(game_state, slot)
 
@@ -346,19 +357,22 @@ class LoadCommand(Command):
     aliases = []
     description = "Load a saved game."
 
-    def execute(self, game_state: 'GameState', args: List[str]) -> None:
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
         slot = args[0] if args else "auto"
         data = game_state.save_manager.load_game(slot)
         if data:
-            # This is tricky because we are inside a command execution
-            # and replacing the game_state instance passed to us won't affect the main loop directly
-            # unless we modify the object in place or return a signal.
-            # However, GameState.from_dict creates a new object.
-            # We can't easily swap the whole game_state from here without architectural support.
+            # 1. Cleanup old game state (unsubscribe events)
+            if hasattr(game_state, 'cleanup'):
+                game_state.cleanup()
 
-            # WORKAROUND: We will update the current game_state object in-place.
-            new_game = game_state.from_dict(data)
-            game_state.__dict__.update(new_game.__dict__)
+            # 2. Create new game state
+            # Note: We need a way to create it. Assuming GameState.from_dict exists.
+            from engine import GameState # Import locally to avoid circular dep at module level if any
+            new_game = GameState.from_dict(data)
+
+            # 3. Replace in context
+            context.game = new_game
             print("*** GAME LOADED ***")
 
 class AdvanceCommand(Command):
@@ -366,7 +380,8 @@ class AdvanceCommand(Command):
     aliases = []
     description = "Wait and advance time."
 
-    def execute(self, game_state: 'GameState', args: List[str]) -> None:
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
         game_state.advance_turn()
 
 class ExitCommand(Command):
@@ -374,7 +389,7 @@ class ExitCommand(Command):
     aliases = ["QUIT"]
     description = "Exit the game."
 
-    def execute(self, game_state: 'GameState', args: List[str]) -> None:
+    def execute(self, context: GameContext, args: List[str]) -> None:
         print("Exiting...")
         sys.exit(0)
 
@@ -383,7 +398,8 @@ class TrustCommand(Command):
     aliases = []
     description = "Check trust matrix for a character."
 
-    def execute(self, game_state: 'GameState', args: List[str]) -> None:
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
         if not args:
             print("Usage: TRUST <NAME>")
             return
@@ -400,7 +416,8 @@ class CheckCommand(Command):
     aliases = []
     description = "Perform a skill check."
 
-    def execute(self, game_state: 'GameState', args: List[str]) -> None:
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
         if not args:
             print("Usage: CHECK <SKILL> (e.g., CHECK MELEE)")
             return
@@ -453,23 +470,13 @@ class CommandDispatcher:
         for alias in command.aliases:
             self.commands[alias] = command
 
-    def dispatch(self, action: str, args: List[str], game_state: 'GameState') -> bool:
+    def dispatch(self, action: str, args: List[str], context: GameContext) -> bool:
         command = self.commands.get(action.upper())
         if command:
             # Special handling for aliases that are implicit args (like "N" -> "MOVE N")
-            # In my current design, "N" maps to MoveCommand.
-            # But MoveCommand expects args[0] to be direction.
-            # So if I type "N", action="N", args=[].
-            # MoveCommand.execute needs to handle this or I preprocess here.
-
-            # Let's adjust MoveCommand logic or preprocess.
-            # If I map "N" to MoveCommand, inside MoveCommand I don't know I was called via "N".
-            # Unless I pass the action name too.
-
-            # Let's normalize args for MOVE aliases.
             if action.upper() in ["N", "S", "E", "W", "NORTH", "SOUTH", "EAST", "WEST"]:
                 args = [action.upper()]
 
-            command.execute(game_state, args)
+            command.execute(context, args)
             return True
         return False
