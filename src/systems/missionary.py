@@ -27,14 +27,6 @@ class MissionarySystem:
         # Register for turn advance
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
 
-    def on_turn_advance(self, event):
-        """
-        Triggered by the event bus.
-        """
-        game_state = event.payload.get("game_state")
-        if game_state:
-            self.update(game_state)
-
     def on_turn_advance(self, event: GameEvent):
         """
         Triggered when turn advances.
@@ -140,20 +132,68 @@ class MissionarySystem:
 
     def attempt_communion_ai(self, agent, game_state):
         """
-        Agent attempts to infect another person in the same room.
+        Agent attempts to infect another person.
         Conditions:
-        - Must be alone with target (no witnesses).
+        - Must be alone with target (no human witnesses).
         - Target not already infected.
         """
-        # 1. Find targets in same room
         room_name = game_state.station_map.get_room_name(*agent.location)
+        is_corridor = "Corridor" in room_name
+
         potential_targets = []
+        human_witnesses_count = 0
+
+        # Corridor logic constants
+        # If in corridor, we can see further than just adjacent
+        CORRIDOR_VISUAL_RANGE = 4
 
         for other in game_state.crew:
             if other == agent or not other.is_alive:
                 continue
-            
+
             other_room = game_state.station_map.get_room_name(*other.location)
+            is_visible = False
+
+            if is_corridor:
+                # If agent is in corridor, only people in corridors are visible
+                if "Corridor" in other_room:
+                    # Calculate Manhattan distance
+                    dist = abs(agent.location[0] - other.location[0]) + abs(agent.location[1] - other.location[1])
+                    if dist <= CORRIDOR_VISUAL_RANGE:
+                        is_visible = True
+            else:
+                # Named room: anyone in the same room is visible
+                if other_room == room_name:
+                    is_visible = True
+
+            if is_visible:
+                # If visible and not infected, they are a witness
+                if not other.is_infected:
+                    human_witnesses_count += 1
+
+                    # Check if this person is close enough to be a target
+                    is_in_range = False
+                    if is_corridor:
+                         # In corridors, must be adjacent or same tile (communion_range = 1)
+                         dist = abs(agent.location[0] - other.location[0]) + abs(agent.location[1] - other.location[1])
+                         if dist <= self.communion_range:
+                             is_in_range = True
+                    else:
+                        # In named rooms, being in the room is sufficient
+                        is_in_range = True
+
+                    if is_in_range:
+                        potential_targets.append(other)
+
+        # We can proceed ONLY if:
+        # 1. We have at least one valid target.
+        # 2. The total number of human witnesses (including the target) is exactly 1.
+        #    This ensures the target is the ONLY human who sees us.
+        
+        if len(potential_targets) > 0 and human_witnesses_count == 1:
+            # Pick the target (should be only one if witnesses_count is 1)
+            target = potential_targets[0]
+            self.perform_communion(agent, target, game_state)
             # Strict check: Must be in same 'room' (Same named room or same corridor tile)
             if other_room == room_name:
                 if not other.is_infected:
