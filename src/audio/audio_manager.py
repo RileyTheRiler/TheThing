@@ -104,7 +104,6 @@ class AudioManager:
         Sound.ALERT: 150,
     }
     
-<<<<<<< HEAD
     # Tier 6.4: Audio feedback alignment map
     EVENT_MAP = {
         # Warnings
@@ -126,10 +125,7 @@ class AudioManager:
         EventType.MOVEMENT: Sound.FOOTSTEPS,
     }
     
-    def __init__(self, enabled=True):
-=======
     def __init__(self, enabled=True, rng=None):
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
         self.enabled = enabled and AUDIO_AVAILABLE
         self.muted = False
         self.volume = 1.0

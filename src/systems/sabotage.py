@@ -13,7 +13,7 @@ class SabotageManager:
     Manages sabotage events. Reacts to TURN_ADVANCE and emits signals.
     """
     
-    def __init__(self):
+    def __init__(self, difficulty_settings=None):
         # Operational status of critical systems
         self.radio_operational = True
         self.chopper_operational = True
@@ -45,22 +45,9 @@ class SabotageManager:
     
     def on_turn_advance(self, event: GameEvent):
         """Subscriber for TURN_ADVANCE event."""
-<<<<<<< HEAD
-        game_state = event.payload.get("game_state")
-        if game_state:
-            # Update Rescue Timer
-            if game_state.rescue_signal_active and game_state.rescue_turns_remaining is not None:
-                game_state.rescue_turns_remaining -= 1
-                if game_state.rescue_turns_remaining == 5:
-                    game_state.reporter.report_event("RADIO", "Rescue ETA updated: 5 hours out.", priority=True)
-                elif game_state.rescue_turns_remaining == 1:
-                    game_state.reporter.report_event("RADIO", "Rescue team landing imminent!", priority=True)
-        
-=======
         turn_inventory = event.payload.get("turn_inventory", {})
         if isinstance(turn_inventory, dict):
             turn_inventory["sabotage"] = turn_inventory.get("sabotage", 0) + 1
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
         self.tick()
 
     def can_trigger(self, event):

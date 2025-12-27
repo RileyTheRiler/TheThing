@@ -1,16 +1,20 @@
 
 import sys
+import os
 import unittest
 import time
 from unittest.mock import MagicMock, patch
+
+# Add src directory to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 # Mock winsound before importing audio_manager
 mock_winsound = MagicMock()
 sys.modules['winsound'] = mock_winsound
 
 # Import audio and event system
-from src.audio.audio_manager import AudioManager, Sound
-from src.core.event_system import event_bus, EventType, GameEvent
+from audio.audio_manager import AudioManager, Sound
+from core.event_system import event_bus, EventType, GameEvent
 
 class TestAudioEvents(unittest.TestCase):
     def setUp(self):

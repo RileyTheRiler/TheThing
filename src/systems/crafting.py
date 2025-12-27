@@ -13,7 +13,6 @@ class CraftingSystem:
     Responds to TURN_ADVANCE by progressing jobs and emitting reporting events.
     """
 
-<<<<<<< HEAD
     def __init__(self, data_path: Optional[str] = None):
         if not data_path:
             base_path = Path(__file__).resolve().parents[2]
@@ -22,15 +21,6 @@ class CraftingSystem:
         self.data_path = Path(data_path)
         self.recipes = {}
         self._load_recipes()
-=======
-    def __init__(self, design_registry: Optional[DesignBriefRegistry] = None):
-        base_path = Path(__file__).resolve().parents[2]
-        self.design_registry = design_registry or DesignBriefRegistry()
-        self.config = self.design_registry.get_brief("crafting")
-        self.summary = self.config.get("summary")
-        self.recipe_path = base_path / "data" / "crafting.json"
-        self.recipes = self._load_recipes()
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
         self.active_jobs: List[Dict] = []
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
 
@@ -48,7 +38,6 @@ class CraftingSystem:
     def cleanup(self):
         event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
 
-<<<<<<< HEAD
     def validate_ingredients(self, crafter, recipe_id: str) -> bool:
         recipe = self.recipes.get(recipe_id)
         if not recipe:
@@ -61,57 +50,11 @@ class CraftingSystem:
             if ingredient.lower() not in inv_names:
                 return False
         return True
-=======
-    def _load_recipes(self) -> Dict[str, Dict]:
-        """Load recipes from data file, falling back to design briefs."""
-        if self.recipe_path.exists():
-            with self.recipe_path.open("r", encoding="utf-8") as handle:
-                data = json.load(handle)
-            recipes = data.get("recipes", []) if isinstance(data, dict) else []
-            self.summary = data.get("summary", self.summary)
-        else:
-            recipes = self.config.get("recipes", [])
-
-        return {r["id"].lower(): r for r in recipes if "id" in r}
-
-    def _emit_invalid(self, crafter, recipe_id: str, missing: List[str]):
-        actor = getattr(crafter, "name", "unknown")
-        payload = {
-            "event": "invalid",
-            "recipe": recipe_id,
-            "actor": actor,
-            "missing": missing,
-        }
-        event_bus.emit(GameEvent(EventType.CRAFTING_REPORT, payload))
-        if missing:
-            event_bus.emit(GameEvent(EventType.ERROR, {
-                "text": f"Cannot craft {recipe_id}: missing {', '.join(missing)}."
-            }))
-        else:
-            event_bus.emit(GameEvent(EventType.ERROR, {
-                "text": f"Cannot craft {recipe_id}: unknown recipe."
-            }))
-
-    def _validate_ingredients(self, recipe: Dict, inventory: List[Item]) -> List[str]:
-        """Return a list of missing ingredients for the given inventory."""
-        needed = [(i, i.lower()) for i in recipe.get("ingredients", [])]
-        available = [getattr(item, "name", "").lower() for item in inventory]
-        missing: List[str] = []
-
-        for original, lowered in needed:
-            if lowered in available:
-                available.remove(lowered)
-            else:
-                missing.append(original)
-
-        return missing
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
 
     def queue_craft(self, crafter, recipe_id: str, game_state, target_inventory=None):
         recipe_key = recipe_id.lower()
         recipe = self.recipes.get(recipe_key)
         if not recipe:
-<<<<<<< HEAD
             event_bus.emit(GameEvent(EventType.CRAFTING_REPORT, {
                 "event": "error",
                 "message": f"Unknown recipe: {recipe_id}",
@@ -125,15 +68,6 @@ class CraftingSystem:
                 "message": "Insufficient ingredients.",
                 "actor": getattr(crafter, "name", "unknown")
             }))
-=======
-            self._emit_invalid(crafter, recipe_id, [])
-            return False
-
-        inventory = target_inventory or getattr(crafter, "inventory", [])
-        missing = self._validate_ingredients(recipe, inventory)
-        if missing:
-            self._emit_invalid(crafter, recipe["id"], missing)
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
             return False
 
         job = {
@@ -216,14 +150,8 @@ class CraftingSystem:
             event_bus.emit(GameEvent(EventType.CRAFTING_REPORT, {
                 "event": "completed",
                 "recipe": job["recipe"]["id"],
-<<<<<<< HEAD
                 "actor": getattr(job["crafter"], "name", "unknown"),
                 "item_name": crafted_item.name
-=======
-                "actor": actor,
-                "item_name": crafted_item.name,
-                "brief": self.summary
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
             }))
 
             event_bus.emit(GameEvent(EventType.ITEM_PICKUP, {

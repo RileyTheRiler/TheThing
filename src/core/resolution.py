@@ -69,7 +69,6 @@ class ResolutionSystem:
         return max(0, base_pool + modifier)
 
     @staticmethod
-    def roll_check(pool_size, rng):
     def roll_check(pool_size, rng=None):
         """
         Executes a dice pool check.
@@ -80,8 +79,19 @@ class ResolutionSystem:
         CrewMember.roll_check) still function.
         Success = 6s.
         """
-<<<<<<< HEAD
-        return rng.calculate_success(max(1, pool_size))
+        pool_size = max(1, pool_size)
+        
+        if rng and hasattr(rng, "calculate_success"):
+            return rng.calculate_success(pool_size)
+
+        dice = [random.randint(1, 6) for _ in range(pool_size)]
+        successes = dice.count(6)
+        return {
+            "success": successes > 0,
+            "success_count": successes,
+            "dice": dice,
+            "dice_count": pool_size
+        }
 
     @staticmethod
     def resolve_pool(base_pool, skills_attributes, modifiers):
@@ -105,17 +115,6 @@ class ResolutionSystem:
                 final_pool += modifiers[sa]
                 
         return max(1, final_pool)
-=======
-        if rng is not None and hasattr(rng, "calculate_success"):
-            return rng.calculate_success(pool_size)
-
-        dice = [random.randint(1, 6) for _ in range(pool_size)]
-        successes = dice.count(6)
-        return {
-            "success": successes > 0,
-            "success_count": successes,
-            "dice": dice,
-        }
 
     @staticmethod
     def success_probability(pool_size: int) -> float:
@@ -123,7 +122,6 @@ class ResolutionSystem:
         if pool_size <= 0:
             return 0.0
         return 1 - math.pow(5 / 6, pool_size)
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
 
     def calculate_infection_risk(self, lighting_condition: str, mask_integrity: float, paranoia_level: int) -> float:
         """

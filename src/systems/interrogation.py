@@ -199,20 +199,19 @@ class InterrogationSystem:
         # Roll EMPATHY check to notice tells
         empathy_pool = (interrogator.attributes.get(Attribute.INFLUENCE, 1) +
                        interrogator.skills.get(Skill.EMPATHY, 0))
-<<<<<<< HEAD
-        
-        # Apply environmental modifiers
-        from core.resolution import ResolutionSystem
-        empathy_pool = ResolutionSystem.resolve_pool(empathy_pool, [Attribute.INFLUENCE, Skill.EMPATHY], room_modifiers)
-        
-=======
-
-        # Apply environmental observation modifiers based on the subject's room
+        # Apply environmental modifiers to empathy check
         if self.room_states and getattr(subject, "location", None) and getattr(game_state, "station_map", None):
             room = game_state.station_map.get_room_name(*subject.location)
             modifiers = self.room_states.get_resolution_modifiers(room)
-            empathy_pool = ResolutionSystem.adjust_pool(empathy_pool, modifiers.observation_pool)
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
+            # Use ResolutionSystem to apply the modifier
+            from core.resolution import ResolutionSystem
+            # If ResolutionSystem.adjust_pool exists, use it, otherwise assume modifiers are compatible
+            if hasattr(ResolutionSystem, "adjust_pool"):
+                 empathy_pool = ResolutionSystem.adjust_pool(empathy_pool, modifiers.observation_pool)
+            else:
+                 # Fallback: manually adjust
+                 empathy_pool += modifiers.observation_pool
+
         check = self.rng.calculate_success(empathy_pool)
 
         if check['success']:
@@ -246,19 +245,7 @@ class InterrogationSystem:
             trust_change -= 5
             dialogue = f"(Annoyed) Again? Fine... {dialogue}"
 
-<<<<<<< HEAD
-        # Emit reporting event
-        event_bus.emit(GameEvent(EventType.INTERROGATION_RESULT, {
-            "subject": subject.name,
-            "dialogue": dialogue,
-            "tells": tells,
-            "topic": topic.value
-        }))
-
-        return InterrogationResult(
-=======
         result = InterrogationResult(
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
             response_type=response_type,
             dialogue=dialogue,
             tells=tells,

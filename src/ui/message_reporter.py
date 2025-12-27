@@ -140,10 +140,7 @@ class MessageReporter:
         event_bus.subscribe(EventType.CRAFTING_REPORT, self._handle_crafting)
         event_bus.subscribe(EventType.ENDING_REPORT, self._handle_ending)
         event_bus.subscribe(EventType.INTERROGATION_RESULT, self._handle_interrogation)
-<<<<<<< HEAD
         event_bus.subscribe(EventType.ACCUSATION_RESULT, self._handle_accusation)
-=======
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
 
     def _handle_message(self, event: GameEvent):
         """Handle general messages."""
@@ -320,29 +317,6 @@ class MessageReporter:
         self.crt.output(f"[{label}] {message}", crawl=True)
 
     def _handle_interrogation(self, event: GameEvent):
-<<<<<<< HEAD
-        """Handle interrogation result messages."""
-        subject = event.payload.get('subject', '?')
-        dialogue = event.payload.get('dialogue', '')
-        tells = event.payload.get('tells', [])
-        
-        self.crt.output(f'{subject}: "{dialogue}"')
-        for tell in tells:
-            self.crt.output(f">>> {tell}", crawl=True)
-
-    def _handle_accusation(self, event: GameEvent):
-        """Handle accusation result messages."""
-        target = event.payload.get('target', '?')
-        outcome = event.payload.get('outcome', '')
-        supporters = event.payload.get('supporters', [])
-        opposers = event.payload.get('opposers', [])
-        
-        self.crt.output(f"[ACCUSATION: {target}]")
-        self.crt.output(outcome)
-        if supporters or opposers:
-            self.crt.output(f"Supporters: {', '.join(supporters) if supporters else 'None'}")
-            self.crt.output(f"Opposers: {', '.join(opposers) if opposers else 'None'}")
-=======
         """Handle interrogation dialogues/results."""
         interrogator = event.payload.get('interrogator', 'You')
         subject = event.payload.get('subject', 'Someone')
@@ -367,7 +341,19 @@ class MessageReporter:
         if trust_change:
             change_str = f"+{trust_change}" if trust_change > 0 else str(trust_change)
             self.crt.output(f"[Trust: {change_str}]")
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
+
+    def _handle_accusation(self, event: GameEvent):
+        """Handle accusation result messages."""
+        target = event.payload.get('target', '?')
+        outcome = event.payload.get('outcome', '')
+        supporters = event.payload.get('supporters', [])
+        opposers = event.payload.get('opposers', [])
+        
+        self.crt.output(f"[ACCUSATION: {target}]")
+        self.crt.output(outcome)
+        if supporters or opposers:
+            self.crt.output(f"Supporters: {', '.join(supporters) if supporters else 'None'}")
+            self.crt.output(f"Opposers: {', '.join(opposers) if opposers else 'None'}")
 
 
 # Utility function to emit messages easily

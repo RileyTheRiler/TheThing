@@ -3,9 +3,6 @@ from typing import Dict, List, Optional
 
 from core.design_briefs import DesignBriefRegistry
 from core.event_system import event_bus, EventType, GameEvent
-<<<<<<< HEAD
-from core.resolution import Attribute, Skill
-=======
 from core.resolution import Attribute, ResolutionSystem, Skill
 from systems.room_state import RoomState
 
@@ -13,7 +10,6 @@ from systems.room_state import RoomState
 class StealthPosture(Enum):
     HIDDEN = "hidden"
     EXPOSED = "exposed"
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
 
 
 class StealthSystem:
@@ -68,8 +64,6 @@ class StealthSystem:
         if not nearby_infected or self.cooldown > 0:
             return
 
-<<<<<<< HEAD
-=======
         detection_chance = self.config.get("base_detection_chance", 0.35)
 
         # Environmental penalties (darkness makes detection harder)
@@ -84,7 +78,6 @@ class StealthSystem:
             room_name=room,
         )
         detected = rng.random_float() < detection_chance
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
         opponent = nearby_infected[0]
         
         # 1. Subject Pool (Player Stealth)
@@ -100,49 +93,12 @@ class StealthSystem:
         # 3. Modifiers (Posture and Environment)
         from entities.crew_member import StealthPosture
         
-        posture = getattr(player, "stealth_posture", StealthPosture.STANDING)
-        if posture == StealthPosture.CROUCHING:
-            subject_pool += 1
-        elif posture == StealthPosture.CRAWLING:
-            subject_pool += 2
-        elif posture == StealthPosture.HIDING:
-            subject_pool += 4
-
-        # Fetch room modifiers
-        room_modifiers = room_states.get_roll_modifiers(room) if room_states else {}
-        
-        # Apply modifiers using ResolutionSystem
-        from core.resolution import ResolutionSystem
-        subject_pool = ResolutionSystem.resolve_pool(subject_pool, [Skill.STEALTH], room_modifiers)
-        observer_pool = ResolutionSystem.resolve_pool(observer_pool, [Skill.OBSERVATION], room_modifiers)
-        
-        # Enforce minimum pool of 1
-        subject_pool = max(1, subject_pool)
-        observer_pool = max(1, observer_pool)
-
-        # 4. Resolution
-        from core.resolution import ResolutionSystem
-        res = ResolutionSystem()
-        
-        subject_result = res.roll_check(subject_pool, rng)
-        observer_result = res.roll_check(observer_pool, rng)
-        
-        # Success = Subject (Player) has more successes than Observer (NPC)
-        # Tie goes to observer (detection)
-        player_evaded = subject_result['success_count'] > observer_result['success_count']
-        
         payload = {
             "room": room,
             "opponent": opponent.name,
-<<<<<<< HEAD
-            "outcome": "evaded" if player_evaded else "detected",
-            "player_successes": subject_result['success_count'],
-            "opponent_successes": observer_result['success_count']
-=======
             "outcome": "detected" if detected else "evaded",
             "posture": self.get_posture(player).value,
             "detection_chance": round(detection_chance, 3),
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
         }
         event_bus.emit(GameEvent(EventType.STEALTH_REPORT, payload))
         

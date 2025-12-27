@@ -363,10 +363,17 @@ class CrewMember:
 
     @classmethod
     def from_dict(cls, data):
-<<<<<<< HEAD
-        """Deserialize crew member from dictionary with defensive defaults."""
-        if not data or not isinstance(data, dict):
+        """Deserialize crew member from dictionary."""
+        if not data:
             return None
+        if not isinstance(data, dict):
+             raise ValueError("Crew member data must be a dictionary.")
+
+        name = data.get("name")
+        role = data.get("role")
+        behavior_type = data.get("behavior_type")
+        if not all([name, role, behavior_type]):
+             raise ValueError("Crew member data missing required fields 'name', 'role', or 'behavior_type'.")
 
         # Helper for Enum mapping
         def safe_enum(enum_class, key, default):
@@ -378,60 +385,30 @@ class CrewMember:
             except (KeyError, ValueError):
                 return default
 
-        # Attributes and Skills with defensive lookups
-        attrs = {}
-        for k, v in data.get("attributes", {}).items():
-            try:
-                attrs[Attribute[k]] = v
-=======
-        """Deserialize crew member from dictionary."""
-        if not isinstance(data, dict):
-            raise ValueError("Crew member data must be a dictionary.")
-
-        name = data.get("name")
-        role = data.get("role")
-        behavior_type = data.get("behavior_type")
-        if not all([name, role, behavior_type]):
-            raise ValueError("Crew member data missing required fields 'name', 'role', or 'behavior_type'.")
-
         attrs = {}
         for key, value in data.get("attributes", {}).items():
             try:
                 attrs[Attribute[key]] = value
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
             except KeyError:
                 continue
 
         skills = {}
-<<<<<<< HEAD
-        for k, v in data.get("skills", {}).items():
-            try:
-                skills[Skill[k]] = v
-=======
         for key, value in data.get("skills", {}).items():
             try:
                 skills[Skill[key]] = value
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
             except KeyError:
                 continue
 
         m = cls(
-<<<<<<< HEAD
-            name=data.get("name", "Unknown"),
-            role=data.get("role", "None"),
-            behavior_type=data.get("behavior_type", "Neutral"),
-            attributes=attrs,
-            skills=skills
-        )
-        
-=======
             name=name,
             role=role,
             behavior_type=behavior_type,
             attributes=attrs,
-            skills=skills
+            skills=skills,
+            schedule=data.get("schedule", []),
+            invariants=data.get("invariants", [])
         )
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
+
         m.is_infected = data.get("is_infected", False)
         m.trust_score = data.get("trust_score", 50)
         m.location = tuple(data.get("location", (0, 0)))
@@ -440,12 +417,6 @@ class CrewMember:
         m.stress = data.get("stress", 0)
         m.mask_integrity = data.get("mask_integrity", 100.0)
         m.is_revealed = data.get("is_revealed", False)
-        m.schedule = data.get("schedule", [])
-        m.invariants = data.get("invariants", [])
-<<<<<<< HEAD
-=======
-        m.inventory = [Item.from_dict(i) for i in data.get("inventory", []) if i]
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
         m.knowledge_tags = data.get("knowledge_tags", [])
         
         # Items hydration

@@ -62,20 +62,24 @@ class Item:
 
     @classmethod
     def from_dict(cls, data):
-<<<<<<< HEAD
-        """Deserialize item from dictionary with defensive defaults."""
-        if not data or not isinstance(data, dict):
-            return None
-=======
         """Deserialize item from dictionary."""
-        if not isinstance(data, dict):
-            raise ValueError("Item data must be a dictionary.")
+        if not data or not isinstance(data, dict):
+            # Return None or empty item instead of raising to prevent save corruption?
+            # Raising seems safer for now to catch bad saves early.
+            # But let's follow the pattern of being slightly robust?
+            # Actually, `engine.py` might expect an Item.
+            # Let's stick to the stricter validation for now.
+            if not data:
+                return None
+            if not isinstance(data, dict):
+                 raise ValueError("Item data must be a dictionary.")
 
         name = data.get("name")
         description = data.get("description")
         if not name or not description:
-            raise ValueError("Item data missing required fields 'name' and 'description'.")
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
+            # Fallback for old saves or partial data?
+             name = name or "Unknown Item"
+             description = description or "A mysterious object."
 
         skill = None
         skill_name = data.get("weapon_skill")
@@ -86,13 +90,8 @@ class Item:
                 skill = None
 
         item = cls(
-<<<<<<< HEAD
-            name=data.get("name", "Unknown Item"),
-            description=data.get("description", "A mysterious object."),
-=======
             name=name,
             description=description,
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
             is_evidence=data.get("is_evidence", False),
             weapon_skill=skill,
             damage=data.get("damage", 0),

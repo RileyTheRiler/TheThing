@@ -9,10 +9,6 @@ import json
 from enum import Enum
 from core.event_system import event_bus, EventType, GameEvent
 from core.resolution import ResolutionSystem
-<<<<<<< HEAD
-=======
-from enum import Enum
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
 
 
 class Difficulty(Enum):
@@ -157,28 +153,16 @@ class RandomnessEngine:
                 print(f"Warning: Failed to restore RNG state: {e}")
                 if self.seed is not None:
                     self._random.seed(self.seed)
-                random.setstate(state)
                 return
-            except (TypeError, ValueError, IndexError) as e:
-                print(f"Warning: Failed to restore RNG state: {e}")
+
         if self.seed is not None:
             random.seed(self.seed)
 
 class TimeSystem:
     def __init__(self, start_temp=-40, start_hour=19):
         self.temperature = start_temp
-        self.start_hour = start_hour
+        self.start_hour = int(start_hour)
         self.turn_count = 0
-<<<<<<< HEAD
-=======
-        self.start_hour = start_hour  # Start at 7 PM by default
-        self._start_hour = start_hour
-        self._hour = start_hour
-        self._start_hour = int(start_hour) % 24
-        self._hour = self._start_hour
-        self.start_hour = start_hour % 24  # Start at 7 PM by default
-        self._start_hour = start_hour  # Reference hour for turn-based progression
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
         
         # Subscribe to Turn Advance
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
@@ -195,53 +179,8 @@ class TimeSystem:
 
     @property
     def hour(self):
-<<<<<<< HEAD
         """Current in-game hour (0-23). derived from turn count."""
         return (self.start_hour + self.turn_count) % 24
-=======
-        # Start at 19:00 (7 PM), 1 turn = 1 hour
-        return (19 + self.turn_count) % 24
-        self.start_hour = start_hour
-
-    @property
-    def hour(self):
-        """Current in-game hour (0-23)."""
-        return self._hour
-
-    @hour.setter
-    def hour(self, value):
-        """Normalize and set the current hour."""
-        self._hour = int(value) % 24
-        self._start_hour = (self._hour - self.turn_count) % 24
-
-    def set_time(self, hour: int):
-        """Explicitly set the clock, keeping turn math consistent."""
-        self.hour = hour
-        return (self.start_hour + self.turn_count) % 24
-        self.start_hour = start_hour  # Start at 7 PM by default
-        self._start_hour = start_hour
-        self._hour = start_hour
-
-    def advance_turn(self, power_on: bool, game_state=None, rng=None):
-        """
-        Advance time by one turn, update environment, and notify listeners.
-        """
-        self.turn_count += 1
-        temp_change, new_temp = self.update_environment(power_on)
-
-        event_bus.emit(GameEvent(EventType.TURN_ADVANCE, {
-            "game_state": game_state,
-            "rng": rng,
-            "turn": self.turn_count,
-            "hour": self.hour,
-            "power_on": power_on,
-            "temperature_change": temp_change,
-            "temperature": new_temp
-        }))
-        return temp_change, new_temp
-
-        self._hour = (self._start_hour + self.turn_count) % 24
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
 
     def update_environment(self, power_on):
         """
@@ -265,48 +204,14 @@ class TimeSystem:
         return {
             "temperature": self.temperature,
             "turn_count": self.turn_count,
-<<<<<<< HEAD
-=======
-            "hour": self.hour,
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
             "start_hour": self.start_hour
         }
 
     @classmethod
     def from_dict(cls, data):
-<<<<<<< HEAD
         ts = cls(
             start_temp=data.get("temperature", -40), 
             start_hour=data.get("start_hour", 19)
         )
         ts.turn_count = data.get("turn_count", 0)
-=======
-        if not data:
-            return cls()
-
-        turn_count = data.get("turn_count", 0)
-        saved_hour = data.get("hour", 19)
-        start_hour = (saved_hour - turn_count) % 24
-        ts = cls(data.get("temperature", -40), start_hour)
-        ts.turn_count = turn_count
-        temp = data.get("temperature", -40)
-        turn_count = data.get("turn_count", 0)
-        saved_hour = data.get("hour", 19)
-
-        start_hour = data.get("start_hour")
-        if start_hour is None:
-            # Recalculate start hour so property math remains consistent
-            start_hour = (saved_hour - turn_count) % 24
-
-        ts = cls(temp, start_hour=start_hour)
-        ts.turn_count = turn_count
-        start_hour = (saved_hour - turn_count) % 24
-
-        ts = cls(temp, start_hour=start_hour)
-        ts.turn_count = turn_count
-        ts._hour = saved_hour % 24
-        ts._start_hour = start_hour
-        # Recompute hour from stored value to keep normalization consistent.
-        ts.hour = saved_hour
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
         return ts

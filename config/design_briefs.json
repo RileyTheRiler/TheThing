@@ -47,7 +47,6 @@
         "event_type": "ENDING_REPORT",
         "hook": "endgame",
         "summary": "Multiple endings should surface through events so UI layers can react without being coupled to win/lose checks.",
-<<<<<<< HEAD
         "states": {
             "ESCAPE": {
                 "name": "Helicopter Escape",
@@ -79,8 +78,7 @@
                 "condition": "The player character has died.",
                 "message": "MacReady is dead. The Thing spreads unchecked across the ice."
             }
-        }
-=======
+        },
         "endings": [
             {
                 "id": "helicopter_escape",
@@ -102,14 +100,6 @@
                 "trigger": "population_status",
                 "message": "Silence falls over the station. You are the only one left alive. The threat is gone... you hope."
             }
-        ],
-        "states": [
-            "ESCAPE",
-            "RESCUE",
-            "EXTERMINATION",
-            "SOLE_SURVIVOR",
-            "CONSUMPTION"
         ]
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
     }
 }

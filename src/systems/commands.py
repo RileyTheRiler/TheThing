@@ -4,11 +4,8 @@ from typing import List, Dict, Optional, TYPE_CHECKING
 from dataclasses import dataclass
 from core.resolution import Attribute, Skill
 from core.event_system import event_bus, EventType, GameEvent
-<<<<<<< HEAD
 from ui.message_reporter import emit_message, emit_warning, emit_combat, emit_dialogue
-=======
 from systems.interrogation import InterrogationSystem, InterrogationTopic
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
 
 if TYPE_CHECKING:
     from engine import GameState, CrewMember
@@ -49,6 +46,7 @@ def _get_blood_test_sim(game_state):
         return game_state.blood_test_sim
     raise AttributeError("Game state missing blood test simulator")
 
+
 class MoveCommand(Command):
     name = "MOVE"
     aliases = ["N", "S", "E", "W", "NORTH", "SOUTH", "EAST", "WEST"]
@@ -81,16 +79,6 @@ class MoveCommand(Command):
             return
 
         if game_state.player.move(dx, dy, game_state.station_map):
-<<<<<<< HEAD
-            event_bus.emit(GameEvent(EventType.MOVEMENT, {
-                "actor": game_state.player.name,
-                "direction": direction,
-                "destination": game_state.station_map.get_room_name(*game_state.player.location)
-            }))
-            game_state.advance_turn()
-        else:
-            emit_message("Path blocked.")
-=======
             destination = game_state.station_map.get_room_name(*game_state.player.location)
             event_bus.emit(GameEvent(EventType.MOVEMENT, {
                 "actor": getattr(game_state.player, "name", "You"),
@@ -100,7 +88,6 @@ class MoveCommand(Command):
             game_state.advance_turn()
         else:
             event_bus.emit(GameEvent(EventType.WARNING, {"text": "Blocked."}))
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
 
 class LookCommand(Command):
     name = "LOOK"
@@ -120,25 +107,17 @@ class LookCommand(Command):
 
         if target:
             if game_state.station_map.get_room_name(*target.location) == player_room:
-<<<<<<< HEAD
-                emit_message(target.get_description(game_state))
-            else:
-                emit_message(f"There is no {target_name} here.")
-        else:
-            emit_message(f"Unknown target: {target_name}")
-=======
-                event_bus.emit(GameEvent(EventType.MESSAGE, {
+                 event_bus.emit(GameEvent(EventType.MESSAGE, {
                     "text": target.get_description(game_state)
                 }))
             else:
-                event_bus.emit(GameEvent(EventType.WARNING, {
+                 event_bus.emit(GameEvent(EventType.WARNING, {
                     "text": f"There is no {target_name} here."
                 }))
         else:
-            event_bus.emit(GameEvent(EventType.WARNING, {
+             event_bus.emit(GameEvent(EventType.WARNING, {
                 "text": f"Unknown target: {target_name}"
             }))
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
 
 class InventoryCommand(Command):
     name = "INVENTORY"
@@ -156,29 +135,24 @@ class InventoryCommand(Command):
 class CraftCommand(Command):
     name = "CRAFT"
     aliases = []
-    description = "Craft an item from known recipes."
+    description = "Craft an item using a recipe. Usage: CRAFT <recipe_id>"
 
     def execute(self, context: GameContext, args: List[str]) -> None:
         game_state = context.game
         if not hasattr(game_state, "crafting_system"):
-            event_bus.emit(GameEvent(EventType.ERROR, {"text": "Crafting system unavailable."}))
-            return
+             event_bus.emit(GameEvent(EventType.ERROR, {"text": "Crafting system unavailable."}))
+             return
 
         if not args:
-            event_bus.emit(GameEvent(EventType.ERROR, {"text": "Usage: CRAFT <RECIPE_ID>"}))
+            emit_message("Usage: CRAFT <recipe_id>")
+            emit_message("Available recipes: " + ", ".join(game_state.crafting_system.recipes.keys()))
             return
 
-        recipe_id = args[0]
-        success = game_state.crafting_system.queue_craft(
-            game_state.player,
-            recipe_id,
-            game_state,
-            game_state.player.inventory,
-        )
+        recipe_id = args[0].lower()
+        success = game_state.crafting_system.queue_craft(game_state.player, recipe_id, game_state)
+        
         if success:
-            event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
-                "text": f"Queued crafting for recipe '{recipe_id}'."
-            }))
+            game_state.advance_turn()
 
 class GetCommand(Command):
     name = "GET"
@@ -257,24 +231,16 @@ class AttackCommand(Command):
             event_bus.emit(GameEvent(EventType.WARNING, {
                 "text": f"{target.name} is already dead."
             }))
-            event_bus.emit(GameEvent(EventType.ERROR, {"text": f"Unknown target: {target_name}"}))
-        elif game_state.station_map.get_room_name(*target.location) != player_room:
-            event_bus.emit(GameEvent(EventType.WARNING, {"text": f"{target.name} is not here."}))
-        elif not target.is_alive:
-            event_bus.emit(GameEvent(EventType.WARNING, {"text": f"{target.name} is already dead."}))
         else:
             weapon = next((i for i in game_state.player.inventory if i.damage > 0), None)
             w_name = weapon.name if weapon else "Fists"
             w_skill = weapon.weapon_skill if weapon else Skill.MELEE
             w_dmg = weapon.damage if weapon else 0
 
-<<<<<<< HEAD
-            emit_message(f"Attacking {target.name} with {w_name}...")
-=======
             event_bus.emit(GameEvent(EventType.MESSAGE, {
                 "text": f"Attacking {target.name} with {w_name}..."
             }))
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
+            
             att_attr = Skill.get_attribute(w_skill)
             att_res = game_state.player.roll_check(att_attr, w_skill, game_state.rng)
 
@@ -283,8 +249,9 @@ class AttackCommand(Command):
 
             def_res = target.roll_check(def_attr, def_skill, game_state.rng)
 
-<<<<<<< HEAD
-            emit_message(f"Attack: {att_res['success_count']} vs Defense: {def_res['success_count']}")
+            event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+                "text": f"Attack: {att_res['success_count']} vs Defense: {def_res['success_count']}"
+            }))
 
             hit = att_res['success_count'] > def_res['success_count']
             damage = 0
@@ -303,46 +270,6 @@ class AttackCommand(Command):
                 "damage": damage,
                 "killed": killed
             }))
-=======
-            hit = att_res['success_count'] > def_res['success_count']
-            total_dmg = 0
-            killed = False
-            event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
-                "text": f"Attack: {att_res['success_count']} vs Defense: {def_res['success_count']}"
-            }))
-
-            if hit:
-                net_hits = att_res['success_count'] - def_res['success_count']
-                total_dmg = w_dmg + net_hits
-                killed = target.take_damage(total_dmg)
-
-            event_bus.emit(GameEvent(EventType.ATTACK_RESULT, {
-                "attacker": getattr(game_state.player, "name", "You"),
-                "target": target.name,
-                "weapon": w_name,
-                "hit": hit,
-                "damage": total_dmg,
-                "killed": killed
-            }))
-                died = target.take_damage(total_dmg)
-                event_bus.emit(GameEvent(EventType.ATTACK_RESULT, {
-                    "attacker": game_state.player.name,
-                    "target": target.name,
-                    "weapon": w_name,
-                    "hit": True,
-                    "damage": total_dmg,
-                    "killed": died
-                }))
-            else:
-                event_bus.emit(GameEvent(EventType.ATTACK_RESULT, {
-                    "attacker": game_state.player.name,
-                    "target": target.name,
-                    "weapon": w_name,
-                    "hit": False,
-                    "damage": 0,
-                    "killed": False
-                }))
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
 
 class TagCommand(Command):
     name = "TAG"
@@ -426,21 +353,6 @@ class TestCommand(Command):
             elif not wire:
                 event_bus.emit(GameEvent(EventType.WARNING, {"text": "You need COPPER WIRE for the test."}))
             else:
-<<<<<<< HEAD
-                emit_message(f"Drawing blood from {target.name}...")
-                game_state.forensics.blood_test.start_test(target.name)
-                # Rapid heating and application
-                game_state.forensics.blood_test.heat_wire()
-                game_state.forensics.blood_test.heat_wire()
-                game_state.forensics.blood_test.heat_wire()
-                game_state.forensics.blood_test.heat_wire()
-
-                # Use the forensics system's simulator
-                event_bus.emit(GameEvent(EventType.TEST_RESULT, {
-                    "subject": target.name,
-                    "infected": target.is_infected,
-                    "result": "reactive" if target.is_infected else "neutral"
-=======
                 sim = _get_blood_test_sim(game_state)
                 event_bus.emit(GameEvent(EventType.MESSAGE, {
                     "text": f"Drawing blood from {target.name}..."
@@ -460,7 +372,6 @@ class TestCommand(Command):
                     "subject": target.name,
                     "result": result,
                     "infected": target.is_infected
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
                 }))
 
                 if target.is_infected:
@@ -609,19 +520,13 @@ class BarricadeCommand(Command):
     def execute(self, context: GameContext, args: List[str]) -> None:
         game_state = context.game
         player_room = game_state.station_map.get_room_name(*game_state.player.location)
-<<<<<<< HEAD
-        # Note: barricade_room currently returns a string, we should eventually refactor it to emit events.
-        # But for now, we wrap it in an event or capture its result.
-        # Wait, I refactored the Barricade action in message_reporter to handle BARRICADE_ACTION.
-        # Let's see what barricade_room returns and if it should emit instead.
-        # For now, let's just emit a message.
         result = game_state.room_states.barricade_room(player_room)
+        # Assuming result is a message string since I see that implementation in HEAD
         emit_message(result)
-=======
-        game_state.room_states.barricade_room(player_room, actor=getattr(game_state.player, "name", "You"))
+        # Advance turn is handled by caller or via side effects?
+        # HEAD didn't have turn advance here, but 5f60c32 did.
+        # Barricading is an action, it SHOULD take a turn.
         game_state.advance_turn()
-        game_state.room_states.barricade_room(player_room)
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
 
 class JournalCommand(Command):
     name = "JOURNAL"
@@ -684,10 +589,10 @@ class LoadCommand(Command):
             context.game = new_game
             print("*** GAME LOADED ***")
 
-class AdvanceCommand(Command):
-    name = "ADVANCE"
-    aliases = []
-    description = "Wait and advance time."
+class WaitCommand(Command):
+    name = "WAIT"
+    aliases = ["Z", "ADVANCE"]
+    description = "Wait one turn."
 
     def execute(self, context: GameContext, args: List[str]) -> None:
         game_state = context.game
@@ -719,28 +624,6 @@ class TrustCommand(Command):
             if m.name in game_state.trust_system.matrix:
                 val = game_state.trust_system.matrix[m.name].get(target_name.title(), 50)
                 emit_message(f"{m.name} -> {target_name.title()}: {val}")
-
-class CraftCommand(Command):
-    name = "CRAFT"
-    aliases = []
-    description = "Craft an item using a recipe. Usage: CRAFT <recipe_id>"
-
-    def execute(self, context: GameContext, args: List[str]) -> None:
-        game_state = context.game
-        if not args:
-            emit_message("Usage: CRAFT <recipe_id>")
-            emit_message("Available recipes: " + ", ".join(game_state.crafting.recipes.keys()))
-            return
-
-        recipe_id = args[0].lower()
-        success = game_state.crafting.queue_craft(game_state.player, recipe_id, game_state)
-        
-        if success:
-            # If instant craft (handled inside queue_craft), we might want to advance turn?
-            # Or maybe crafting always takes a turn even if 0 craft_time?
-            # The requirements say "emit crafting events".
-            # Let's advance turn to make it a meaningful action.
-            game_state.advance_turn()
 
 class CheckCommand(Command):
     name = "CHECK"
@@ -800,20 +683,22 @@ class CommandDispatcher:
         self.register(ExitCommand())
         self.register(TrustCommand())
         self.register(CheckCommand())
-        self.register(CraftCommand())
 
     def register(self, command: Command):
         self.commands[command.name] = command
         for alias in command.aliases:
             self.commands[alias] = command
 
-    def dispatch(self, action: str, args: List[str], context: GameContext) -> bool:
-        command = self.commands.get(action.upper())
-        if command:
-            # Special handling for aliases that are implicit args (like "N" -> "MOVE N")
-            if action.upper() in ["N", "S", "E", "W", "NORTH", "SOUTH", "EAST", "WEST"]:
-                args = [action.upper()]
+    def dispatch(self, context: GameContext, user_input: str) -> None:
+        if not user_input.strip():
+            return
 
-            command.execute(context, args)
-            return True
-        return False
+        parts = user_input.split()
+        command_name = parts[0].upper()
+        args = parts[1:]
+
+        if command_name in self.commands:
+            self.commands[command_name].execute(context, args)
+        else:
+            print(f"Unknown command: {command_name}")
+            print("Type HELP for valid commands.")

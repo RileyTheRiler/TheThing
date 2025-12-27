@@ -50,27 +50,11 @@ class SocialThresholds:
         return max(0, min(100, int(value)))
 
 class TrustMatrix:
-<<<<<<< HEAD
-    # Threshold Constants
-    LYNCH_THRESHOLD = 20
-    HOSTILE_THRESHOLD = 40
-    FRIENDLY_THRESHOLD = 70
-
-    def __init__(self, crew):
-        # Dictionary of dictionaries: self.matrix[observer][subject] = trust_value
-        # Default trust is 50
-        self.matrix = {m.name: {other.name: 50 for other in crew} for m in crew}
-        
-        # Track previous average trust to detect threshold crossings
-        self.prev_avg_trust = {m.name: 50.0 for m in crew}
-        
-=======
     def __init__(self, crew, thresholds: Optional[SocialThresholds] = None):
         # Dictionary of dictionaries: self.matrix[observer][subject] = trust_value
         # Default trust is 50
         self.matrix = {m.name: {other.name: 50 for other in crew} for m in crew}
         self.thresholds = thresholds or SocialThresholds()
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
         self._set_initial_biases()
         self._trust_buckets: Dict[str, Dict[str, int]] = {
             observer: {subject: bucket_for_thresholds(value, self.thresholds.trust_thresholds)
@@ -140,42 +124,6 @@ class TrustMatrix:
                     count += 1
         return total / count if count > 0 else 50.0
 
-<<<<<<< HEAD
-    def check_for_lynch_mob(self, crew, game_state=None):
-        """If global trust in a human falls below LYNCH_THRESHOLD, they are targeted."""
-        for member in crew:
-            if member.is_alive:
-                avg = self.get_average_trust(member.name)
-                prev_avg = self.prev_avg_trust.get(member.name, 50.0)
-                
-                # 1. Detect Threshold Crossings
-                thresholds = [self.FRIENDLY_THRESHOLD, self.HOSTILE_THRESHOLD, self.LYNCH_THRESHOLD]
-                for t in thresholds:
-                    # Dropped below threshold
-                    if prev_avg >= t and avg < t:
-                        event_bus.emit(GameEvent(EventType.TRUST_THRESHOLD_CROSSED, {
-                            "target": member.name,
-                            "threshold": t,
-                            "direction": "DOWN",
-                            "new_value": avg,
-                            "old_value": prev_avg
-                        }))
-                    # Rose above threshold
-                    elif prev_avg < t and avg >= t:
-                        event_bus.emit(GameEvent(EventType.TRUST_THRESHOLD_CROSSED, {
-                            "target": member.name,
-                            "threshold": t,
-                            "direction": "UP",
-                            "new_value": avg,
-                            "old_value": prev_avg
-                        }))
-                
-                # Update tracking
-                self.prev_avg_trust[member.name] = avg
-
-                # 2. Lynch threshold check
-                if avg < self.LYNCH_THRESHOLD:
-=======
     def rebuild_buckets(self):
         """Recalculate bucket caches after bulk trust updates (e.g., save hydration)."""
         self._trust_buckets = {
@@ -198,7 +146,7 @@ class TrustMatrix:
         if new_bucket != previous_bucket:
             self._trust_buckets.setdefault(observer_name, {})[subject_name] = new_bucket
             direction = "up" if new_value > previous_value else "down"
-            event_bus.emit(GameEvent(EventType.TRUST_THRESHOLD, {
+            event_bus.emit(GameEvent(EventType.TRUST_THRESHOLD_CROSSED, {
                 "scope": "pair",
                 "observer": observer_name,
                 "subject": subject_name,
@@ -220,7 +168,7 @@ class TrustMatrix:
         if new_bucket != previous_bucket:
             self._average_buckets[member_name] = new_bucket
             direction = "up" if average_value > previous_value else "down"
-            event_bus.emit(GameEvent(EventType.TRUST_THRESHOLD, {
+            event_bus.emit(GameEvent(EventType.TRUST_THRESHOLD_CROSSED, {
                 "scope": "average",
                 "subject": member_name,
                 "value": average_value,
@@ -239,7 +187,6 @@ class TrustMatrix:
                 self._track_average_threshold(member.name, avg)
                 # Lynch threshold
                 if avg < threshold:
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
                     # Emit LYNCH_MOB_TRIGGER event
                     if game_state:
                         event_bus.emit(GameEvent(EventType.LYNCH_MOB_TRIGGER, {
@@ -294,6 +241,12 @@ class LynchMobSystem:
         self.active_mob = False
         self.target = None
         
+        # Subscribe to trigger
+        event_bus.subscribe(EventType.LYNCH_MOB_TRIGGER, self.on_lynch_mob_trigger)
+
+    def cleanup(self):
+        event_bus.unsubscribe(EventType.LYNCH_MOB_TRIGGER, self.on_lynch_mob_trigger)
+        
     def check_thresholds(self, crew, current_paranoia: Optional[int] = None):
         """
         Check if any crew member has fallen below the configured lynch threshold.
@@ -327,50 +280,38 @@ class LynchMobSystem:
             self.form_mob(potential_target)
             return potential_target
         return None
-        event_bus.subscribe(EventType.LYNCH_MOB_TRIGGER, self.on_lynch_mob_trigger)
-
-    def cleanup(self):
-        event_bus.unsubscribe(EventType.LYNCH_MOB_TRIGGER, self.on_lynch_mob_trigger)
 
     def on_lynch_mob_trigger(self, event: GameEvent):
         target_name = event.payload.get("target")
-        # We need the actual object, but we only have name/loc in payload usually.
-        # But TrustMatrix emits target object? No, payload has "target": member.name.
-        # We store the name or need game state to resolve.
-        # Let's check TrustMatrix trigger: "target": member.name
+        # Find the crew member object if possible, but we don't hold crew ref in system directly usually
+        # But form_mob does.
+        # This listener is for UI mainly if form_mob triggered it.
+        # But if check_for_lynch_mob triggered it, we need to set active_mob.
+        # This creates a slight circular dependency or confusion about who owns the state.
+        # Ideally TrustMatrix emits trigger, LynchMobSystem ACTS on it.
         self.active_mob = True
-        # We can't easily resolve the object here without game_state in this class, but we can store the name.
-        # We'll just store the name for now.
-        # Wait, check_thresholds used self.target (object).
-        # Let's rely on event payload updates.
+        
         from ui.message_reporter import emit_warning, emit_message
         emit_warning(f"EMERGENCY: THE CREW HAS TURNED ON {target_name.upper()}!")
         emit_message(f"They are dragging {target_name} to the Rec Room to be tied up.", crawl=True)
-    
-    def check_thresholds(self, crew):
-        # Deprecated manual check, handled by TrustMatrix event
-        pass
 
     def form_mob(self, target):
-        # Logic moved to on_lynch_mob_trigger mostly, but this might be called by Accuse command
         self.active_mob = True
         self.target = target
         avg_trust = self.trust_system.get_average_trust(target.name)
+        # Note: TrustMatrix might have already emitted LYNCH_MOB_TRIGGER, 
+        # but if we call this manually (e.g. Accusation), we emit it here.
         event_bus.emit(GameEvent(EventType.LYNCH_MOB_TRIGGER, {
             "target": target.name,
-            "location": target.location, # Will be updated dynamically
+            "location": target.location,
             "average_trust": avg_trust,
             "threshold": self.thresholds.lynch_average_threshold
-        self.target = target # Object
-        event_bus.emit(GameEvent(EventType.LYNCH_MOB_TRIGGER, {
-            "target": target.name,
-            "location": target.location
         }))
 
     def disband_mob(self):
         target_name = self.target.name if self.target else "Unknown"
         from ui.message_reporter import emit_message
-        emit_message(f"[SOCIAL] Lynch mob against {self.target.name} disbanded.")
+        emit_message(f"[SOCIAL] Lynch mob against {target_name} disbanded.")
         self.active_mob = False
         self.target = None
 

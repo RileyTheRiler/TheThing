@@ -121,13 +121,8 @@ class CombatSystem:
         available.remove(best)
         return best
 
-<<<<<<< HEAD
     def calculate_attack(self, attacker, defender, weapon, cover=CoverType.NONE, room_modifiers=None):
         """Calculate an attack roll with cover and environmental modifiers.
-=======
-    def calculate_attack(self, attacker, defender, weapon, cover=CoverType.NONE, room_name=None):
-        """Calculate an attack roll with cover modifiers.
->>>>>>> 5f60c32382977f3ce71f15301c071f8d32a06503
 
         Returns CombatResult with outcome.
         """
