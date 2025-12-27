@@ -10,6 +10,8 @@ import random
 import sys
 import os
 import subprocess
+import time
+import random
 from enum import Enum
 
 # Determine audio backend
@@ -143,11 +145,19 @@ class AudioManager:
         if self.volume <= 0.0:
             return
 
+        # Volume check (0.0 volume is effectively muted)
+        if self.volume <= 0.0:
+            return
+
         freq_range = self.FREQUENCIES.get(sound, (440, 440))
         duration = self.DURATIONS.get(sound, 100)
 
         if ambient:
             duration = int(duration * 0.3)  # Shorter for ambient loop
+            # Simulate volume control for ambient sounds by adjusting density
+            if random.random() > self.volume:
+                time.sleep(duration / 1000.0)
+                return
 
         try:
             if AUDIO_BACKEND == 'winsound':
@@ -165,7 +175,6 @@ class AudioManager:
         import winsound
         if len(freq_range) == 2 and freq_range[0] != freq_range[1]:
             # Play a sweep from low to high
-            import time
             steps = 5
             step_duration = duration // steps
             freq_step = (freq_range[1] - freq_range[0]) // steps
@@ -235,6 +244,16 @@ class AudioManager:
     def set_volume(self, volume):
         """
         Set volume level (0.0 to 1.0).
+        """
+        self.volume = max(0.0, min(1.0, volume))
+
+    def increase_volume(self, amount=0.1):
+        """Increase volume by amount."""
+        self.set_volume(self.volume + amount)
+
+    def decrease_volume(self, amount=0.1):
+        """Decrease volume by amount."""
+        self.set_volume(self.volume - amount)
         Since winsound cannot control amplitude, this controls:
         1. Whether sound plays at all (0.0 = mute)
         2. Density of ambient loops (lower volume = sparser sound)
@@ -276,8 +295,6 @@ class AudioManager:
         """
         if not self.enabled or self.muted:
             return
-        
-        import time
         
         # Stop ambient
         was_ambient = self.ambient_running
