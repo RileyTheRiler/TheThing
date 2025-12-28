@@ -8,6 +8,23 @@ let crewFilter = 'nearby'; // 'nearby', 'alive', or 'all'
 let currentEventMode = null; // 'blood-test', 'interrogation', 'combat', or null
 let commandModalOpen = false;
 let currentCommandCategory = 'all';
+let journalFilter = 'all';
+let previousCrewState = {}; // Track crew changes for notifications
+
+// Game statistics tracking
+let gameStats = {
+    roomsVisited: new Set(),
+    bloodTests: 0,
+    interrogations: 0,
+    itemsFound: 0,
+    combatEncounters: 0,
+    thingsKilled: 0,
+    damageTaken: 0,
+    infectedFound: 0
+};
+
+// Journal entries
+let journalEntries = [];
 
 // Command database for the command browser
 const COMMAND_DATABASE = [
@@ -125,13 +142,50 @@ function setupEventListeners() {
 
     // Setup keyboard shortcuts for quick actions
     document.addEventListener('keydown', handleGlobalKeydown);
+
+    // Setup journal filter buttons
+    document.querySelectorAll('.journal-filter-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            filterJournalEntries(this.dataset.filter);
+        });
+    });
+
+    // Setup stats modal close on outside click
+    const statsModal = document.getElementById('stats-modal');
+    if (statsModal) {
+        statsModal.addEventListener('click', function(e) {
+            if (e.target === statsModal) {
+                closeStatsModal();
+            }
+        });
+    }
+
+    // Setup journal modal close on outside click
+    const journalModal = document.getElementById('journal-modal');
+    if (journalModal) {
+        journalModal.addEventListener('click', function(e) {
+            if (e.target === journalModal) {
+                closeJournalModal();
+            }
+        });
+    }
 }
 
 function handleGlobalKeydown(event) {
-    // Handle Escape key to close modal
+    // Handle Escape key to close modals
     if (event.key === 'Escape') {
         if (commandModalOpen) {
             closeCommandModal();
+            event.preventDefault();
+            return;
+        }
+        if (statsModalOpen) {
+            closeStatsModal();
+            event.preventDefault();
+            return;
+        }
+        if (journalModalOpen) {
+            closeJournalModal();
             event.preventDefault();
             return;
         }
@@ -187,6 +241,20 @@ function handleGlobalKeydown(event) {
             buttons[index].click();
             setTimeout(() => buttons[index].classList.remove('shortcut-active'), 150);
         }
+    }
+
+    // G key for game statistics
+    if (event.key.toLowerCase() === 'g' && !event.ctrlKey && !event.altKey && !event.metaKey) {
+        event.preventDefault();
+        openStatsModal();
+        return;
+    }
+
+    // J key for journal
+    if (event.key.toLowerCase() === 'j' && !event.ctrlKey && !event.altKey && !event.metaKey) {
+        event.preventDefault();
+        openJournalModal();
+        return;
     }
 
     // Letter shortcuts when not in input
@@ -583,8 +651,15 @@ function updateCrewDisplay(state) {
     }).join('');
 }
 
+// Store previous state for event detection
+let previousGameState = null;
+
 function updateGameDisplay(state) {
     if (!state) return;
+
+    // Detect and log game events
+    detectAndLogEvents(state, previousGameState);
+    previousGameState = JSON.parse(JSON.stringify(state)); // Deep copy for comparison
 
     // Update status bar
     document.getElementById('turn-counter').textContent = state.turn;
@@ -905,4 +980,264 @@ function updateNavigationButtons(state) {
             }
         }
     });
+}
+
+// ===== TOAST NOTIFICATIONS =====
+
+function showToast(message, type = 'info', duration = 4000) {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+
+    // Icon based on type
+    const icons = {
+        'info': 'ℹ',
+        'success': '✓',
+        'warning': '⚠',
+        'danger': '☠',
+        'discovery': '🔍'
+    };
+
+    toast.innerHTML = `
+        <span class="toast-icon">${icons[type] || icons.info}</span>
+        <span class="toast-message">${message}</span>
+        <button class="toast-close" onclick="this.parentElement.remove()">✕</button>
+    `;
+
+    container.appendChild(toast);
+
+    // Auto-remove after duration
+    setTimeout(() => {
+        toast.classList.add('toast-exit');
+        setTimeout(() => toast.remove(), 300);
+    }, duration);
+}
+
+// ===== STATISTICS MODAL =====
+
+let statsModalOpen = false;
+
+function openStatsModal() {
+    const modal = document.getElementById('stats-modal');
+    if (modal) {
+        updateStats();
+        modal.classList.remove('hidden');
+        statsModalOpen = true;
+    }
+}
+
+function closeStatsModal() {
+    const modal = document.getElementById('stats-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+        statsModalOpen = false;
+        document.getElementById('command-input').focus();
+    }
+}
+
+function updateStats() {
+    if (!gameState) return;
+
+    // Update from game state
+    const statTurns = document.getElementById('stat-turns');
+    const statTime = document.getElementById('stat-time');
+    const statRooms = document.getElementById('stat-rooms');
+    const statCrewAlive = document.getElementById('stat-crew-alive');
+    const statCrewDead = document.getElementById('stat-crew-dead');
+    const statInfected = document.getElementById('stat-infected');
+    const statTests = document.getElementById('stat-tests');
+    const statInterrogations = document.getElementById('stat-interrogations');
+    const statItems = document.getElementById('stat-items');
+    const statEncounters = document.getElementById('stat-encounters');
+    const statKills = document.getElementById('stat-kills');
+    const statDamage = document.getElementById('stat-damage');
+
+    if (statTurns) statTurns.textContent = gameState.turn || 0;
+    if (statTime) statTime.textContent = gameState.time || '00:00';
+    if (statRooms) statRooms.textContent = gameStats.roomsVisited.size;
+
+    // Count crew stats
+    if (gameState.crew) {
+        const alive = gameState.crew.filter(c => c.is_alive).length;
+        const dead = gameState.crew.filter(c => !c.is_alive).length;
+        if (statCrewAlive) statCrewAlive.textContent = alive;
+        if (statCrewDead) statCrewDead.textContent = dead;
+    }
+
+    if (statInfected) statInfected.textContent = gameStats.infectedFound;
+    if (statTests) statTests.textContent = gameStats.bloodTests;
+    if (statInterrogations) statInterrogations.textContent = gameStats.interrogations;
+    if (statItems) statItems.textContent = gameStats.itemsFound;
+    if (statEncounters) statEncounters.textContent = gameStats.combatEncounters;
+    if (statKills) statKills.textContent = gameStats.thingsKilled;
+    if (statDamage) statDamage.textContent = gameStats.damageTaken;
+}
+
+// ===== INVESTIGATION JOURNAL =====
+
+let journalModalOpen = false;
+
+function addJournalEntry(type, title, details, turn) {
+    const entry = {
+        id: Date.now(),
+        type: type, // 'discovery', 'test', 'death', 'event'
+        title: title,
+        details: details,
+        turn: turn || (gameState ? gameState.turn : 0),
+        time: gameState ? gameState.time : '00:00'
+    };
+
+    journalEntries.unshift(entry); // Add to beginning
+
+    // Show toast for new entry
+    const toastTypes = {
+        'discovery': 'discovery',
+        'test': 'info',
+        'death': 'danger',
+        'event': 'warning'
+    };
+    showToast(`Journal: ${title}`, toastTypes[type] || 'info', 3000);
+}
+
+function openJournalModal() {
+    const modal = document.getElementById('journal-modal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        journalModalOpen = true;
+        renderJournalEntries();
+    }
+}
+
+function closeJournalModal() {
+    const modal = document.getElementById('journal-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+        journalModalOpen = false;
+        document.getElementById('command-input').focus();
+    }
+}
+
+function renderJournalEntries() {
+    const container = document.getElementById('journal-entries');
+    if (!container) return;
+
+    const filtered = journalFilter === 'all'
+        ? journalEntries
+        : journalEntries.filter(e => e.type === journalFilter);
+
+    if (filtered.length === 0) {
+        container.innerHTML = '<div class="journal-empty">No entries matching filter.</div>';
+        return;
+    }
+
+    container.innerHTML = filtered.map(entry => {
+        const typeIcons = {
+            'discovery': '🔍',
+            'test': '🧪',
+            'death': '💀',
+            'event': '⚡'
+        };
+        const icon = typeIcons[entry.type] || '📝';
+
+        return `
+            <div class="journal-entry journal-entry-${entry.type}">
+                <div class="journal-entry-header">
+                    <span class="journal-icon">${icon}</span>
+                    <span class="journal-title">${entry.title}</span>
+                    <span class="journal-entry-time">Turn ${entry.turn} - ${entry.time}</span>
+                </div>
+                <div class="journal-entry-content">${entry.details}</div>
+            </div>
+        `;
+    }).join('');
+}
+
+function filterJournalEntries(filter) {
+    journalFilter = filter;
+
+    // Update active button
+    document.querySelectorAll('.journal-filter-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.filter === filter);
+    });
+
+    renderJournalEntries();
+}
+
+// ===== EVENT DETECTION FOR TOASTS AND JOURNAL =====
+
+function detectAndLogEvents(newState, previousState) {
+    if (!newState) return;
+
+    // Track room visits
+    if (newState.location) {
+        const wasVisited = gameStats.roomsVisited.has(newState.location);
+        gameStats.roomsVisited.add(newState.location);
+
+        // Log first visit to a room
+        if (!wasVisited && previousState && previousState.location !== newState.location) {
+            addJournalEntry('discovery', `Explored ${newState.location}`,
+                `Entered ${newState.location} for the first time.`, newState.turn);
+        }
+    }
+
+    // Track blood test events
+    if (newState.blood_test_active && (!previousState || !previousState.blood_test_active)) {
+        gameStats.bloodTests++;
+        showToast(`Blood test started on ${newState.blood_test_subject || 'subject'}`, 'warning', 3000);
+    }
+
+    // Track blood test completion
+    if (previousState && previousState.blood_test_active && !newState.blood_test_active) {
+        if (newState.blood_test_result) {
+            const result = newState.blood_test_result;
+            if (result.infected) {
+                gameStats.infectedFound++;
+                addJournalEntry('test', `INFECTED: ${result.subject}`,
+                    `Blood test confirmed ${result.subject} is a Thing!`, newState.turn);
+                showToast(`${result.subject} IS INFECTED!`, 'danger', 5000);
+            } else {
+                addJournalEntry('test', `CLEAR: ${result.subject}`,
+                    `Blood test confirmed ${result.subject} is human.`, newState.turn);
+                showToast(`${result.subject} is human`, 'success', 3000);
+            }
+        }
+    }
+
+    // Track interrogation events
+    if (newState.interrogation_active && (!previousState || !previousState.interrogation_active)) {
+        gameStats.interrogations++;
+    }
+
+    // Track combat events
+    if (newState.combat_active && (!previousState || !previousState.combat_active)) {
+        gameStats.combatEncounters++;
+        showToast('COMBAT INITIATED!', 'danger', 3000);
+        addJournalEntry('event', 'Combat Encounter',
+            `Combat started in ${newState.location}.`, newState.turn);
+    }
+
+    // Track crew deaths
+    if (previousState && previousState.crew && newState.crew) {
+        newState.crew.forEach(member => {
+            const prevMember = previousState.crew.find(c => c.name === member.name);
+            if (prevMember && prevMember.is_alive && !member.is_alive) {
+                addJournalEntry('death', `${member.name} died`,
+                    `${member.name} (${member.role}) was found dead in ${member.location}.`, newState.turn);
+                showToast(`${member.name} has died!`, 'danger', 5000);
+            }
+        });
+    }
+
+    // Track items picked up
+    if (previousState && previousState.inventory && newState.inventory) {
+        const prevItems = new Set(previousState.inventory.map(i => i.name));
+        newState.inventory.forEach(item => {
+            if (!prevItems.has(item.name)) {
+                gameStats.itemsFound++;
+                showToast(`Picked up: ${item.name}`, 'success', 2500);
+            }
+        });
+    }
 }

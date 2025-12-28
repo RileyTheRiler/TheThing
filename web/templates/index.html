@@ -292,6 +292,109 @@
                 </div>
             </div>
         </div>
+
+        <!-- Toast Notification Container -->
+        <div id="toast-container" class="toast-container"></div>
+
+        <!-- Statistics Modal -->
+        <div id="stats-modal" class="modal hidden">
+            <div class="modal-content stats-modal-content">
+                <div class="modal-header">
+                    <h3>📊 GAME STATISTICS</h3>
+                    <button class="modal-close" onclick="closeStatsModal()">✕</button>
+                </div>
+                <div class="stats-content">
+                    <div class="stats-section">
+                        <h4>SURVIVAL</h4>
+                        <div class="stats-grid">
+                            <div class="stat-item">
+                                <span class="stat-label">Turns Survived</span>
+                                <span id="stat-turns" class="stat-value">0</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Time Elapsed</span>
+                                <span id="stat-time" class="stat-value">00:00</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Rooms Visited</span>
+                                <span id="stat-rooms" class="stat-value">0</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="stats-section">
+                        <h4>CREW STATUS</h4>
+                        <div class="stats-grid">
+                            <div class="stat-item">
+                                <span class="stat-label">Crew Alive</span>
+                                <span id="stat-crew-alive" class="stat-value stat-good">0</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Crew Dead</span>
+                                <span id="stat-crew-dead" class="stat-value stat-bad">0</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Infected Found</span>
+                                <span id="stat-infected" class="stat-value stat-warning">0</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="stats-section">
+                        <h4>INVESTIGATION</h4>
+                        <div class="stats-grid">
+                            <div class="stat-item">
+                                <span class="stat-label">Blood Tests</span>
+                                <span id="stat-tests" class="stat-value">0</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Interrogations</span>
+                                <span id="stat-interrogations" class="stat-value">0</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Items Found</span>
+                                <span id="stat-items" class="stat-value">0</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="stats-section">
+                        <h4>COMBAT</h4>
+                        <div class="stats-grid">
+                            <div class="stat-item">
+                                <span class="stat-label">Encounters</span>
+                                <span id="stat-encounters" class="stat-value">0</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Things Killed</span>
+                                <span id="stat-kills" class="stat-value stat-good">0</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Damage Taken</span>
+                                <span id="stat-damage" class="stat-value stat-bad">0</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Journal Modal -->
+        <div id="journal-modal" class="modal hidden">
+            <div class="modal-content journal-modal-content">
+                <div class="modal-header">
+                    <h3>📓 INVESTIGATION JOURNAL</h3>
+                    <button class="modal-close" onclick="closeJournalModal()">✕</button>
+                </div>
+                <div class="journal-filters">
+                    <button class="journal-filter-btn active" data-filter="all">ALL</button>
+                    <button class="journal-filter-btn" data-filter="discovery">DISCOVERIES</button>
+                    <button class="journal-filter-btn" data-filter="test">TEST RESULTS</button>
+                    <button class="journal-filter-btn" data-filter="death">DEATHS</button>
+                    <button class="journal-filter-btn" data-filter="event">EVENTS</button>
+                </div>
+                <div id="journal-entries" class="journal-entries">
+                    <div class="journal-empty">No entries yet. Start investigating!</div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="{{ url_for('static', filename='js/game.js') }}"></script>
