@@ -63,14 +63,15 @@ def main():
     print("Starting web server...")
     print()
 
-    # Import and run the server
-    server_path = os.path.join(os.path.dirname(__file__), 'server.py')
-
     # Execute the server module
-    import importlib.util
-    spec = importlib.util.spec_from_file_location("server", server_path)
-    server_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(server_module)
+    server_path = os.path.join(os.path.dirname(__file__), 'server.py')
+    try:
+        subprocess.check_call([sys.executable, server_path])
+    except KeyboardInterrupt:
+        print("\nServer stopped.")
+    except subprocess.CalledProcessError as e:
+        print(f"\nServer exited with error code {e.returncode}")
+        sys.exit(e.returncode)
 
 if __name__ == "__main__":
     main()

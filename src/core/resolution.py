@@ -1,4 +1,3 @@
-import random
 import math
 from dataclasses import dataclass
 from enum import Enum
@@ -69,14 +68,13 @@ class ResolutionSystem:
         return max(0, base_pool + modifier)
 
     @staticmethod
-    def roll_check(pool_size, rng=None):
+    def roll_check(pool_size, rng):
         """
-        Executes a dice pool check.
-
-        If an explicit RandomnessEngine is provided it is used as the source of
-        truth for dice rolls. Otherwise a lightweight fallback roll using
-        Python's random module is performed so ad-hoc calls (e.g., from
-        CrewMember.roll_check) still function.
+        Executes a dice pool check using the provided RandomnessEngine.
+        
+        This method requires an explicit RandomnessEngine to ensure deterministic 
+        behavior across game sessions and save/load cycles.
+        
         Success = 6s.
         """
         pool_size = max(1, pool_size)
@@ -84,14 +82,7 @@ class ResolutionSystem:
         if rng and hasattr(rng, "calculate_success"):
             return rng.calculate_success(pool_size)
 
-        dice = [random.randint(1, 6) for _ in range(pool_size)]
-        successes = dice.count(6)
-        return {
-            "success": successes > 0,
-            "success_count": successes,
-            "dice": dice,
-            "dice_count": pool_size
-        }
+        raise ValueError("RandomnessEngine (rng) must be provided for roll_check to ensure determinism.")
 
     @staticmethod
     def resolve_pool(base_pool, skills_attributes, modifiers):

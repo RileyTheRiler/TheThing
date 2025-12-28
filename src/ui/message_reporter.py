@@ -142,6 +142,26 @@ class MessageReporter:
         event_bus.subscribe(EventType.INTERROGATION_RESULT, self._handle_interrogation)
         event_bus.subscribe(EventType.ACCUSATION_RESULT, self._handle_accusation)
 
+    def cleanup(self):
+        """Unsubscribe from all reporting event types."""
+        event_bus.unsubscribe(EventType.MESSAGE, self._handle_message)
+        event_bus.unsubscribe(EventType.WARNING, self._handle_warning)
+        event_bus.unsubscribe(EventType.ERROR, self._handle_error)
+        event_bus.unsubscribe(EventType.COMBAT_LOG, self._handle_combat)
+        event_bus.unsubscribe(EventType.DIALOGUE, self._handle_dialogue)
+        event_bus.unsubscribe(EventType.SYSTEM_LOG, self._handle_system)
+        event_bus.unsubscribe(EventType.MOVEMENT, self._handle_movement)
+        event_bus.unsubscribe(EventType.ITEM_PICKUP, self._handle_item_pickup)
+        event_bus.unsubscribe(EventType.ITEM_DROP, self._handle_item_drop)
+        event_bus.unsubscribe(EventType.ATTACK_RESULT, self._handle_attack)
+        event_bus.unsubscribe(EventType.TEST_RESULT, self._handle_test)
+        event_bus.unsubscribe(EventType.BARRICADE_ACTION, self._handle_barricade)
+        event_bus.unsubscribe(EventType.STEALTH_REPORT, self._handle_stealth)
+        event_bus.unsubscribe(EventType.CRAFTING_REPORT, self._handle_crafting)
+        event_bus.unsubscribe(EventType.ENDING_REPORT, self._handle_ending)
+        event_bus.unsubscribe(EventType.INTERROGATION_RESULT, self._handle_interrogation)
+        event_bus.unsubscribe(EventType.ACCUSATION_RESULT, self._handle_accusation)
+
     def _handle_message(self, event: GameEvent):
         """Handle general messages."""
         if not self._should_report(event.type):
@@ -381,3 +401,12 @@ def emit_combat(attacker, target, action='attacks', result='', damage=0):
 def emit_dialogue(speaker, text):
     """Emit a dialogue event."""
     event_bus.emit(GameEvent(EventType.DIALOGUE, {'speaker': speaker, 'text': text}))
+
+
+def emit_movement(actor, destination=None, direction=None):
+    """Emit a movement event."""
+    event_bus.emit(GameEvent(EventType.MOVEMENT, {
+        'actor': actor,
+        'destination': destination,
+        'direction': direction
+    }))

@@ -154,6 +154,24 @@ If the blood reacts violently - they're infected!
 Warning: A revealed Thing becomes hostile.
 """, "Continue..."),
         ("""
+STEALTH MECHANICS
+-----------------
+HIDE           - Attempt to hide in the current room
+SNEAK <DIR>    - Move stealthily to avoid detection
+
+Darkness and room conditions affect detection chances.
+Use stealth to avoid confrontations or observe unnoticed.
+""", "Continue..."),
+        ("""
+CRAFTING SYSTEM
+---------------
+CRAFT <RECIPE> - Combine items to create new tools
+
+Crafting allows you to create useful items from components.
+Check your inventory and experiment with combinations.
+Some items require multiple turns to craft.
+""", "Continue..."),
+        ("""
 COMBAT & SURVIVAL
 -----------------
 ATTACK <NAME>  - Attack someone (need weapon for damage)
@@ -177,6 +195,45 @@ Revealed Things will hunt humans aggressively.
     print("\n" + "=" * 60)
     print("   Good luck, MacReady. Trust no one.")
     print("=" * 60 + "\n")
+
+
+def _show_help(topic=None):
+    """Display help information from command registry."""
+    from core.command_registry import COMMAND_REGISTRY, get_commands_by_category, get_all_categories
+    
+    if topic:
+        # Show commands for a specific category
+        topic = topic.upper()
+        commands = get_commands_by_category(topic)
+        if commands:
+            print(f"\n=== {topic} COMMANDS ===\n")
+            for cmd in commands:
+                print(f"{cmd.name:15} - {cmd.description}")
+                if cmd.aliases:
+                    print(f"{'':15}   Aliases: {', '.join(cmd.aliases)}")
+                print(f"{'':15}   Usage: {cmd.usage}")
+                print()
+        else:
+            print(f"Unknown help topic: {topic}")
+            print("Available topics: " + ", ".join(get_all_categories()))
+    else:
+        # Show overview with all categories
+        print("""
+=== THE THING: COMMAND REFERENCE ===
+
+Commands are organized by category. Use HELP <CATEGORY> for details.
+For example: HELP MOVEMENT, HELP COMBAT, HELP FORENSICS
+
+Available Categories:
+""")
+        categories = get_all_categories()
+        for category in categories:
+            commands = get_commands_by_category(category)
+            cmd_names = [cmd.name for cmd in commands[:5]]  # Show first 5
+            more = f" (+{len(commands)-5} more)" if len(commands) > 5 else ""
+            print(f"  {category:12} - {', '.join(cmd_names)}{more}")
+        
+        print("\nType HELP <CATEGORY> for detailed command information.")
 
 
 def main():
@@ -368,83 +425,42 @@ def _get_player_input(game):
 
 
 def _show_help(topic=None):
-    """Display help information for commands."""
-    help_topics = {
-        "MOVEMENT": """
-=== MOVEMENT ===
-MOVE <DIR>    - Move in a direction (NORTH/SOUTH/EAST/WEST or N/S/E/W)
-ADVANCE       - Pass time without moving
-""",
-        "COMBAT": """
-=== COMBAT ===
-ATTACK <NAME> - Attack a crew member (initiates combat with initiative rolls)
-""",
-        "SOCIAL": """
-=== SOCIAL ===
-TALK               - Hear dialogue from everyone in the room
-LOOK <NAME>        - Observe a crew member for visual tells
-INTERROGATE <NAME> [TOPIC] - Question someone
-                     Topics: WHEREABOUTS, ALIBI, SUSPICION, BEHAVIOR, KNOWLEDGE
-""",
-        "FORENSICS": """
-=== FORENSICS ===
-TEST <NAME>   - Perform blood test (requires Scalpel + Copper Wire)
-HEAT          - Heat the wire during a test
-APPLY         - Apply hot wire to blood sample
-CANCEL        - Cancel current blood test
-TAG <NAME> <CATEGORY> <NOTE> - Log forensic observation
-                Categories: IDENTITY, TRUST, SUSPICION, BEHAVIOR
-DOSSIER <NAME> - View forensic file on a crew member
-LOG <ITEM>    - View chain of custody for an item
-""",
-        "INVENTORY": """
-=== INVENTORY ===
-INV / INVENTORY - View your inventory
-GET <ITEM>      - Pick up an item from the room
-DROP <ITEM>     - Drop an item in the room
-""",
-        "ENVIRONMENT": """
-=== ENVIRONMENT ===
-BARRICADE     - Barricade the current room (reinforces if already barricaded)
-STATUS        - View all crew locations and health
-TRUST <NAME>  - View trust matrix for a crew member
-JOURNAL       - View MacReady's journal entries
-""",
-        "SYSTEM": """
-=== SYSTEM ===
-SAVE [SLOT]   - Save game (default: auto)
-LOAD [SLOT]   - Load game (default: auto)
-EXIT          - Quit the game
-HELP [TOPIC]  - Show help (topics: MOVEMENT, COMBAT, SOCIAL, FORENSICS,
-                           INVENTORY, ENVIRONMENT, SYSTEM)
-""",
-    }
-
-    if topic and topic in help_topics:
-        print(help_topics[topic])
-    elif topic:
-        print(f"Unknown help topic: {topic}")
-        print("Available topics: " + ", ".join(help_topics.keys()))
+    """Display help information from command registry."""
+    from core.command_registry import COMMAND_REGISTRY, get_commands_by_category, get_all_categories
+    
+    if topic:
+        # Show commands for a specific category
+        topic = topic.upper()
+        commands = get_commands_by_category(topic)
+        if commands:
+            print(f"\n=== {topic} COMMANDS ===\n")
+            for cmd in commands:
+                print(f"{cmd.name:15} - {cmd.description}")
+                if cmd.aliases:
+                    print(f"{'':15}   Aliases: {', '.join(cmd.aliases)}")
+                print(f"{'':15}   Usage: {cmd.usage}")
+                print()
+        else:
+            print(f"Unknown help topic: {topic}")
+            print("Available topics: " + ", ".join(get_all_categories()))
     else:
+        # Show overview with all categories
         print("""
 === THE THING: COMMAND REFERENCE ===
 
-Type HELP <TOPIC> for detailed help on a category.
-Topics: MOVEMENT, COMBAT, SOCIAL, FORENSICS, INVENTORY, ENVIRONMENT, SYSTEM
+Commands are organized by category. Use HELP <CATEGORY> for details.
+For example: HELP MOVEMENT, HELP COMBAT, HELP FORENSICS
 
---- QUICK REFERENCE ---
-MOVE <DIR>         Move in a direction
-LOOK <NAME>        Observe someone
-TALK               Hear dialogue
-INTERROGATE <NAME> Question someone
-ATTACK <NAME>      Attack someone
-TEST <NAME>        Blood test (need Scalpel + Wire)
-BARRICADE          Barricade room
-STATUS             View crew status
-INV                View inventory
-SAVE / LOAD        Save/load game
-EXIT               Quit game
+Available Categories:
 """)
+        categories = get_all_categories()
+        for category in categories:
+            commands = get_commands_by_category(category)
+            cmd_names = [cmd.name for cmd in commands[:5]]  # Show first 5
+            more = f" (+{len(commands)-5} more)" if len(commands) > 5 else ""
+            print(f"  {category:12} - {', '.join(cmd_names)}{more}")
+        
+        print("\nType HELP <CATEGORY> for detailed command information.")
 
 
 def _execute_command(game, cmd):
@@ -763,7 +779,8 @@ def _execute_command(game, cmd):
                     target,
                     weapon,
                     target_cover,
-                    player_room
+                    player_room,
+                    game
                 )
                 print(result.message)
 

@@ -77,5 +77,37 @@ class TestAudioEvents(unittest.TestCase):
                 
             mock_play_internal.assert_called_with(Sound.BEEP)
 
+    def test_spatial_filtering(self):
+        """Assert that sounds in other rooms are filtered appropriately."""
+        # Create a mock player and station map
+        player = MagicMock()
+        player.location = (5, 5) # Rec Room center
+        
+        station_map = MagicMock()
+        # Mock room names
+        def mock_get_room(x, y):
+            if x == 5 and y == 5: return "Rec Room"
+            if x == 0 and y == 0: return "Infirmary"
+            return "Corridor"
+        station_map.get_room_name.side_effect = mock_get_room
+        
+        self.audio.player_ref = player
+        self.audio.station_map = station_map
+        
+        with patch.object(self.audio, 'play') as mock_play:
+            # 1. Sound in SAME room -> Should play
+            event_bus.emit(GameEvent(EventType.ITEM_PICKUP, {"room": "Rec Room"}))
+            mock_play.assert_called_with(Sound.CLICK, 5)
+            
+            mock_play.reset_mock()
+            
+            # 2. Sound in DIFFERENT room (Priority <= 7) -> Should NOT play
+            event_bus.emit(GameEvent(EventType.ITEM_PICKUP, {"room": "Infirmary"}))
+            mock_play.assert_not_called()
+            
+            # 3. Critical sound in DIFFERENT room (Priority 10) -> Should play
+            event_bus.emit(GameEvent(EventType.POWER_FAILURE, {"room": "Generator"}))
+            mock_play.assert_called_with(Sound.POWER_DOWN, 10)
+
 if __name__ == '__main__':
     unittest.main()

@@ -7,7 +7,7 @@
             "description": "A wired lantern bundled for stealth sweeps.",
             "category": "tool",
             "ingredients": [
-                "Lantern",
+                "Oil Lantern",
                 "Copper Wire"
             ],
             "craft_time": 1
@@ -20,10 +20,20 @@
             "weapon_skill": "MELEE",
             "damage": 2,
             "ingredients": [
-                "Rope",
+                "Mop Handle",
                 "Copper Wire"
             ],
             "craft_time": 2
+        },
+        {
+            "id": "heated_wire",
+            "name": "Heated Wire",
+            "description": "A glowing copper wire, ready for the blood test.",
+            "category": "tool",
+            "ingredients": [
+                "Copper Wire"
+            ],
+            "craft_time": 0
         }
     ]
 }

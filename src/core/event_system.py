@@ -64,6 +64,7 @@ class EventType(Enum):
     INTERROGATION_RESULT = auto() # Questioning results
     ACCUSATION_RESULT = auto()    # Formal accusation results
     PERCEPTION_EVENT = auto()     # AI perception results (stealth)
+    DIAGNOSTIC = auto()           # System diagnostics (performance, budget)
 
 @dataclass
 class GameEvent:

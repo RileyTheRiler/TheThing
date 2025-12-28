@@ -1,11 +1,17 @@
 import pytest
 from unittest.mock import MagicMock, patch
-from src.engine import GameState
-from src.core.event_system import event_bus, EventType, GameEvent
-from src.systems.missionary import MissionarySystem
-from src.systems.psychology import PsychologySystem
-from src.systems.sabotage import SabotageManager
-from src.systems.persistence import SaveManager
+import sys
+import os
+
+# Ensure src is in path so we can import 'core' directly
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
+
+from engine import GameState
+from core.event_system import event_bus, EventType, GameEvent
+from systems.missionary import MissionarySystem
+from systems.psychology import PsychologySystem
+from systems.sabotage import SabotageManager
+from systems.persistence import SaveManager
 
 @pytest.fixture
 def clean_event_bus():

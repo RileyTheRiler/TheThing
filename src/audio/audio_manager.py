@@ -66,6 +66,8 @@ class Sound(Enum):
     BEEP = "beep"             # Command confirmation
     ERROR = "error"           # Invalid command
     ALERT = "alert"           # Warning/paranoia spike
+    CLICK = "click"           # Pickup/Drop
+    SUCCESS = "success"       # Task completion
 
 
 class AudioManager:
@@ -87,6 +89,8 @@ class AudioManager:
         Sound.BEEP: (440, 440),         # Standard beep (A4)
         Sound.ERROR: (200, 200),        # Low buzz
         Sound.ALERT: (880, 880),        # High beep (A5)
+        Sound.CLICK: (1200, 1200),      # High click
+        Sound.SUCCESS: (440, 880),      # Ascending
     }
     
     # Duration in milliseconds
@@ -102,6 +106,8 @@ class AudioManager:
         Sound.BEEP: 100,
         Sound.ERROR: 200,
         Sound.ALERT: 150,
+        Sound.CLICK: 50,
+        Sound.SUCCESS: 400,
     }
     
     # Tier 6.4: Audio feedback alignment map
@@ -116,19 +122,28 @@ class AudioManager:
         EventType.LYNCH_MOB_TRIGGER: Sound.SCREECH,
         
         # Discoveries / Success
-        EventType.COMMUNION_SUCCESS: Sound.POWER_UP, # Dramatic success
+        EventType.COMMUNION_SUCCESS: Sound.SUCCESS, # Dramatic success
         EventType.TEST_RESULT: Sound.BEEP,
         EventType.SOS_EMITTED: Sound.BEEP,
-        EventType.ESCAPE_SUCCESS: Sound.POWER_UP,
+        EventType.ESCAPE_SUCCESS: Sound.SUCCESS,
         
         # Movement
         EventType.MOVEMENT: Sound.FOOTSTEPS,
+        
+        # Items
+        EventType.ITEM_PICKUP: Sound.CLICK,
+        EventType.ITEM_DROP: Sound.CLICK,
+        
+        # Room
+        EventType.BARRICADE_ACTION: Sound.DOOR,
     }
     
-    def __init__(self, enabled=True, rng=None):
+    def __init__(self, enabled=True, rng=None, player_ref=None, station_map=None):
         self.enabled = enabled and AUDIO_AVAILABLE
         self.muted = False
         self.volume = 1.0
+        self.player_ref = player_ref  # Reference to player for spatial filtering
+        self.station_map = station_map
         from systems.architect import RandomnessEngine
         self.rng = rng or RandomnessEngine()
         
@@ -146,6 +161,12 @@ class AudioManager:
         # Tier 6.4: Subscribe to events
         self._subscribe_to_events()
 
+    def cleanup(self):
+        """Unsubscribe and shutdown."""
+        for event_type in self.EVENT_MAP:
+            event_bus.unsubscribe(event_type, self.handle_game_event)
+        self.shutdown()
+
     def _subscribe_to_events(self):
         """Subscribe to all events defined in EVENT_MAP."""
         for event_type in self.EVENT_MAP:
@@ -157,13 +178,41 @@ class AudioManager:
             return
             
         sound = self.EVENT_MAP.get(event.type)
-        if sound:
-            # Determine priority based on event type
-            priority = 5
-            if event.type in (EventType.LYNCH_MOB_TRIGGER, EventType.POWER_FAILURE):
-                priority = 10
+        if not sound:
+            return
+
+        # Determine priority based on event type
+        priority = 5
+        is_critical = event.type in (EventType.LYNCH_MOB_TRIGGER, EventType.POWER_FAILURE, EventType.BIOLOGICAL_SLIP)
+        if is_critical:
+            priority = 10
+        
+        # Spatial Filtering
+        # If the event has a room/location, only play it if it's "close" to the player
+        # Unless it's a critical global event.
+        if not is_critical and self.player_ref and self.station_map:
+            # Events like MOVEMENT have 'destination'
+            # Events like ATTACK_RESULT, ITEM_PICKUP have 'room'
+            event_room = event.payload.get("room") or event.payload.get("destination")
             
-            self.play(sound, priority)
+            # If we don't have a room in payload, check for coordinates
+            if not event_room:
+                coords = event.payload.get("location")
+                if coords:
+                    event_room = self.station_map.get_room_name(*coords)
+            
+            if event_room:
+                # Get player's current room
+                player_room = self.station_map.get_room_name(*self.player_ref.location)
+                
+                # Spatial rules:
+                # 1. Same room: Always play
+                # 2. Different room: Only play if Priority > 7 (medium loudness)
+                # 3. Else skip
+                if event_room != player_room and priority <= 7:
+                    return
+                
+        self.play(sound, priority)
     
     def _audio_worker(self):
         """Background thread for processing audio queue."""

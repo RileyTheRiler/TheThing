@@ -121,7 +121,7 @@ class CombatSystem:
         available.remove(best)
         return best
 
-    def calculate_attack(self, attacker, defender, weapon, cover=CoverType.NONE, room_modifiers=None):
+    def calculate_attack(self, attacker, defender, weapon, cover=CoverType.NONE, room_name=None, game_state=None):
         """Calculate an attack roll with cover and environmental modifiers.
 
         Returns CombatResult with outcome.
@@ -132,22 +132,27 @@ class CombatSystem:
 
         base_attack_pool = attacker.attributes.get(attr, 1) + attacker.skills.get(weapon_skill, 0)
         
-        # Apply environmental modifiers
-        from core.resolution import ResolutionSystem
-        attack_pool = ResolutionSystem.resolve_pool(base_attack_pool, [attr, weapon_skill], room_modifiers)
-
-        # Apply environmental modifiers (e.g., darkness, cold)
-        modifiers = None
-        if self.room_states and room_name:
+        # Apply environmental modifiers from the Coordinator if available
+        env_attack_mod = 0
+        env_defense_mod = 0
+        
+        if game_state and hasattr(game_state, 'environmental_coordinator') and room_name:
+            effects = game_state.environmental_coordinator.get_current_modifiers(room_name, game_state)
+            env_attack_mod = effects.attack_pool_modifier
+            env_defense_mod = effects.defense_pool_modifier
+        elif self.room_states and room_name:
+            # Legacy fallback
             modifiers = self.room_states.get_resolution_modifiers(room_name)
-            attack_pool = ResolutionSystem.adjust_pool(attack_pool, modifiers.attack_pool)
+            env_attack_mod = modifiers.attack_pool
+        
+        attack_pool = ResolutionSystem.adjust_pool(base_attack_pool, env_attack_mod)
 
         # Defense pool: PROWESS + Melee + cover bonus
         base_defense_pool = (
             defender.attributes.get(Attribute.PROWESS, 1) +
             defender.skills.get(Skill.MELEE, 0)
         )
-        defense_pool = ResolutionSystem.resolve_pool(base_defense_pool, [Attribute.PROWESS, Skill.MELEE], room_modifiers)
+        defense_pool = ResolutionSystem.adjust_pool(base_defense_pool, env_defense_mod)
         
         # Add cover bonus after environmental modifiers
         defense_pool += self.COVER_BONUS[cover]
@@ -241,12 +246,12 @@ class CombatSystem:
             # Failed retreat - opponents get free attacks
             return False, f"{combatant.name} fails to disengage! Opponents get free attacks!", None
 
-    def process_free_attack(self, attacker, defender, weapon=None, room_name=None):
+    def process_free_attack(self, attacker, defender, weapon=None, room_name=None, game_state=None):
         """Process a free attack (from failed retreat).
 
         Free attacks ignore cover.
         """
-        return self.calculate_attack(attacker, defender, weapon, CoverType.NONE, room_name)
+        return self.calculate_attack(attacker, defender, weapon, CoverType.NONE, room_name, game_state)
 
 
 class CombatEncounter:
