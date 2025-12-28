@@ -70,31 +70,31 @@
 
             <!-- Game Status Bar -->
             <div class="status-bar">
-                <div class="status-item">
+                <div class="status-item" title="Current game turn - each action advances the turn counter">
                     <span class="label">TURN:</span>
                     <span id="turn-counter" class="value">0</span>
                 </div>
-                <div class="status-item">
+                <div class="status-item" title="In-game time of day - affects crew schedules and visibility">
                     <span class="label">TIME:</span>
                     <span id="game-time" class="value">00:00</span>
                 </div>
-                <div class="status-item">
+                <div class="status-item" title="Outside temperature - extreme cold is dangerous without proper gear">
                     <span class="label">TEMP:</span>
                     <span id="temperature" class="value">0.0°C</span>
                 </div>
-                <div class="status-item">
+                <div class="status-item" title="Wind speed - high winds make outdoor travel hazardous">
                     <span class="label">WIND:</span>
                     <span id="wind-speed" class="value">0 mph</span>
                 </div>
-                <div class="status-item">
+                <div class="status-item" title="Station power status - power outages affect lighting and equipment">
                     <span class="label">POWER:</span>
                     <span id="power-status" class="value">ON</span>
                 </div>
-                <div class="status-item">
+                <div class="status-item" title="Generator fuel level - if fuel runs out, power fails">
                     <span class="label">FUEL:</span>
                     <span id="fuel-bar" class="fuel-bar">████████</span>
                 </div>
-                <div class="status-item">
+                <div class="status-item" title="Your current location in the station">
                     <span class="label">LOCATION:</span>
                     <span id="location" class="value">Unknown</span>
                 </div>
@@ -107,6 +107,7 @@
                     <div class="map-container">
                         <h3>STATION MAP</h3>
                         <pre id="game-map" class="map-display">Loading...</pre>
+                        <div id="map-legend" class="map-legend"></div>
                     </div>
 
                     <div class="room-info">
@@ -124,7 +125,8 @@
 
                 <!-- Right Panel: Output and Input -->
                 <div class="right-panel">
-                    <div class="output-container">
+                    <div class="output-container" id="output-container">
+                        <div id="event-banner" class="event-banner hidden"></div>
                         <div id="game-output" class="output-text"></div>
                     </div>
 
@@ -147,7 +149,14 @@
 
                     <!-- Crew Status -->
                     <div class="crew-container">
-                        <h3>CREW STATUS</h3>
+                        <div class="crew-header">
+                            <h3>CREW STATUS</h3>
+                            <div class="crew-filters">
+                                <button class="filter-btn active" data-filter="nearby" title="Show crew in your location">NEARBY</button>
+                                <button class="filter-btn" data-filter="alive" title="Show all living crew">ALIVE</button>
+                                <button class="filter-btn" data-filter="all" title="Show all crew including dead">ALL</button>
+                            </div>
+                        </div>
                         <div id="crew-status" class="crew-list"></div>
                     </div>
 

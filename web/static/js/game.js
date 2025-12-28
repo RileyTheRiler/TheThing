@@ -4,6 +4,8 @@ let sessionId = 'session_' + Date.now();
 let gameState = null;
 let commandHistory = [];
 let historyIndex = -1;
+let crewFilter = 'nearby'; // 'nearby', 'alive', or 'all'
+let currentEventMode = null; // 'blood-test', 'interrogation', 'combat', or null
 
 // Common commands for autocomplete
 const COMMON_COMMANDS = [
@@ -22,6 +24,61 @@ function setupEventListeners() {
     if (commandInput) {
         commandInput.addEventListener('keydown', handleCommandInput);
         commandInput.addEventListener('input', updateAutoComplete);
+    }
+
+    // Setup crew filter buttons
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            crewFilter = this.dataset.filter;
+            if (gameState) {
+                updateCrewDisplay(gameState);
+            }
+        });
+    });
+
+    // Setup keyboard shortcuts for quick actions
+    document.addEventListener('keydown', handleGlobalKeydown);
+}
+
+function handleGlobalKeydown(event) {
+    // Don't trigger shortcuts when typing in command input
+    const commandInput = document.getElementById('command-input');
+    if (document.activeElement === commandInput) return;
+
+    // Number keys 1-9 for quick action buttons
+    if (event.key >= '1' && event.key <= '9') {
+        const index = parseInt(event.key) - 1;
+        const buttons = document.querySelectorAll('#context-actions .quick-btn');
+        if (buttons[index]) {
+            event.preventDefault();
+            buttons[index].classList.add('shortcut-active');
+            buttons[index].click();
+            setTimeout(() => buttons[index].classList.remove('shortcut-active'), 150);
+        }
+    }
+
+    // Letter shortcuts when not in input
+    const letterShortcuts = {
+        's': 'STATUS',
+        'i': 'INVENTORY',
+        'h': 'HELP',
+        'l': 'LOOK',
+        't': 'TALK',
+        'w': 'WAIT'
+    };
+
+    const lowerKey = event.key.toLowerCase();
+    if (letterShortcuts[lowerKey] && !event.ctrlKey && !event.altKey && !event.metaKey) {
+        event.preventDefault();
+        sendQuickCommand(letterShortcuts[lowerKey]);
+    }
+
+    // Focus command input on any other letter
+    if (/^[a-z]$/i.test(event.key) && !letterShortcuts[lowerKey] &&
+        !event.ctrlKey && !event.altKey && !event.metaKey) {
+        commandInput.focus();
     }
 }
 
@@ -255,15 +312,145 @@ function updateQuickActions(actions) {
         'danger': 'quick-btn-danger'
     };
 
-    // Add new buttons based on context
-    actions.forEach(action => {
+    // Add new buttons based on context with keyboard shortcuts
+    actions.forEach((action, index) => {
         const button = document.createElement('button');
-        const styleClass = styleClasses[action.style] || 'quick-btn';
-        button.className = `quick-btn ${styleClass}`;
-        button.textContent = action.label;
+        const styleClass = styleClasses[action.style] || '';
+        button.className = `quick-btn ${styleClass}`.trim();
+
+        // Add keyboard shortcut hint (1-9)
+        if (index < 9) {
+            const shortcutSpan = document.createElement('span');
+            shortcutSpan.className = 'shortcut-hint';
+            shortcutSpan.textContent = (index + 1).toString();
+            button.appendChild(shortcutSpan);
+        }
+
+        button.appendChild(document.createTextNode(action.label));
         button.onclick = () => sendQuickCommand(action.command);
+        button.title = `${action.label} (Press ${index + 1})`;
         container.appendChild(button);
     });
+}
+
+// Update map legend with visible items and symbols
+function updateMapLegend(state) {
+    const legendContainer = document.getElementById('map-legend');
+    if (!legendContainer) return;
+
+    let legendItems = [];
+
+    // Always show player marker
+    legendItems.push('<span class="legend-item"><span class="legend-symbol player">@</span>=You</span>');
+
+    // Add visible items
+    if (state.items && state.items.length > 0) {
+        const itemNames = state.items.map(item => item.name).join(', ');
+        legendItems.push(`<span class="legend-item"><span class="legend-symbol item">*</span>=${itemNames}</span>`);
+    }
+
+    // Add nearby crew indicator if any crew in room
+    if (state.crew) {
+        const nearbyCrew = state.crew.filter(c => c.location === state.location && c.is_alive);
+        if (nearbyCrew.length > 0) {
+            const crewNames = nearbyCrew.map(c => c.name).join(', ');
+            legendItems.push(`<span class="legend-item"><span class="legend-symbol crew">☺</span>=${crewNames}</span>`);
+        }
+    }
+
+    legendContainer.innerHTML = legendItems.join('');
+}
+
+// Update event highlighting based on game state
+function updateEventHighlight(state) {
+    const outputContainer = document.getElementById('output-container');
+    const eventBanner = document.getElementById('event-banner');
+    if (!outputContainer || !eventBanner) return;
+
+    // Remove all event classes
+    outputContainer.classList.remove('event-blood-test', 'event-interrogation', 'event-combat');
+    eventBanner.classList.remove('blood-test', 'interrogation', 'combat');
+    eventBanner.classList.add('hidden');
+
+    // Detect event mode from game state
+    let newEventMode = null;
+
+    if (state.blood_test_active) {
+        newEventMode = 'blood-test';
+        eventBanner.textContent = '⚠ BLOOD TEST IN PROGRESS ⚠';
+        eventBanner.classList.remove('hidden');
+        eventBanner.classList.add('blood-test');
+        outputContainer.classList.add('event-blood-test');
+    } else if (state.interrogation_active) {
+        newEventMode = 'interrogation';
+        eventBanner.textContent = '◉ INTERROGATION MODE ◉';
+        eventBanner.classList.remove('hidden');
+        eventBanner.classList.add('interrogation');
+        outputContainer.classList.add('event-interrogation');
+    } else if (state.combat_active) {
+        newEventMode = 'combat';
+        eventBanner.textContent = '⚔ COMBAT ACTIVE ⚔';
+        eventBanner.classList.remove('hidden');
+        eventBanner.classList.add('combat');
+        outputContainer.classList.add('event-combat');
+    }
+
+    currentEventMode = newEventMode;
+}
+
+// Update crew display with filtering
+function updateCrewDisplay(state) {
+    const crewContainer = document.getElementById('crew-status');
+    if (!crewContainer || !state.crew) {
+        if (crewContainer) crewContainer.textContent = 'No crew data';
+        return;
+    }
+
+    // Filter crew based on current filter
+    let filteredCrew = state.crew;
+
+    if (crewFilter === 'nearby') {
+        filteredCrew = state.crew.filter(member =>
+            member.location === state.location
+        );
+    } else if (crewFilter === 'alive') {
+        filteredCrew = state.crew.filter(member => member.is_alive);
+    }
+    // 'all' shows everyone
+
+    // Sort crew: same room first, then alive, then alphabetically
+    const sortedCrew = [...filteredCrew].sort((a, b) => {
+        const aInRoom = a.location === state.location;
+        const bInRoom = b.location === state.location;
+
+        if (aInRoom && !bInRoom) return -1;
+        if (!aInRoom && bInRoom) return 1;
+
+        // Then by alive status
+        if (a.is_alive && !b.is_alive) return -1;
+        if (!a.is_alive && b.is_alive) return 1;
+
+        return a.name.localeCompare(b.name);
+    });
+
+    if (sortedCrew.length === 0) {
+        crewContainer.innerHTML = `<div class="crew-empty">No crew ${crewFilter === 'nearby' ? 'in this room' : 'matching filter'}</div>`;
+        return;
+    }
+
+    crewContainer.innerHTML = sortedCrew.map(member => {
+        const isNearby = member.location === state.location;
+        const proximityClass = isNearby ? 'crew-nearby' : 'crew-distant';
+        const statusClass = member.is_alive ? '' : 'danger';
+        const statusText = member.is_alive ? 'ALIVE' : 'DEAD';
+        const trustBar = renderTrustBar(member.trust);
+
+        return `<div class="crew-member ${proximityClass} ${statusClass}">
+            ${member.name} (${member.role}) - ${member.location}<br>
+            HP: ${member.health} | ${statusText}<br>
+            Trust: ${trustBar}
+        </div>`;
+    }).join('');
 }
 
 function updateGameDisplay(state) {
@@ -318,6 +505,12 @@ function updateGameDisplay(state) {
         mapDisplay.textContent = 'Map unavailable';
     }
 
+    // Update map legend
+    updateMapLegend(state);
+
+    // Update event highlighting
+    updateEventHighlight(state);
+
     // Update room items with shortcuts
     const itemsContainer = document.getElementById('room-items');
     if (state.items && state.items.length > 0) {
@@ -329,35 +522,8 @@ function updateGameDisplay(state) {
         itemsContainer.textContent = 'None';
     }
 
-    // Update crew status with proximity sorting and trust bars
-    const crewContainer = document.getElementById('crew-status');
-    if (state.crew && state.crew.length > 0) {
-        // Sort crew: same room first, then alphabetically
-        const sortedCrew = [...state.crew].sort((a, b) => {
-            const aInRoom = a.location === state.location;
-            const bInRoom = b.location === state.location;
-            
-            if (aInRoom && !bInRoom) return -1;
-            if (!aInRoom && bInRoom) return 1;
-            return a.name.localeCompare(b.name);
-        });
-        
-        crewContainer.innerHTML = sortedCrew.map(member => {
-            const isNearby = member.location === state.location;
-            const proximityClass = isNearby ? 'crew-nearby' : 'crew-distant';
-            const statusClass = member.is_alive ? '' : 'danger';
-            const statusText = member.is_alive ? 'ALIVE' : 'DEAD';
-            const trustBar = renderTrustBar(member.trust);
-            
-            return `<div class="crew-member ${proximityClass} ${statusClass}">
-                ${member.name} (${member.role}) - ${member.location}<br>
-                HP: ${member.health} | ${statusText}<br>
-                Trust: ${trustBar}
-            </div>`;
-        }).join('');
-    } else {
-        crewContainer.textContent = 'No crew data';
-    }
+    // Update crew status with filtering
+    updateCrewDisplay(state);
 
     // Update inventory
     const inventoryContainer = document.getElementById('player-inventory');
