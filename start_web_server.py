@@ -42,16 +42,22 @@ def main():
     # Check dependencies
     if not check_dependencies():
         print("Required dependencies not found.")
-        response = input("Would you like to install them now? (y/n): ").strip().lower()
-        if response in ['y', 'yes']:
-            if not install_dependencies():
-                sys.exit(1)
-            print("\nDependencies installed. Please restart the launcher.")
-            sys.exit(0)
-        else:
-            print("\nPlease install dependencies manually:")
+        print("Attempting to install dependencies automatically...")
+        if not install_dependencies():
+            print("\n" + "=" * 70)
+            print("ERROR: Failed to install dependencies")
+            print("=" * 70)
+            print("Please install dependencies manually:")
             print("  pip install -r requirements_web.txt")
+            print("\nPress any key to exit...")
+            try:
+                input()
+            except:
+                pass
             sys.exit(1)
+        print("\nDependencies installed successfully!")
+        print("Restarting server...")
+        print()
 
     # Start the server
     print("Starting web server...")
