@@ -1,17 +1,18 @@
 @echo off
 REM The Thing: Antarctic Research Station 31
-REM Game Launcher for Windows
+REM Game Launcher for Windows - Browser UI Edition
 
-echo ========================================
-echo   THE THING - Starting Game...
-echo ========================================
+echo ====================================================================
+echo    THE THING: ANTARCTIC RESEARCH STATION 31
+echo    Starting Browser Interface...
+echo ====================================================================
 echo.
 
 REM Check if Python is available
 python --version >nul 2>&1
 if errorlevel 1 (
     echo ERROR: Python is not installed or not in PATH
-    echo Please install Python 3.7 or higher from https://www.python.org/
+    echo Please install Python 3.8 or higher from https://www.python.org/
     echo.
     pause
     exit /b 1
@@ -22,24 +23,33 @@ echo Using Python version:
 python --version
 echo.
 
-REM Install/check dependencies (pyreadline3 for Windows command history)
-echo Checking dependencies...
-pip install pyreadline3 --quiet 2>nul
+REM Install/check web dependencies
+echo Checking web dependencies...
+pip install -r requirements_web.txt --quiet 2>nul
 if errorlevel 1 (
-    echo Warning: Could not install pyreadline3. Command history may not work.
+    echo Warning: Some dependencies may not have installed correctly.
 )
 echo.
 
-REM Start the game
-echo Starting The Thing...
+REM Start the web server and open browser
+echo Starting web server on http://localhost:5000
+echo Opening browser...
 echo.
-python main.py
+echo Press CTRL+C in this window to stop the server
+echo ====================================================================
+echo.
 
-REM Pause to see any error messages
+REM Open browser after a brief delay to let server start
+start "" http://localhost:5000
+
+REM Start the web server
+python start_web_server.py
+
+REM Pause if server exits with error
 if errorlevel 1 (
     echo.
-    echo ========================================
-    echo   Game exited with an error
-    echo ========================================
+    echo ====================================================================
+    echo   Server exited with an error
+    echo ====================================================================
     pause
 )
