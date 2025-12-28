@@ -69,6 +69,15 @@ class GameMode(Enum):
     CINEMATIC = "Cinematic"
 
 
+class Verbosity(Enum):
+    """Output verbosity levels."""
+    DEBUG = 0
+    VERBOSE = 1
+    STANDARD = 2
+    MINIMAL = 3
+    NONE = 4
+
+
 class RandomnessEngine:
     def __init__(self, seed=None):
         self.seed = seed
