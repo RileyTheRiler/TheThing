@@ -51,12 +51,23 @@ echo ====================================================================
 echo.
 
 REM Start the web server in background first
-start "The Thing - Backend Server" /MIN python start_web_server.py
+start "The Thing - Backend Server" python start_web_server.py
 
-REM Wait for server to initialize
-timeout /t 3 /nobreak >nul
+REM Wait for server to be ready (using Python health check)
+echo Waiting for server to initialize...
+python wait_for_server.py http://localhost:5000
+if errorlevel 1 (
+    echo.
+    echo ====================================================================
+    echo   ERROR: Server failed to start
+    echo ====================================================================
+    echo Please check the "The Thing - Backend Server" window for errors
+    pause
+    exit /b 1
+)
 
 REM Open browser
+echo.
 echo Opening browser interface...
 start "" http://localhost:5000
 
