@@ -1,32 +1,20 @@
-from enum import Enum
 from typing import Dict, List, Optional
-
-from core.design_briefs import DesignBriefRegistry
-from core.event_system import event_bus, EventType, GameEvent
-from core.resolution import Attribute, ResolutionSystem, Skill
-from systems.room_state import RoomState
-
-
-class StealthPosture(Enum):
-    HIDDEN = "hidden"
-    EXPOSED = "exposed"
-
+from src.core.design_briefs import DesignBriefRegistry
+from src.core.event_system import event_bus, EventType, GameEvent
+from src.core.resolution import Attribute, ResolutionSystem, Skill
+from src.systems.room_state import RoomState
+from src.entities.crew_member import StealthPosture
 
 class StealthSystem:
     """
     Handles stealth encounters by reacting to TURN_ADVANCE events.
-    Emits reporting events so the UI can surface outcomes without direct calls.
+    Key mechanic: Subject Pool vs Observer Pool contest using ResolutionSystem.
     """
 
-    def __init__(self, design_registry: Optional[DesignBriefRegistry] = None, room_states=None):
+    def __init__(self, design_registry: Optional[DesignBriefRegistry] = None):
         self.design_registry = design_registry or DesignBriefRegistry()
         self.config = self.design_registry.get_brief("stealth")
         self.cooldown = 0
-        self.room_states = room_states
-        self.postures: Dict[str, StealthPosture] = {}
-        self.noise_levels: Dict[str, int] = {}
-        self.resolution = ResolutionSystem()
-        self.noise_step = self.config.get("noise_step", 0.25)
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
 
     def cleanup(self):
@@ -45,13 +33,11 @@ class StealthSystem:
         if not game_state or rng is None:
             return
 
-        # Passive decay for ambient noise between turns
-        self._decay_noise()
-
         player = getattr(game_state, "player", None)
         crew = getattr(game_state, "crew", [])
         station_map = getattr(game_state, "station_map", None)
         room_states = getattr(game_state, "room_states", None)
+        
         if not player or not station_map:
             return
 
@@ -64,20 +50,6 @@ class StealthSystem:
         if not nearby_infected or self.cooldown > 0:
             return
 
-        detection_chance = self.config.get("base_detection_chance", 0.35)
-
-        # Environmental penalties (darkness makes detection harder)
-        if self.room_states and room:
-            modifiers = self.room_states.get_resolution_modifiers(room)
-            detection_chance = max(0.0, detection_chance + modifiers.stealth_detection)
-        detection_chance = self.get_detection_chance(
-            observer=nearby_infected[0],
-            target=player,
-            game_state=game_state,
-            noise_level=self.get_noise_level(player),
-            room_name=room,
-        )
-        detected = rng.random_float() < detection_chance
         opponent = nearby_infected[0]
         
         # 1. Subject Pool (Player Stealth)
@@ -91,14 +63,45 @@ class StealthSystem:
         observer_pool = logic + observation
 
         # 3. Modifiers (Posture and Environment)
-        from entities.crew_member import StealthPosture
+        posture = getattr(player, "stealth_posture", StealthPosture.STANDING)
+        
+        # Posture Modifiers (Subject Bonus)
+        if posture == StealthPosture.CROUCHING:
+            subject_pool += 1
+        elif posture == StealthPosture.CRAWLING:
+            subject_pool += 2
+        elif posture == StealthPosture.HIDING:
+            subject_pool += 4
+
+        # Environmental Modifiers
+        is_dark = room_states.has_state(room, RoomState.DARK) if room_states else False
+        if is_dark:
+            subject_pool += 2
+            # Darkness hinders observation
+            observer_pool = max(1, observer_pool - 2)
+        
+        # Enforce minimum pool of 1
+        subject_pool = max(1, subject_pool)
+        observer_pool = max(1, observer_pool)
+
+        # 4. Resolution
+        res = ResolutionSystem()
+        
+        subject_result = res.roll_check(subject_pool, rng)
+        observer_result = res.roll_check(observer_pool, rng)
+        
+        # Success = Subject (Player) has MORE successes than Observer (NPC)
+        # Ties go to the Observer (Detection favored in horror)
+        player_evaded = subject_result['success_count'] > observer_result['success_count']
         
         payload = {
             "room": room,
             "opponent": opponent.name,
-            "outcome": "detected" if detected else "evaded",
-            "posture": self.get_posture(player).value,
-            "detection_chance": round(detection_chance, 3),
+            "outcome": "evaded" if player_evaded else "detected",
+            "player_successes": subject_result['success_count'],
+            "opponent_successes": observer_result['success_count'],
+            "subject_pool": subject_pool,
+            "observer_pool": observer_pool
         }
         event_bus.emit(GameEvent(EventType.STEALTH_REPORT, payload))
         
@@ -116,88 +119,60 @@ class StealthSystem:
 
         self.cooldown = self.config.get("cooldown_turns", 1)
 
-    def set_posture(self, actor, posture: StealthPosture):
-        """Record the current stealth posture for an actor (player or NPC)."""
-        self.postures[self._actor_key(actor)] = posture
-
-    def get_posture(self, actor) -> StealthPosture:
-        return self.postures.get(self._actor_key(actor), StealthPosture.EXPOSED)
-
-    def register_noise(self, actor, level: int):
-        """Register noise generated by an actor (e.g., sprinting or loud actions)."""
-        self.noise_levels[self._actor_key(actor)] = max(0, level)
-
-    def get_noise_level(self, actor) -> int:
-        return self.noise_levels.get(self._actor_key(actor), 0)
-
-    def _decay_noise(self):
-        """Noise fades naturally between turns."""
-        for actor_key in list(self.noise_levels.keys()):
-            self.noise_levels[actor_key] = max(0, self.noise_levels[actor_key] - 1)
-            if self.noise_levels[actor_key] == 0:
-                del self.noise_levels[actor_key]
-
-    def get_detection_chance(
-        self,
-        observer,
-        target,
-        game_state,
-        noise_level: int = 0,
-        room_name: Optional[str] = None,
-    ) -> float:
+    def get_noise_level(self, character) -> int:
         """
-        Compute detection probability using ResolutionSystem probabilities and
-        environmental modifiers.
+        Calculate noise level generated by a character.
+        Base 5 + Inventory Weight - Stealth Skill.
         """
-        room_state_manager = getattr(game_state, "room_states", None)
-        station_map = getattr(game_state, "station_map", None)
-        room = room_name
-        if room is None and station_map and hasattr(target, "location"):
-            room = station_map.get_room_name(*target.location)
+        base_noise = 5
+        
+        # Simple simplified weight (count of items for now)
+        weight = len(character.inventory) if hasattr(character, 'inventory') else 0
+        
+        stealth = character.skills.get(Skill.STEALTH, 0) if hasattr(character, 'skills') else 0
+        
+        posture_mod = 0
+        posture = getattr(character, "stealth_posture", StealthPosture.STANDING)
+        if posture == StealthPosture.CROUCHING:
+            posture_mod = -2
+        elif posture == StealthPosture.CRAWLING:
+            posture_mod = -4
+            
+        return max(1, base_noise + weight - stealth + posture_mod)
 
-        perception_pool = self._perception_pool(observer)
-        visibility_mod = self._visibility_modifier(game_state, room_state_manager, room)
-        posture_mod = 0.5 if self.get_posture(target) == StealthPosture.HIDDEN else 1.0
-        noise_mod = 1 + (self.noise_step * max(0, noise_level))
-
-        base_prob = self.resolution.success_probability(max(0, perception_pool))
-        detection_prob = base_prob * visibility_mod * posture_mod * noise_mod
-        return max(0.0, min(1.0, detection_prob))
-
-    def evaluate_detection(
-        self,
-        observer,
-        target,
-        game_state,
-        noise_level: int = 0,
-        force_roll: bool = True,
-    ) -> bool:
+    def evaluate_detection(self, observer, subject, game_state, noise_level=None) -> bool:
         """
-        Hook for AI systems to determine if an observer detects a target.
+        Check if observer detects subject.
+        Returns True if detected.
         """
-        rng = getattr(game_state, "rng", None)
-        if rng is None and not force_roll:
-            return False
-
-        chance = self.get_detection_chance(observer, target, game_state, noise_level)
-        roll = rng.random_float() if rng and force_roll else 1.0
-        return roll < chance
-
-    def _perception_pool(self, observer) -> int:
-        """Perception pool = base + LOGIC + OBSERVATION skill."""
-        logic_stat = getattr(observer, "attributes", {}).get(Attribute.LOGIC, 0)
-        observation_skill = getattr(observer, "skills", {}).get(Skill.OBSERVATION, 0)
-        base_pool = self.config.get("base_detection_pool", 1)
-        return max(1, base_pool + logic_stat + observation_skill)
-
-    def _visibility_modifier(self, game_state, room_state_manager, room_name: Optional[str]) -> float:
-        modifier = 1.0
-        if not game_state.power_on:
-            modifier *= self.config.get("lights_off_modifier", 0.6)
-        if room_state_manager and room_name and room_state_manager.has_state(room_name, RoomState.DARK):
-            modifier *= self.config.get("darkness_modifier", 0.5)
-        return modifier
-
-    @staticmethod
-    def _actor_key(actor) -> str:
-        return getattr(actor, "name", str(id(actor)))
+        if noise_level is None:
+            noise_level = self.get_noise_level(subject)
+            
+        # Observer: Logic + Observation
+        logic = observer.attributes.get(Attribute.LOGIC, 1)
+        observation = observer.skills.get(Skill.OBSERVATION, 0)
+        pool = logic + observation
+        
+        res = ResolutionSystem()
+        result = res.roll_check(pool, game_state.rng)
+        
+        # Difficulty is the noise level? Or opposed roll?
+        # Let's say Difficulty = Stealth Result (Subject Pool)
+        # But here we are given noise level. 
+        # Let's map Noise Level to Difficulty Target Successes for simplicity
+        # Low noise = High difficulty
+        
+        # Alternatively, simpler comparison: 
+        # successes > (10 - noise_level)/2 ?
+        
+        # Let's stick to the mechanics in on_turn_advance: Subject vs Observer
+        # But this method is called by AI which might cache noise.
+        
+        # Re-using the mechanic:
+        prowess = subject.attributes.get(Attribute.PROWESS, 1)
+        stealth = subject.skills.get(Skill.STEALTH, 0)
+        subject_pool = prowess + stealth
+        
+        subject_result = res.roll_check(subject_pool, game_state.rng)
+        
+        return result['success_count'] >= subject_result['success_count']

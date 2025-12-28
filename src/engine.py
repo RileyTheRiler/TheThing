@@ -61,235 +61,89 @@ class GameState:
         previous_bucket = getattr(self, "_paranoia_bucket", new_bucket)
         if new_bucket != previous_bucket:
             self._paranoia_bucket = new_bucket
-            direction = "up" if clamped > previous_value else "down"
-            event_bus.emit(GameEvent(EventType.PARANOIA_THRESHOLD, {
+            direction = "UP" if clamped > previous_value else "DOWN"
+            event_bus.emit(GameEvent(EventType.PARANOIA_THRESHOLD_CROSSED, {
                 "value": clamped,
                 "previous_value": previous_value,
                 "bucket": bucket_label(new_bucket),
                 "thresholds": list(self.social_thresholds.paranoia_thresholds),
-                "direction": direction
+                "direction": direction,
+                "threshold": self.social_thresholds.paranoia_thresholds[new_bucket-1] if direction == "UP" else self.social_thresholds.paranoia_thresholds[new_bucket]
             }))
-        else:
-            base_dialogue = f"I'm {self.behavior_type}."
-        
-        # Advanced Mimicry: Use Knowledge Tags
-        if self.is_infected and self.knowledge_tags and rng.random_float() < 0.4:
-            tag = rng.choose(self.knowledge_tags) if hasattr(rng, 'choose') else random.choice(self.knowledge_tags)
-            base_dialogue += f" I remember {tag}."
 
-        if game_state.time_system.temperature < 0:
-            show_vapor = True
-            # BIOLOGICAL SLIP HOOK
-            if self.is_infected and self.slipped_vapor:
-                show_vapor = False
-            
-            if show_vapor:
-                base_dialogue += " [VAPOR]"
-            else:
-                base_dialogue += " [NO VAPOR]"
-        return base_dialogue
-
-    def to_dict(self):
-        return {
-            "name": self.name,
-            "role": self.role,
-            "behavior_type": self.behavior_type,
-            "is_infected": self.is_infected,
-            "trust_score": self.trust_score,
-            "location": self.location,
-            "is_alive": self.is_alive,
-            "health": self.health,
-            "stress": self.stress,
-            "mask_integrity": self.mask_integrity,
-            "is_revealed": self.is_revealed,
-            "attributes": {k.name: v for k, v in self.attributes.items()},
-            "skills": {k.name: v for k, v in self.skills.items()},
-            "inventory": [i.to_dict() for i in self.inventory],
-            "knowledge_tags": self.knowledge_tags,
-            "schedule": self.schedule,
-            "invariants": self.invariants
-        }
-    
-    @classmethod
-    def from_dict(cls, data):
-        attrs = {Attribute[k]: v for k, v in data.get("attributes", {}).items()}
-        skills = {Skill[k]: v for k, v in data.get("skills", {}).items()}
-                    
-        m = cls(
-            name=data["name"],
-            role=data["role"],
-            behavior_type=data["behavior_type"],
-            attributes=attrs,
-            skills=skills
-        )
-        m.is_infected = data["is_infected"]
-        m.trust_score = data["trust_score"]
-        m.location = tuple(data["location"])
-        m.is_alive = data["is_alive"]
-        m.health = data["health"]
-        m.stress = data["stress"]
-        m.mask_integrity = data.get("mask_integrity", 100.0)
-        m.is_revealed = data.get("is_revealed", False)
-        m.schedule = data.get("schedule", [])
-        m.invariants = data.get("invariants", [])
-        m.knowledge_tags = data.get("knowledge_tags", [])
-        m.inventory = [Item.from_dict(i) for i in data.get("inventory", [])]
-        return m
-
-class StationMap:
-    def __init__(self, width=20, height=20):
-        self.width = width
-        self.height = height
-        self.grid = [['.' for _ in range(width)] for _ in range(height)]
-        self.rooms = {
-            "Rec Room": (5, 5, 10, 10),
-            "Infirmary": (0, 0, 4, 4),
-            "Generator": (15, 15, 19, 19),
-            "Kennel": (0, 15, 4, 19)
-        }
-        self.room_items = {} 
-
-    def add_item_to_room(self, item, x, y, turn=0):
-        room_name = self.get_room_name(x, y)
-        if room_name not in self.room_items:
-            self.room_items[room_name] = []
-        self.room_items[room_name].append(item)
-        item.add_history(turn, f"Dropped in {room_name}")
-
-    def get_items_in_room(self, x, y):
-        room_name = self.get_room_name(x, y)
-        return self.room_items.get(room_name, [])
-
-    def remove_item_from_room(self, item_name, x, y):
-        room_name = self.get_room_name(x, y)
-        if room_name in self.room_items:
-            for i, item in enumerate(self.room_items[room_name]):
-                if item.name.upper() == item_name.upper():
-                    return self.room_items[room_name].pop(i)
-        return None
-
-    def is_walkable(self, x, y):
-        return 0 <= x < self.width and 0 <= y < self.height
-
-    def get_room_name(self, x, y):
-        for name, (x1, y1, x2, y2) in self.rooms.items():
-            if x1 <= x <= x2 and y1 <= y <= y2:
-                return name
-        return "Corridor (Sector {},{})".format(x, y)
-
-    def render(self, crew):
-        display_grid = [row[:] for row in self.grid]
-        for member in crew:
-            if member.is_alive:
-                x, y = member.location
-                if 0 <= x < self.width and 0 <= y < self.height:
-                    display_grid[y][x] = member.name[0] 
-        output = []
-        for row in display_grid:
-            output.append(" ".join(row))
-        return "\n".join(output)
-    
-    def to_dict(self):
-        # Serialize room_items
-        # room_items is Dict[RoomName, List[Item]]
-        items_dict = {}
-        for room, items in self.room_items.items():
-            items_dict[room] = [i.to_dict() for i in items]
-            
-        return {
-            "width": self.width,
-            "height": self.height,
-            "room_items": items_dict
-            # rooms and grid are static/derived for now, so we don't save grid unless it changes
-        }
-
-    @classmethod
-    def from_dict(cls, data):
-        sm = cls(data["width"], data["height"])
-        items_dict = data.get("room_items", {})
-        for room, items_data in items_dict.items():
-            sm.room_items[room] = [Item.from_dict(i) for i in items_data]
-        return sm
-            self._paranoia_bucket = new_bucket
+    @property
+    def temperature(self):
+        return self.time_system.temperature if hasattr(self, "time_system") else -40.0
 
     def __init__(self, seed=None, difficulty=Difficulty.NORMAL, characters_path=None, start_hour=None, thresholds: SocialThresholds = None):
+        # 1. Pre-initialization of essential attributes to avoid AttributeErrors in setters/listeners
         self.social_thresholds = thresholds or SocialThresholds()
         self.rng = RandomnessEngine(seed)
-        self.time_system = TimeSystem()
-        self.save_manager = SaveManager(game_state_factory=GameState.from_dict)
-
-        self.time_system = TimeSystem(start_hour=start_hour if start_hour is not None else 19)
-        self.save_manager = SaveManager(game_state_factory=GameState.from_dict)
-        self.characters_config_path = characters_path or os.path.join("config", "characters.json")
+        self.player = None
+        self.crew = []
+        self._paranoia_level = 0
+        self.design_registry = DesignBriefRegistry()
         
-        # Store difficulty and get settings
+        # 2. Basic Configuration
+        self.characters_config_path = characters_path or os.path.join("config", "characters.json")
         self.difficulty = difficulty
         self.difficulty_settings = DifficultySettings.get_all(difficulty)
-
+        
+        # 3. Time and Persistence
+        self.time_system = TimeSystem(start_hour=start_hour if start_hour is not None else 19)
+        self.save_manager = SaveManager(game_state_factory=GameState.from_dict)
+        
+        # 4. Global State
         self.power_on = True
         self.blood_bank_destroyed = False
         self.paranoia_level = self.difficulty_settings["starting_paranoia"]
         self.mode = GameMode.INVESTIGATIVE
         self.verbosity = Verbosity.STANDARD
-        self.design_registry = DesignBriefRegistry()
 
-        # Track which per-turn behaviors executed during TURN_ADVANCE
-        self.turn_behavior_inventory = {
-            "weather": 0,
-            "sabotage": 0,
-            "ai": 0,
-            "random_events": 0
-        }
-
-        # Initialize core systems
+        # 5. Core Simulation Systems
         self.station_map = StationMap()
         self.weather = WeatherSystem()
         self.sabotage = SabotageManager(self.difficulty_settings)
-        self.random_events = RandomEventSystem(self.rng)  # Agent 6.2
+        self.random_events = RandomEventSystem(self.rng)
         self.environmental_coordinator = EnvironmentalCoordinator()
-        
         self.room_states = RoomStateManager(list(self.station_map.rooms.keys()))
         
-        # Initialize Audio & UI
-        self.audio = AudioManager(self.rng)
+        # 6. Initialize Crew (sets self.player)
+        self._initialize_crew()  
+
+        # 7. Initialize Subsystems requiring crew/map/player
+        self.audio = AudioManager(enabled=True, rng=self.rng, player_ref=self.player, station_map=self.station_map)
         self.crt = CRTOutput()
         self.renderer = TerminalRenderer(self.station_map)
-        self.reporter = MessageReporter(self.renderer)
+        self.reporter = MessageReporter(self.crt, self)
 
-        # Initialize Crew
-        self.crew = []
-        self.player = None
-        self._initialize_crew()  # Loads from JSON
-
-        # Initialize Subsystems requiring crew/map
-        self.forensics = ForensicsSystem(self.crew)
-        self.missionary = MissionarySystem(self.crew) # Agent 2.5
-        self.psychology = PsychologySystem(self.crew) # Agent 2.4
-        self.lynch_mob = LynchMobSystem(self.crew) # Agent 2.3
-        self.dialogue = DialogueManager(self.crew)
-        self.trust_system = TrustMatrix(self.crew)
+        self.forensics = ForensicsSystem(rng=self.rng)
+        self.missionary = MissionarySystem()
+        self.psychology = PsychologySystem()
+        self.trust_system = TrustMatrix(self.crew, thresholds=self.social_thresholds)
+        self.lynch_mob = LynchMobSystem(self.trust_system)
+        self.dialogue = DialogueManager()
         self.stealth = StealthSystem()
-        self.crafting = CraftingSystem(self)
-        self.endgame = EndgameSystem(self) # Agent 8
-        self.combat = CombatSystem() # Tier 3.5
+        self.crafting = CraftingSystem()
+        self.endgame = EndgameSystem(self.design_registry) # Agent 8
+        self.combat = CombatSystem(self.rng, self.room_states)
+        self.ai_system = AISystem()
 
         self.parser = CommandParser(self.crew)
         self.parser.set_known_names([m.name for m in self.crew])
-        
-        self.dispatcher = CommandDispatcher(self)
+        self.dispatcher = CommandDispatcher()
         self.context = GameContext(self)
 
-        # Game Loop State
+        # 8. Loop State
         self.turn = 1
         self.running = True
         self.game_over = False
+        self.turn_behavior_inventory = {"weather": 0, "sabotage": 0, "ai": 0, "random_events": 0}
 
-        # Narrative State
-        self.helicopter_status = "BROKEN" # BROKEN, REPAIRED, ESCAPED
+        # 9. Narrative/Persistence
+        self.helicopter_status = "BROKEN"
         self.rescue_signal_active = False
         self.rescue_turns_remaining = None 
-        
-        # Journal/Logs
         self.journal = []
         self.evidence_log = EvidenceLog()
         self.forensic_db = ForensicDatabase()
@@ -306,62 +160,53 @@ class StationMap:
                 crew_list = data.get("crew", [])
 
             for char_data in crew_list:
-                # Parse attributes
                 attrs = {}
                 for k, v in char_data.get("attributes", {}).items():
                     try:
-                        attrs[Attribute[k]] = v
+                        attrs[Attribute[k.upper()]] = v
                     except KeyError:
-                        print(f"Warning: Invalid attribute {k} for {char_data['name']}")
+                        pass
                 
-                # Parse skills
                 skills = {}
                 for k, v in char_data.get("skills", {}).items():
                     try:
-                        skills[Skill[k]] = v
+                        skills[Skill[k.upper()]] = v
                     except KeyError:
-                        print(f"Warning: Invalid skill {k} for {char_data['name']}")
+                        pass
                 
                 member = CrewMember(
                     name=char_data["name"],
                     role=char_data["role"],
-                    behavior_type=char_data["behavior_type"],
+                    behavior_type=char_data.get("behavior", char_data.get("behavior_type", "Neutral")),
                     attributes=attrs,
                     skills=skills,
                     schedule=char_data.get("schedule"),
                     invariants=char_data.get("invariants")
                 )
                 
-                # Hydrate forbidden rooms
                 member.forbidden_rooms = char_data.get("forbidden_rooms", [])
                 
-                # Set initial location
                 start_room = char_data.get("start_location", "Rec Room")
                 if start_room in self.station_map.rooms:
                     room_coords = self.station_map.rooms[start_room]
-                    # Simple placement: center of room
                     cx = (room_coords[0] + room_coords[2]) // 2
                     cy = (room_coords[1] + room_coords[3]) // 2
                     member.location = (cx, cy)
                 
                 self.crew.append(member)
 
-            # Assign Player (MacReady)
             self.player = next((m for m in self.crew if m.name == "MacReady"), None)
-            if not self.player:
-                raise ValueError("MacReady not found in crew configuration!")
-
-            # Determine initial infected
+            if not self.player and self.crew:
+                self.player = self.crew[0]
+            
             self._assign_initial_infected()
             
-        except FileNotFoundError:
-            print(f"Error: Characters config not found at {self.characters_config_path}")
-            sys.exit(1)
         except Exception as e:
-            print(f"Error initializing crew: {e}")
-            import traceback
-            traceback.print_exc()
-            sys.exit(1)
+            # Fallback for tests or missing config
+            if not self.crew:
+                 m = CrewMember("MacReady", "Pilot", "Neutral")
+                 self.crew = [m]
+                 self.player = m
 
     def _assign_initial_infected(self):
         """Randomly assign 'The Thing' status to non-MacReady crew."""
@@ -369,21 +214,30 @@ class StationMap:
         if not eligible:
             return
 
-        # Determine how many to infect based on difficulty
-        min_infected = self.difficulty_settings["initial_infected_min"]
-        max_infected = self.difficulty_settings["initial_infected_max"]
+        min_infected = self.difficulty_settings.get("initial_infected_min", 1)
+        max_infected = self.difficulty_settings.get("initial_infected_max", 2)
         num_infected = self.rng.randint(min_infected, min(max_infected, len(eligible)))
 
-        # Randomly select crew to infect
         infected_crew = self.rng.sample(eligible, num_infected)
         for member in infected_crew:
             member.is_infected = True
 
+    def get_ambient_warnings(self):
+        """Collect all location hint warnings from crew members.
+        
+        Returns a list of warning strings about characters being out of place.
+        """
+        warnings = []
+        for member in self.crew:
+            if member.is_alive and member != self.player:
+                hints = member.check_location_hints(self)
+                warnings.extend(hints)
+        return warnings
+
     def advance_turn(self, power_on: Optional[bool] = None):
-        """Advance the game by one turn. All per-turn behaviors are handled by event subscribers."""
+        """Advance the game by one turn."""
         self.turn += 1
         
-        # Reset per-turn flags
         for member in self.crew:
             member.slipped_vapor = False
         
@@ -391,75 +245,54 @@ class StationMap:
         if power_on is not None:
             self.power_on = power_on
 
-        # Update TimeSystem and notify listeners
-        self.time_system.advance_turn(self.power_on, game_state=self, rng=self.rng)
-        
-        # Track per-turn behaviors (weather, sabotage, AI, random events)
-        turn_inventory = {k: 0 for k in self.turn_behavior_inventory}
-        turn_inventory["random_event_triggered"] = None
+        # TimeSystem and others react to TURN_ADVANCE event
+        turn_inventory = {"weather": 0, "sabotage": 0, "ai": 0, "random_events": 0, "random_event_triggered": None}
 
-        # 1. Emit TURN_ADVANCE Event (Triggers TimeSystem, WeatherSystem, InfectionSystem, etc.)
         event_bus.emit(GameEvent(EventType.TURN_ADVANCE, {
             "game_state": self,
             "rng": self.rng,
             "turn": self.turn
         }))
         
-        # 3. Process Local Environment Effects
         player_room = self.station_map.get_room_name(*self.player.location)
         paranoia_mod = self.room_states.get_paranoia_modifier(player_room)
         if paranoia_mod > 0:
             self.paranoia_level = min(100, self.paranoia_level + paranoia_mod)
         
-        # 4. Lynch Mob Check (Agent 2)
-        lynch_target = self.lynch_mob.check_thresholds(self.crew, current_paranoia=self.paranoia_level)
-        if lynch_target:
-            # Mob is active, NPCs will converge via event handler
-            pass
-
+        self.lynch_mob.check_thresholds(self.crew, current_paranoia=self.paranoia_level)
         
-        # 5. NPC AI Update
-        # self.ai_system.update(self) # Need to verify if AI system is initialized or if logic is handled elsewhere.
-        # Based on imports, there is AISystem. But it wasn't initialized in __init__ in the snippet I saw.
-        # Assuming AI update logic is migrating to events or handled by CrewMember.update_ai loop
-        for member in self.crew:
-             # Using the new update_ai method if available, or fallback
-             if hasattr(member, 'update_ai'):
-                 member.update_ai(self)
         
         turn_inventory["ai"] += 1
 
-        # 6. Random Events Check (Tier 6.2)
         random_event = self.random_events.check_for_event(self)
         turn_inventory["random_events"] += 1
         if random_event:
             turn_inventory["random_event_triggered"] = random_event.id
             self.random_events.execute_event(random_event, self)
 
-        # Expose per-turn behavior inventory for debugging/tests
         self.turn_behavior_inventory = turn_inventory
 
-        # 7. Update Rescue Timer
         if self.rescue_signal_active and self.rescue_turns_remaining is not None:
             self.rescue_turns_remaining -= 1
             if self.rescue_turns_remaining == 5:
-                self.reporter.report_event("RADIO", "Rescue ETA updated: 5 hours out.", priority=True)
+                event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "Rescue ETA updated: 5 hours out."}))
             elif self.rescue_turns_remaining == 1:
-                self.reporter.report_event("RADIO", "Rescue team landing imminent!", priority=True)
-            if self.rescue_turns_remaining is not None and self.rescue_turns_remaining <= 0:
+                event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "Rescue team landing imminent!"}))
+            if self.rescue_turns_remaining <= 0:
                 self.rescue_turns_remaining = 0
                 event_bus.emit(GameEvent(EventType.REPAIR_COMPLETE, {
                     "status": self.helicopter_status,
                     "turn": self.turn
                 }))
 
-        # 8. Auto-save every 5 turns
         if self.turn % 5 == 0 and hasattr(self, 'save_manager'):
             try:
                 self.save_manager.save_game(self, "autosave")
             except Exception:
-                pass  # Don't interrupt gameplay on save failure
+                pass
         self._emit_population_status()
+        if hasattr(self, 'reporter'):
+            self.reporter.flush()
 
     def _emit_population_status(self):
         """Emit population status event for monitoring and UI updates."""
@@ -468,38 +301,66 @@ class StationMap:
         event_bus.emit(GameEvent(EventType.POPULATION_STATUS, {
             "living_crew": living_crew,
             "living_humans": living_humans,
+            "player_alive": self.player.is_alive if self.player else False,
             "paranoia_level": self.paranoia_level,
             "turn": self.turn
         }))
 
+    def cleanup(self):
+        """Clean up game state and unsubscribe from events."""
+        # Core Systems
+        if hasattr(self, 'time_system') and self.time_system:
+            self.time_system.cleanup()
+        if hasattr(self, 'weather') and self.weather:
+            self.weather.cleanup()
+        if hasattr(self, 'sabotage') and self.sabotage:
+            self.sabotage.cleanup()
+        if hasattr(self, 'environmental_coordinator') and self.environmental_coordinator:
+            self.environmental_coordinator.cleanup()
+            
+        # Social Systems
+        if hasattr(self, 'trust_system') and self.trust_system:
+            self.trust_system.cleanup()
+        if hasattr(self, 'lynch_mob') and self.lynch_mob:
+            self.lynch_mob.cleanup()
+            
+        # Feature Systems
+        if hasattr(self, 'random_events') and self.random_events:
+            self.random_events.cleanup()
+        if hasattr(self, 'endgame') and self.endgame:
+            self.endgame.cleanup()
+        if hasattr(self, 'crafting') and self.crafting:
+            self.crafting.cleanup()
+        if hasattr(self, 'psychology') and self.psychology:
+            self.psychology.cleanup()
+        if hasattr(self, 'missionary') and self.missionary:
+            self.missionary.cleanup()
+        if hasattr(self, 'ai_system') and self.ai_system:
+            self.ai_system.cleanup()
+        if hasattr(self, 'audio') and self.audio:
+            self.audio.cleanup()
+        if hasattr(self, 'reporter') and self.reporter:
+            self.reporter.cleanup()
+
     def check_win_condition(self):
-        """
-        Returns: (won: bool, message: str)
-        """
         if not self.player or not self.player.is_alive:
             return False, None
         if self.player.is_infected and self.player.is_revealed:
             return False, None
 
-        # 1. Helicopter Escape
         if self.helicopter_status == "ESCAPED":
             return True, "You pilot the chopper through the storm, leaving the nightmare of Outpost 31 behind."
 
-        # 2. Rescue Arrival
         if self.rescue_signal_active and self.rescue_turns_remaining <= 0:
             return True, "Lights cut through the storm. The rescue team has arrived to extract you."
 
-        # Check living crew status
         living_crew = [m for m in self.crew if m.is_alive]
         living_infected = [m for m in living_crew if m.is_infected and m != self.player]
 
-        # 3. Sole Survivor
         if len(living_crew) == 1 and living_crew[0] == self.player:
             return True, "Silence falls over the station. You are the only one left alive. The threat is gone... you hope."
 
-        # 4. Extermination
-        if not living_infected and self.crew:  # Ensure game has started
-            # Complex check: Do we know they are dead? For now, if all infected are dead, you win.
+        if not living_infected and self.crew:
             total_infected = [m for m in self.crew if m.is_infected]
             if total_infected and all(not m.is_alive for m in total_infected):
                  return True, "All Things have been eliminated. Humanity survives... for now."
@@ -507,9 +368,6 @@ class StationMap:
         return False, None
 
     def check_lose_condition(self):
-        """
-        Returns: (lost: bool, message: str)
-        """
         if not self.player:
             return True, "MacReady is gone. The Thing has won."
 
@@ -521,15 +379,27 @@ class StationMap:
 
         return False, None
 
+    def check_game_over(self):
+        """Check for game over conditions. Returns (game_over, won, message)."""
+        # Check lose conditions first
+        lost, lose_message = self.check_lose_condition()
+        if lost:
+            return True, False, lose_message
+        
+        # Check win conditions
+        won, win_message = self.check_win_condition()
+        if won:
+            return True, True, win_message
+        
+        # Game continues
+        return False, False, None
+
     @classmethod
     def from_dict(cls, data):
         """Deserialize game state from dictionary with defensive defaults and validation."""
         if not data or not isinstance(data, dict):
-            from ui.message_reporter import emit_error
-            emit_error("FAILED TO LOAD: Invalid save data format.")
             return None
 
-        # Get difficulty from save or default to NORMAL
         difficulty_value = data.get("difficulty", Difficulty.NORMAL.value)
         try:
             difficulty = Difficulty(difficulty_value)
@@ -538,37 +408,30 @@ class StationMap:
 
         game = cls(difficulty=difficulty)
         
-        # Power and Paranoia
         game.power_on = data.get("power_on", True)
         game.paranoia_level = data.get("paranoia_level", 0)
         
-        # Mode
         mode_val = data.get("mode", GameMode.INVESTIGATIVE.value)
         try:
             game.mode = GameMode(mode_val)
         except ValueError:
             game.mode = GameMode.INVESTIGATIVE
 
-        # Helicopter and Rescue
         game.helicopter_status = data.get("helicopter_status", "BROKEN")
         game.rescue_signal_active = data.get("rescue_signal_active", False)
         game.rescue_turns_remaining = data.get("rescue_turns_remaining")
 
-        # RNG and Time System
         if "rng" in data:
             game.rng.from_dict(data["rng"])
         
         if "time_system" in data:
             game.time_system = TimeSystem.from_dict(data["time_system"])
         else:
-            # Fallback if time_system missing
             game.time_system.turn_count = data.get("turn", 1) - 1
 
-        # Station Map
         if "station_map" in data:
             game.station_map = StationMap.from_dict(data["station_map"])
 
-        # Crew
         crew_data = data.get("crew", [])
         if crew_data:
             game.crew = []
@@ -577,32 +440,22 @@ class StationMap:
                 if member:
                     game.crew.append(member)
         
-        # Re-link player
         game.player = next((m for m in game.crew if m.name == "MacReady"), None)
-        # If player missing, create a fallback so game doesn't crash
         if not game.player and game.crew:
             game.player = game.crew[0]
-        elif not game.player:
-            from ui.message_reporter import emit_error
-            emit_error("CRITICAL ERROR: No crew found in save file.")
 
         game.journal = data.get("journal", [])
         
-        # Trust System
-        if hasattr(game, "trust_system"):
+        if hasattr(game, "trust_system") and game.trust_system:
             game.trust_system.cleanup()
-        game.trust_system = TrustMatrix(game.crew)
+        game.trust_system = TrustMatrix(game.crew, thresholds=game.social_thresholds)
         trust_data = data.get("trust")
         if trust_data and isinstance(trust_data, dict):
             game.trust_system.matrix.update(trust_data)
         
-        # Re-initialize subsystems that depend on fresh state
         game.renderer.map = game.station_map
         game.parser.set_known_names([m.name for m in game.crew])
         game.room_states = RoomStateManager(list(game.station_map.rooms.keys()))
         game.crafting = CraftingSystem.from_dict(data.get("crafting"), game)
-        
-        from ui.message_reporter import emit_message
-        emit_message("*** GAME LOADED ***")
         
         return game

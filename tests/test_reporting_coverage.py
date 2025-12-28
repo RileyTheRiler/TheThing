@@ -27,7 +27,7 @@ class TestReportingCoverage(unittest.TestCase):
         player_room = self.game.station_map.get_room_name(*self.game.player.location)
         target = next(m for m in self.game.crew if m != self.game.player and self.game.station_map.get_room_name(*m.location) == player_room)
         
-        self.dispatcher.dispatch("ATTACK", [target.name], self.context)
+        self.dispatcher.dispatch(self.context, f"ATTACK {target.name}")
         
         attack_events = [e for e in self.events_received if e.type == EventType.ATTACK_RESULT]
         self.assertTrue(len(attack_events) > 0, "No ATTACK_RESULT event emitted")
@@ -37,14 +37,14 @@ class TestReportingCoverage(unittest.TestCase):
     def test_interrogate_reporting(self):
         """Verify that the TALK command (or interrogation) emits DIALOGUE and/or INTERROGATION events."""
         # Note: TALK command in commands.py uses emit_dialogue
-        self.dispatcher.dispatch("TALK", [], self.context)
+        self.dispatcher.dispatch(self.context, "TALK")
         
         dialogue_events = [e for e in self.events_received if e.type == EventType.DIALOGUE]
         self.assertTrue(len(dialogue_events) > 0, "No DIALOGUE event emitted")
 
     def test_barricade_reporting(self):
         """Verify that BARRICADE command emits a message (currently MESSAGE event)."""
-        self.dispatcher.dispatch("BARRICADE", [], self.context)
+        self.dispatcher.dispatch(self.context, "BARRICADE")
         
         # Barricade command currently uses emit_message
         msg_events = [e for e in self.events_received if e.type == EventType.MESSAGE]

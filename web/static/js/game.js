@@ -5,6 +5,13 @@ let gameState = null;
 let commandHistory = [];
 let historyIndex = -1;
 
+// Common commands for autocomplete
+const COMMON_COMMANDS = [
+    'STATUS', 'INVENTORY', 'INV', 'TALK', 'HELP', 'LOOK', 'TAKE', 'DROP',
+    'GO', 'NORTH', 'SOUTH', 'EAST', 'WEST', 'USE', 'EXAMINE', 'SEARCH',
+    'WAIT', 'REST', 'HIDE', 'SNEAK', 'TEST', 'TAG', 'ACCUSE'
+];
+
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
     setupEventListeners();
@@ -14,6 +21,7 @@ function setupEventListeners() {
     const commandInput = document.getElementById('command-input');
     if (commandInput) {
         commandInput.addEventListener('keydown', handleCommandInput);
+        commandInput.addEventListener('input', updateAutoComplete);
     }
 }
 
@@ -134,6 +142,101 @@ function sendQuickCommand(command) {
     input.value = command;
     sendCommand(command);
     input.value = '';
+    updateAutoComplete();
+}
+
+// Autocomplete system
+function getCommandSuggestion(input) {
+    if (!input || input.length === 0) return null;
+    
+    const upperInput = input.toUpperCase();
+    const match = COMMON_COMMANDS.find(cmd => 
+        cmd.startsWith(upperInput) && cmd !== upperInput
+    );
+    
+    return match || null;
+}
+
+function updateAutoComplete() {
+    const input = document.getElementById('command-input');
+    const hint = document.getElementById('autocomplete-hint');
+    
+    if (!input || !hint) return;
+    
+    const suggestion = getCommandSuggestion(input.value);
+    
+    if (suggestion && input.value.length > 0) {
+        hint.textContent = suggestion;
+        hint.style.paddingLeft = (input.value.length * 9.6) + 'px'; // Approximate char width
+    } else {
+        hint.textContent = '';
+    }
+}
+
+// Trust bar rendering
+function renderTrustBar(trustValue) {
+    const maxBars = 10;
+    const filledBars = Math.round((trustValue / 100) * maxBars);
+    const emptyBars = maxBars - filledBars;
+    
+    const filled = '|'.repeat(filledBars);
+    const empty = '.'.repeat(emptyBars);
+    
+    let cssClass = 'trust-high';
+    if (trustValue < 30) {
+        cssClass = 'trust-low';
+    } else if (trustValue < 60) {
+        cssClass = 'trust-medium';
+    }
+    
+    return `<span class="trust-bar ${cssClass}">[${filled}${empty}] ${trustValue.toFixed(0)}%</span>`;
+}
+
+// Room danger detection
+function getRoomDangerLevel(roomState) {
+    if (!roomState) return 'safe';
+    
+    const description = (roomState.room_description || '').toUpperCase();
+    const icons = (roomState.room_icons || '').toUpperCase();
+    
+    if (description.includes('BLOODY') || description.includes('UNSAFE') || 
+        icons.includes('BLOODY') || icons.includes('DANGER')) {
+        return 'danger';
+    }
+    
+    if (description.includes('DARK') || description.includes('COLD') ||
+        icons.includes('WARNING')) {
+        return 'warning';
+    }
+    
+    return 'safe';
+}
+
+// Flavor text for empty rooms
+function getDefaultRoomFlavor(location) {
+    const flavors = {
+        'Generator Room': 'The diesel generator hums steadily. The air is thick with fumes.',
+        'Radio Room': 'Static crackles from the equipment. The smell of ozone lingers.',
+        'Kitchen': 'The air is stale. A faint smell of coffee and canned food.',
+        'Rec Room': 'Silence hangs heavy. Magazines scattered on worn furniture.',
+        'Lab': 'Sterile and cold. The scent of chemicals and antiseptic.',
+        'Storage': 'Musty air. Stacks of supplies cast long shadows.',
+        'Kennel': 'The smell of wet fur and fear still lingers here.',
+        'Hallway': 'Fluorescent lights flicker overhead. Your footsteps echo.',
+        'default': 'The air is cold and still. Nothing seems out of place.'
+    };
+    
+    return flavors[location] || flavors['default'];
+}
+
+// Enhance map display
+function enhanceMapDisplay(mapString) {
+    if (!mapString) return 'Map unavailable';
+    
+    // Wrap player marker in span for pulsing effect
+    let enhanced = mapString.replace(/@/g, '<span class="player-marker">@</span>');
+    
+    return enhanced;
 }
 
 function updateQuickActions(actions) {
@@ -172,6 +275,23 @@ function updateGameDisplay(state) {
     document.getElementById('temperature').textContent = state.temperature + '°C';
     document.getElementById('power-status').textContent = state.power_on ? 'ON' : 'OFF';
     document.getElementById('location').textContent = state.location;
+    
+    // Update wind speed if available
+    const windSpeed = state.wind_speed || 0;
+    document.getElementById('wind-speed').textContent = windSpeed + ' mph';
+    
+    // Update fuel bar
+    const fuelPercent = state.fuel_percent || 100;
+    const fuelBars = Math.round((fuelPercent / 100) * 8);
+    const fuelDisplay = '█'.repeat(fuelBars) + '░'.repeat(8 - fuelBars);
+    const fuelBar = document.getElementById('fuel-bar');
+    fuelBar.textContent = fuelDisplay;
+    fuelBar.className = 'fuel-bar';
+    if (fuelPercent < 25) {
+        fuelBar.classList.add('low');
+    } else if (fuelPercent < 50) {
+        fuelBar.classList.add('medium');
+    }
 
     // Update context-aware quick actions
     if (state.quick_actions) {
@@ -181,29 +301,58 @@ function updateGameDisplay(state) {
     // Update room info
     document.getElementById('room-description').textContent = state.room_description || '';
     document.getElementById('room-icons').textContent = state.room_icons || '';
+    
+    // Update room flavor text
+    const flavorDiv = document.getElementById('room-flavor');
+    if (!state.room_description || state.room_description.trim() === '') {
+        flavorDiv.textContent = getDefaultRoomFlavor(state.location);
+    } else {
+        flavorDiv.textContent = '';
+    }
 
-    // Update map
-    document.getElementById('game-map').textContent = state.map || 'Map unavailable';
+    // Update map with enhancements
+    const mapDisplay = document.getElementById('game-map');
+    if (state.map) {
+        mapDisplay.innerHTML = enhanceMapDisplay(state.map);
+    } else {
+        mapDisplay.textContent = 'Map unavailable';
+    }
 
-    // Update room items
+    // Update room items with shortcuts
     const itemsContainer = document.getElementById('room-items');
     if (state.items && state.items.length > 0) {
-        itemsContainer.innerHTML = state.items.map(item =>
-            `<div>• ${item.name}</div>`
-        ).join('');
+        itemsContainer.innerHTML = state.items.map((item, index) => {
+            const shortcut = String.fromCharCode(65 + index); // A, B, C...
+            return `<div><span class="item-shortcut">[${shortcut}]</span> ${item.name}</div>`;
+        }).join('');
     } else {
         itemsContainer.textContent = 'None';
     }
 
-    // Update crew status
+    // Update crew status with proximity sorting and trust bars
     const crewContainer = document.getElementById('crew-status');
     if (state.crew && state.crew.length > 0) {
-        crewContainer.innerHTML = state.crew.map(member => {
+        // Sort crew: same room first, then alphabetically
+        const sortedCrew = [...state.crew].sort((a, b) => {
+            const aInRoom = a.location === state.location;
+            const bInRoom = b.location === state.location;
+            
+            if (aInRoom && !bInRoom) return -1;
+            if (!aInRoom && bInRoom) return 1;
+            return a.name.localeCompare(b.name);
+        });
+        
+        crewContainer.innerHTML = sortedCrew.map(member => {
+            const isNearby = member.location === state.location;
+            const proximityClass = isNearby ? 'crew-nearby' : 'crew-distant';
             const statusClass = member.is_alive ? '' : 'danger';
             const statusText = member.is_alive ? 'ALIVE' : 'DEAD';
-            return `<div class="${statusClass}">
+            const trustBar = renderTrustBar(member.trust);
+            
+            return `<div class="crew-member ${proximityClass} ${statusClass}">
                 ${member.name} (${member.role}) - ${member.location}<br>
-                HP: ${member.health} | ${statusText} | Trust: ${member.trust.toFixed(1)}
+                HP: ${member.health} | ${statusText}<br>
+                Trust: ${trustBar}
             </div>`;
         }).join('');
     } else {

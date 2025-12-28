@@ -32,7 +32,7 @@ class ANSI:
     HC_BLACK_BG = "\033[48;5;16m" # Pure black background
 
     # Effects
-    GLITCH_CHARS = "▓▒░█▄▀■□▪▫"
+    GLITCH_CHARS = "#@%&?!<>*+=~"
     STATIC = ".:;!|+*#@"
 
 
@@ -216,11 +216,11 @@ class CRTOutput:
         Render a prominent header with box drawing.
         """
         width = len(text) + 4
-        border = "═" * width
+        border = "=" * width
         
-        print(f"{self.color}╔{border}╗{ANSI.RESET}")
-        print(f"{self.color}║  {ANSI.BOLD}{text}{ANSI.RESET}{self.color}  ║{ANSI.RESET}")
-        print(f"{self.color}╚{border}╝{ANSI.RESET}")
+        print(f"{self.color}+{border}+{ANSI.RESET}")
+        print(f"{self.color}|  {ANSI.BOLD}{text}{ANSI.RESET}{self.color}  |{ANSI.RESET}")
+        print(f"{self.color}+{border}+{ANSI.RESET}")
     
     def prompt(self, text="CMD"):
         """

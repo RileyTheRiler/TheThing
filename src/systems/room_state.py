@@ -28,10 +28,14 @@ class RoomStateManager:
         # Subscribe to events
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
         event_bus.subscribe(EventType.POWER_FAILURE, self.on_power_failure)
+        event_bus.subscribe(EventType.TEMPERATURE_THRESHOLD_CROSSED, self.on_temperature_threshold)
+        event_bus.subscribe(EventType.ENVIRONMENTAL_STATE_CHANGE, self.on_environmental_change)
 
     def cleanup(self):
         event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
         event_bus.unsubscribe(EventType.POWER_FAILURE, self.on_power_failure)
+        event_bus.unsubscribe(EventType.TEMPERATURE_THRESHOLD_CROSSED, self.on_temperature_threshold)
+        event_bus.unsubscribe(EventType.ENVIRONMENTAL_STATE_CHANGE, self.on_environmental_change)
     
     def _set_initial_states(self):
         if "Kennel" in self.room_states:
@@ -48,6 +52,31 @@ class RoomStateManager:
         for room_name in self.room_states:
             if room_name != "Generator":
                 self.add_state(room_name, RoomState.DARK)
+    
+    def on_temperature_threshold(self, event: GameEvent):
+        """React to temperature threshold crossings."""
+        direction = event.payload.get('direction')
+        
+        if direction == 'falling':
+            # Temperature dropped below freezing threshold - add FROZEN state
+            for room_name in self.room_states:
+                if room_name != "Generator":
+                    self.add_state(room_name, RoomState.FROZEN)
+        elif direction == 'rising':
+            # Temperature rose above freezing threshold - remove FROZEN state
+            for room_name in self.room_states:
+                self.remove_state(room_name, RoomState.FROZEN)
+    
+    def on_environmental_change(self, event: GameEvent):
+        """React to environmental state changes (e.g., power restoration)."""
+        change_type = event.payload.get('change_type')
+        power_on = event.payload.get('power_on')
+        
+        if change_type == 'power_restored' and power_on:
+            # Remove darkness from all non-barricaded rooms
+            for room_name in self.room_states:
+                if not self.has_state(room_name, RoomState.BARRICADED):
+                    self.remove_state(room_name, RoomState.DARK)
 
     def add_state(self, room_name, state):
         if room_name in self.room_states:

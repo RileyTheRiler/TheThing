@@ -78,18 +78,8 @@ echo ====================================================================
 echo Backend Server: http://localhost:5000
 echo Frontend UI: Open in your browser
 echo.
-echo Keep this window open to keep servers running
-echo Press CTRL+C to stop all servers
-echo ====================================================================
 
-REM Wait for user to close
-pause >nul
-
-REM Pause if server exits with error
-if errorlevel 1 (
-    echo.
-    echo ====================================================================
-    echo   Server exited with an error
-    echo ====================================================================
-    pause
-)
+echo Game is running in the browser!
+echo.
+echo Press any key to close this launcher (Backend Server will keep running in its own window)...
+pause

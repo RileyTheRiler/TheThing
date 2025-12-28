@@ -142,174 +142,31 @@ class CrewMember:
 
         return " ".join(desc)
 
-    def update_ai(self, game_state):
+    def check_location_hints(self, game_state):
+        """Check if character is deviating from expected location patterns.
+        
+        Returns a list of location hint slips that should be displayed.
         """
-        Agent 2/8: NPC AI Logic.
-        Priority: Thing AI > Lynch Mob > Schedule > Wander
-        """
-        if not self.is_alive:
-            return
-
-        current_turn = game_state.turn
-
-        # THING AI: Revealed Things actively hunt humans
-        if self.is_revealed:
-            self._update_thing_ai(game_state, current_turn)
-            return
-
-        # 0. PRIORITY: Lynch Mob Hunting (Agent 2)
-        if game_state.lynch_mob.active_mob and game_state.lynch_mob.target:
-            target = game_state.lynch_mob.target
-            if target != self and target.is_alive:
-                # Move toward the lynch target
-                tx, ty = target.location
-                self._pathfind_step(tx, ty, game_state.station_map, current_turn, game_state)
-                return
-
-        # 1. Check Schedule
-        # Schedule entries: {"start": 8, "end": 20, "room": "Rec Room"}
+        hints = []
+        current_room = game_state.station_map.get_room_name(*self.location)
         current_hour = game_state.time_system.hour
-        destination = None
-        for entry in self.schedule:
-            start = entry.get("start", 0)
-            end = entry.get("end", 24)
-            room = entry.get("room")
-
-            # Handle wrap-around schedules (e.g., 20:00 to 08:00)
-            if start < end:
-                if start <= current_hour < end:
-                    destination = room
-                    break
-            else:  # Wrap around midnight
-                if current_hour >= start or current_hour < end:
-                    destination = room
-                    break
-
-        if destination:
-            # Move towards destination room
-            target_pos = game_state.station_map.rooms.get(destination)
-            if target_pos:
-                tx, ty, _, _ = target_pos
-                self._pathfind_step(tx, ty, game_state.station_map, current_turn, game_state)
-                return
-
-        # 2. Idling / Wandering
-        if game_state.rng.random_float() < 0.3:
-            dx = game_state.rng.choose([-1, 0, 1])
-            dy = game_state.rng.choose([-1, 0, 1])
-            self.move(dx, dy, game_state.station_map)
-
-    def _update_thing_ai(self, game_state, current_turn):
-        """AI behavior for revealed Things - actively hunt and attack humans."""
         rng = game_state.rng
-
-        # Find nearest living human
-        humans = [m for m in game_state.crew
-                  if m.is_alive and not m.is_infected and m != self]
-
-        if not humans:
-            # No humans left, wander aimlessly
-            dx = rng.choose([-1, 0, 1])
-            dy = rng.choose([-1, 0, 1])
-            self.move(dx, dy, game_state.station_map)
-            return
-
-        # Find closest human
-        closest = min(humans, key=lambda h: abs(h.location[0] - self.location[0]) +
-                                            abs(h.location[1] - self.location[1]))
-
-        # Check if in same location - ATTACK!
-        if closest.location == self.location:
-            self._thing_attack(closest, game_state)
-            return
-
-        # Move toward closest human
-        tx, ty = closest.location
-        self._pathfind_step(tx, ty, game_state.station_map, current_turn, game_state)
-
-    def _thing_attack(self, target, game_state):
-        """The Thing attacks a human target."""
-        rng = game_state.rng
-
-        # Thing gets bonus attack dice (representing its alien nature)
-        thing_attack_bonus = 3
-        attack_pool = self.attributes.get(Attribute.PROWESS, 2) + thing_attack_bonus
-        attack_result = rng.calculate_success(attack_pool)
-
-        # Target defends
-        defense_pool = target.attributes.get(Attribute.PROWESS, 1) + target.skills.get(Skill.MELEE, 0)
-        defense_result = rng.calculate_success(defense_pool)
-
-        thing_name = f"The-Thing-That-Was-{self.name}"
-
-        if attack_result['success_count'] > defense_result['success_count']:
-            # Hit! Deal damage
-            net_hits = attack_result['success_count'] - defense_result['success_count']
-            damage = 2 + net_hits  # Base Thing damage + net hits
-            died = target.take_damage(damage, game_state=game_state)
-
-            event_bus.emit(GameEvent(EventType.COMBAT_LOG, {
-                "attacker": thing_name,
-                "target": target.name,
-                "action": "ATTACKS",
-                "damage": damage,
-                "result": "KILLED" if died else "HIT"
-            }))
-
-            # Chance to infect on hit (grapple attack)
-            if not died and rng.random_float() < 0.3:
-                target.is_infected = True
-                from ui.message_reporter import emit_warning
-                emit_warning(f"{target.name} has been INFECTED during the attack!")
-        else:
-            event_bus.emit(GameEvent(EventType.COMBAT_LOG, {
-                "attacker": thing_name,
-                "target": target.name,
-                "action": "lunges at",
-                "result": "MISSES"
-            }))
-
-    def _pathfind_step(self, target_x, target_y, station_map, current_turn=0, game_state=None):
-        """Take one step toward target using A* pathfinding.
-
-        Falls back to greedy movement if pathfinding fails.
-        Handles barricades - Things can break through, NPCs respect them.
-        """
-        goal = (target_x, target_y)
-
-        # Try A* pathfinding first
-        dx, dy = pathfinder.get_move_delta(self.location, goal, station_map, current_turn)
-
-        # If pathfinding returns no movement, fall back to greedy
-        if dx == 0 and dy == 0 and self.location != goal:
-            dx = 1 if target_x > self.location[0] else -1 if target_x < self.location[0] else 0
-            dy = 1 if target_y > self.location[1] else -1 if target_y < self.location[1] else 0
-
-        # Check for barricades at destination
-        new_x = self.location[0] + dx
-        new_y = self.location[1] + dy
-
-        if game_state and station_map.is_walkable(new_x, new_y):
-            target_room = station_map.get_room_name(new_x, new_y)
-            current_room = station_map.get_room_name(*self.location)
-
-            if game_state.room_states.is_entry_blocked(target_room) and target_room != current_room:
-                if self.is_revealed:
-                    # Revealed Things try to break barricades
-                    success, msg, _ = game_state.room_states.attempt_break_barricade(
-                        target_room, self, game_state.rng, is_thing=True
-                    )
-                    if not success:
-                        print(f"[BARRICADE] Something pounds on the {target_room} barricade!")
-                        return  # Can't move this turn
-                    else:
-                        print(f"[BARRICADE] {msg}")
-                        # Fall through to move
-                else:
-                    # Regular NPCs respect barricades
-                    return
-
-        self.move(dx, dy, station_map)
+        
+        # Check location_hint invariants
+        for inv in [i for i in self.invariants if i.get('type') == 'location_hint']:
+            expected_room = inv.get('expected_room')
+            time_range = inv.get('time_range', [0, 24])
+            slip_chance = inv.get('slip_chance', 0.5)
+            slip_desc = inv.get('slip_desc', f"{self.name} is not where they should be.")
+            
+            # Check if we're in the time range
+            if time_range[0] <= current_hour < time_range[1]:
+                # If infected and NOT in expected room, chance to generate hint
+                if self.is_infected and current_room != expected_room:
+                    if rng.random_float() < slip_chance:
+                        hints.append(slip_desc)
+        
+        return hints
 
     def get_dialogue(self, game_state):
         """Generate dialogue for the crew member with potential speech tells."""

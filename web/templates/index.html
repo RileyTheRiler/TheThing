@@ -1,53 +1,73 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>The Thing: Antarctic Research Station 31</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
+
 <body>
     <div class="container">
-        <!-- Header -->
-        <div class="header">
-            <h1 class="title">THE THING: ANTARCTIC RESEARCH STATION 31</h1>
-            <div class="subtitle">U.S. OUTPOST 31 - TERMINAL ACCESS</div>
-        </div>
 
         <!-- Start Screen -->
         <div id="start-screen" class="screen active">
             <div class="menu">
-                <h2>SYSTEM MENU</h2>
+                <div class="logo-container">
+                    <img src="{{ url_for('static', filename='images/logo.png') }}" alt="THE THING"
+                        class="main-logo-img">
+                    <div class="logo-subtitle">
+                        *CRACKLE* ...anybody read me? Come in, anybody... *STATIC*<br>
+                        (HUMAN LIFE NOT GUARANTEED)
+                    </div>
+                </div>
+
                 <div class="menu-options">
-                    <button class="menu-btn" onclick="showDifficultySelect()">BEGIN SIMULATION</button>
-                    <button class="menu-btn" disabled>ACCESS RECORDS</button>
-                    <button class="menu-btn" disabled>SYSTEM CONFIG</button>
+                    <button class="menu-btn" onclick="showDifficultySelect()">[ BEGIN SIMULATION ]</button>
+                    <button class="menu-btn" disabled>[ ACCESS RECORDS ]</button>
+                    <button class="menu-btn" disabled>[ SYSTEM CONFIG ]</button>
+                    <button class="menu-btn" disabled>[ TERMINATE ]</button>
                 </div>
             </div>
+
+            <div class="menu-footer">
+                <div class="footer-alert">SYSTEM ALERT: BIOLOGICAL CONTAMINANT DETECTED IN SECTOR 4.</div>
+                <div class="footer-status">TRUST STATUS: UNKNOWN. WATCHING: MACREADY, CHILDS, GARRY... [SCANNING]</div>
+            </div>
+
+            <!-- CRT Scanline Overlay -->
+            <div class="monitor-overlay"></div>
 
             <!-- Difficulty Selection -->
             <div id="difficulty-select" class="difficulty-select hidden">
                 <h3>SELECT DIFFICULTY</h3>
                 <div class="difficulty-options">
                     <button class="difficulty-btn" onclick="startGame('EASY')">
-                        <span class="diff-name">EASY</span>
+                        <span class="diff-name">[ EASY ]</span>
                         <span class="diff-desc">More time, fewer Things</span>
                     </button>
                     <button class="difficulty-btn" onclick="startGame('NORMAL')">
-                        <span class="diff-name">NORMAL</span>
+                        <span class="diff-name">[ NORMAL ]</span>
                         <span class="diff-desc">Standard survival horror</span>
                     </button>
                     <button class="difficulty-btn" onclick="startGame('HARD')">
-                        <span class="diff-name">HARD</span>
+                        <span class="diff-name">[ HARD ]</span>
                         <span class="diff-desc">Paranoia intensifies</span>
                     </button>
                 </div>
-                <button class="back-btn" onclick="hideDifficultySelect()">BACK</button>
+                <button class="back-btn" onclick="hideDifficultySelect()">[ BACK ]</button>
             </div>
         </div>
 
         <!-- Game Screen -->
         <div id="game-screen" class="screen">
+            <!-- Header -->
+            <div class="header">
+                <h1 class="title">THE THING: ANTARCTIC RESEARCH STATION 31</h1>
+                <div class="subtitle">U.S. OUTPOST 31 - TERMINAL ACCESS</div>
+            </div>
+
             <!-- Game Status Bar -->
             <div class="status-bar">
                 <div class="status-item">
@@ -63,8 +83,16 @@
                     <span id="temperature" class="value">0.0°C</span>
                 </div>
                 <div class="status-item">
+                    <span class="label">WIND:</span>
+                    <span id="wind-speed" class="value">0 mph</span>
+                </div>
+                <div class="status-item">
                     <span class="label">POWER:</span>
                     <span id="power-status" class="value">ON</span>
+                </div>
+                <div class="status-item">
+                    <span class="label">FUEL:</span>
+                    <span id="fuel-bar" class="fuel-bar">████████</span>
                 </div>
                 <div class="status-item">
                     <span class="label">LOCATION:</span>
@@ -84,6 +112,7 @@
                     <div class="room-info">
                         <h3>ROOM STATUS</h3>
                         <div id="room-description" class="info-text"></div>
+                        <div id="room-flavor" class="room-flavor"></div>
                         <div id="room-icons" class="info-text"></div>
                     </div>
 
@@ -102,7 +131,11 @@
                     <div class="command-container">
                         <div class="command-prompt">
                             <span class="prompt-symbol">CMD&gt;</span>
-                            <input type="text" id="command-input" class="command-input" placeholder="Enter command..." autocomplete="off">
+                            <div class="input-wrapper">
+                                <input type="text" id="command-input" class="command-input"
+                                    placeholder="Enter command..." autocomplete="off">
+                                <span id="autocomplete-hint" class="autocomplete-hint"></span>
+                            </div>
                         </div>
                         <div class="quick-commands" id="context-actions">
                             <!-- Context-aware actions will be dynamically inserted here -->
@@ -139,4 +172,5 @@
 
     <script src="{{ url_for('static', filename='js/game.js') }}"></script>
 </body>
+
 </html>

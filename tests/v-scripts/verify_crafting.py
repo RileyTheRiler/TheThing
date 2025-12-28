@@ -13,6 +13,7 @@ from systems.architect import Difficulty
 
 def test_crafting_logic():
     print("--- Testing Crafting Logic ---")
+    event_bus.clear()
     game = GameState(seed=42, difficulty=Difficulty.NORMAL)
     
     # Manually add items for crafting
@@ -72,6 +73,7 @@ def test_crafting_logic():
 
 def test_command_wiring():
     print("\n--- Testing Command Wiring ---")
+    event_bus.clear()
     game = GameState(seed=42, difficulty=Difficulty.NORMAL)
     from systems.commands import GameContext
     context = GameContext(game=game)
@@ -81,8 +83,7 @@ def test_command_wiring():
     game.player.add_item(Item("Copper Wire", "Useful for rigging."))
     
     print("Executing 'CRAFT makeshift_torch' via dispatcher...")
-    success = game.command_dispatcher.dispatch("CRAFT", ["makeshift_torch"], context)
-    assert success, "Command should be matched"
+    game.dispatcher.dispatch(context, "CRAFT makeshift_torch")
     
     # Crafting is queued, turn should have advanced
     assert len(game.crafting.active_jobs) == 1

@@ -8,9 +8,19 @@
     --terminal-dim: #00aa2b;
     --danger-red: #ff3333;
     --warning-yellow: #ffaa00;
+    --amber-alert: #ffaa00;
+    --red-alert: #ff3333;
     --border-color: #00ff41;
     --text-color: #00ff41;
     --text-dim: #008822;
+    --crt-green: #00ff41;
+    --crt-red: #ff3333;
+    --crt-shadow: rgba(0, 255, 65, 0.2);
+
+    /* Trust level colors */
+    --trust-high: #00ff41;
+    --trust-medium: #ffaa00;
+    --trust-low: #ff3333;
 }
 
 * {
@@ -21,19 +31,29 @@
 
 body {
     font-family: 'Courier New', monospace;
-    background-color: var(--bg-dark);
+    background-color: black;
     color: var(--text-color);
     line-height: 1.4;
     overflow: hidden;
     height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
 .container {
     width: 100%;
+    max-width: 1200px;
     height: 100vh;
+    max-height: 800px;
     display: flex;
     flex-direction: column;
     padding: 10px;
+    background-color: #050505;
+    position: relative;
+    border: 4px solid #1a1a1a;
+    border-radius: 20px;
+    box-shadow: inset 0 0 50px black, 0 0 50px rgba(0, 255, 65, 0.1);
 }
 
 /* Header */
@@ -71,50 +91,200 @@ body {
     flex-direction: column;
 }
 
-/* Start Screen */
-#start-screen {
-    justify-content: center;
-    align-items: center;
-}
-
-.menu {
-    background-color: var(--bg-medium);
-    border: 2px solid var(--border-color);
-    padding: 40px;
-    text-align: center;
-    box-shadow: 0 0 20px rgba(0, 255, 65, 0.3);
-}
-
-.menu h2 {
-    font-size: 1.8rem;
-    margin-bottom: 30px;
-    color: var(--terminal-green);
-    text-shadow: 0 0 10px var(--terminal-green);
-}
-
-.menu-options {
+/* Start Screen Override */
+#start-screen.active {
     display: flex;
     flex-direction: column;
-    gap: 15px;
+    justify-content: flex-start;
+    align-items: center;
+    background-image: url('../images/menu_bg.png');
+    background-size: cover;
+    background-repeat: no-repeat;
+    background-position: center;
+    padding: 40px;
+    position: relative;
+    background-color: black;
+    height: 100%;
 }
 
-.menu-btn {
-    background-color: var(--bg-dark);
-    color: var(--terminal-green);
-    border: 2px solid var(--border-color);
-    padding: 15px 30px;
-    font-family: 'Courier New', monospace;
-    font-size: 1rem;
-    cursor: pointer;
-    transition: all 0.3s;
+.menu-top-info {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    color: var(--crt-green);
+    font-size: 0.9rem;
     text-transform: uppercase;
+    margin-bottom: 20px;
+    font-weight: bold;
+    text-shadow: 0 0 5px var(--crt-green);
     letter-spacing: 1px;
 }
 
+.top-left,
+.top-right {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.top-center {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.menu {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background-color: transparent;
+    border: none;
+    box-shadow: none;
+    width: 100%;
+    margin-top: -40px;
+    /* Offset the top info to center visually */
+}
+
+.logo-container {
+    margin-top: 20px;
+    margin-bottom: 30px;
+    text-align: center;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.main-logo-img {
+    mix-blend-mode: screen;
+    width: 600px;
+    max-width: 90%;
+    height: auto;
+    filter: drop-shadow(0 0 5px rgba(0, 255, 65, 0.4)) grayscale(100%) sepia(100%) hue-rotate(80deg) saturate(300%) contrast(1.2);
+    margin-bottom: 0;
+    opacity: 0.95;
+    transform: rotate(-2deg);
+}
+
+/* Glitch effect for the red symbols */
+.logo-container::after {
+    content: "¥§Ø@\A ¥§Ø@\A ¥§Ø@";
+    position: absolute;
+    left: 25%;
+    top: 55%;
+    color: #ff3333;
+    font-size: 1.5rem;
+    font-family: monospace;
+    line-height: 1;
+    white-space: pre;
+    opacity: 0.8;
+    text-shadow: 0 0 5px #ff0000;
+    z-index: 10;
+    animation: glitch-blink 0.2s infinite;
+    transform: rotate(-10deg);
+}
+
+@keyframes glitch-blink {
+
+    0%,
+    100% {
+        opacity: 0.8;
+        transform: translate(0, 0);
+    }
+
+    50% {
+        opacity: 0.4;
+        transform: translate(-2px, 1px);
+    }
+}
+
+.logo-subtitle {
+    color: var(--crt-green);
+    font-size: 0.9rem;
+    max-width: 600px;
+    margin-top: 10px;
+    margin-bottom: 40px;
+    text-align: center;
+    line-height: 1.4;
+    font-family: 'Courier New', Courier, monospace;
+    font-weight: bold;
+}
+
+.difficulty-select {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: rgba(0, 0, 0, 0.9);
+    border: 1px solid var(--crt-green);
+    padding: 30px;
+    z-index: 100;
+    text-align: center;
+    box-shadow: 0 0 30px rgba(0, 255, 65, 0.2);
+}
+
+.menu-options {
+    gap: 10px;
+}
+
+.menu-btn {
+    background-color: transparent;
+    color: var(--crt-green);
+    border: none;
+    padding: 5px 20px;
+    font-size: 1.2rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.menu-btn::before {
+    content: '> ';
+    opacity: 0;
+    margin-right: 10px;
+}
+
+.menu-btn::after {
+    content: ' <';
+    opacity: 0;
+    margin-left: 10px;
+}
+
 .menu-btn:hover:not(:disabled) {
-    background-color: var(--terminal-green);
-    color: var(--bg-dark);
-    box-shadow: 0 0 15px var(--terminal-green);
+    background-color: transparent;
+    color: white;
+    box-shadow: none;
+    text-shadow: 0 0 10px var(--crt-green);
+}
+
+.menu-btn:hover:not(:disabled)::before,
+.menu-btn:hover:not(:disabled)::after {
+    opacity: 1;
+}
+
+.menu-footer {
+    width: 80%;
+    margin-top: auto;
+    text-align: center;
+    font-size: 0.8rem;
+    color: var(--crt-green);
+    border-top: 1px solid var(--crt-shadow);
+    padding-top: 20px;
+    margin-bottom: 20px;
+}
+
+.footer-alert {
+    margin-bottom: 5px;
+    text-transform: uppercase;
+}
+
+.footer-status {
+    opacity: 0.8;
+    text-transform: uppercase;
 }
 
 .menu-btn:disabled {
@@ -190,7 +360,7 @@ body {
 }
 
 /* Game Screen */
-#game-screen {
+#game-screen.active {
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -219,6 +389,24 @@ body {
 
 .status-item .value {
     color: var(--terminal-green);
+}
+
+/* Fuel/Power bar */
+.fuel-bar {
+    display: inline-block;
+    font-family: 'Courier New', monospace;
+    font-weight: bold;
+    letter-spacing: 2px;
+    color: var(--terminal-green);
+}
+
+.fuel-bar.low {
+    color: var(--red-alert);
+    animation: trust-flicker 0.5s infinite;
+}
+
+.fuel-bar.medium {
+    color: var(--amber-alert);
 }
 
 /* Game Area */
@@ -267,11 +455,44 @@ body {
     color: var(--terminal-green);
     padding: 10px;
     font-family: 'Courier New', monospace;
-    font-size: 0.8rem;
+    font-size: 0.85rem;
+    font-weight: 600;
     overflow-x: auto;
     white-space: pre;
-    line-height: 1.2;
+    line-height: 1.3;
     border: 1px solid var(--border-color);
+}
+
+/* Map enhancements */
+.player-marker {
+    color: var(--terminal-green);
+    font-weight: bold;
+    animation: pulse-player 1.5s ease-in-out infinite;
+    text-shadow: 0 0 8px var(--terminal-green);
+}
+
+.map-unsafe {
+    color: var(--red-alert);
+    text-shadow: 0 0 5px var(--red-alert);
+}
+
+.map-warning {
+    color: var(--amber-alert);
+    text-shadow: 0 0 5px var(--amber-alert);
+}
+
+@keyframes pulse-player {
+
+    0%,
+    100% {
+        opacity: 1;
+        text-shadow: 0 0 8px var(--terminal-green);
+    }
+
+    50% {
+        opacity: 0.6;
+        text-shadow: 0 0 15px var(--terminal-green);
+    }
 }
 
 /* Room Info */
@@ -315,6 +536,62 @@ body {
     overflow-y: auto;
 }
 
+/* Trust bar visualization */
+.trust-bar {
+    display: inline-block;
+    font-family: 'Courier New', monospace;
+    font-weight: bold;
+    letter-spacing: 1px;
+}
+
+.trust-high {
+    color: var(--trust-high);
+}
+
+.trust-medium {
+    color: var(--trust-medium);
+}
+
+.trust-low {
+    color: var(--trust-low);
+    animation: trust-flicker 0.3s infinite;
+}
+
+@keyframes trust-flicker {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.6;
+    }
+}
+
+/* Crew proximity styling */
+.crew-nearby {
+    color: var(--terminal-green);
+    font-weight: bold;
+    text-shadow: 0 0 5px var(--terminal-green);
+}
+
+.crew-distant {
+    color: var(--terminal-dim);
+    opacity: 0.8;
+}
+
+.crew-member {
+    margin-bottom: 8px;
+    padding: 5px;
+    border-left: 2px solid transparent;
+}
+
+.crew-member.crew-nearby {
+    border-left-color: var(--terminal-green);
+    background-color: rgba(0, 255, 65, 0.05);
+}
+
 /* Output Container */
 .output-container {
     background-color: var(--bg-medium);
@@ -327,9 +604,21 @@ body {
 
 .output-text {
     color: var(--terminal-green);
-    font-size: 0.9rem;
-    line-height: 1.5;
+    font-size: 0.95rem;
+    line-height: 1.6;
     white-space: pre-wrap;
+}
+
+.room-flavor {
+    color: var(--terminal-dim);
+    font-style: italic;
+    font-size: 0.9rem;
+    margin-top: 5px;
+}
+
+.item-shortcut {
+    color: var(--amber-alert);
+    font-weight: bold;
 }
 
 .output-line {
@@ -338,8 +627,13 @@ body {
 }
 
 @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
 }
 
 /* Command Container */
@@ -371,10 +665,30 @@ body {
     font-family: 'Courier New', monospace;
     font-size: 1rem;
     outline: none;
+    caret-color: var(--terminal-green);
 }
 
 .command-input:focus {
     box-shadow: 0 0 10px rgba(0, 255, 65, 0.5);
+}
+
+/* Autocomplete hint */
+.input-wrapper {
+    position: relative;
+    flex: 1;
+    display: flex;
+    align-items: center;
+}
+
+.autocomplete-hint {
+    position: absolute;
+    left: 8px;
+    color: var(--terminal-dim);
+    opacity: 0.4;
+    font-family: 'Courier New', monospace;
+    font-size: 1rem;
+    pointer-events: none;
+    white-space: nowrap;
 }
 
 /* Quick Commands */
@@ -387,17 +701,28 @@ body {
 .quick-btn {
     background-color: var(--bg-dark);
     color: var(--terminal-green);
-    border: 1px solid var(--border-color);
-    padding: 5px 10px;
+    border: 2px solid var(--border-color);
+    border-bottom-width: 4px;
+    padding: 8px 15px;
     font-family: 'Courier New', monospace;
-    font-size: 0.8rem;
+    font-size: 0.85rem;
+    font-weight: bold;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all 0.1s;
+    position: relative;
+    box-shadow: 0 2px 0 var(--terminal-dim);
 }
 
 .quick-btn:hover {
-    background-color: var(--terminal-green);
-    color: var(--bg-dark);
+    background-color: rgba(0, 255, 65, 0.1);
+    color: var(--terminal-green);
+    text-shadow: 0 0 5px var(--terminal-green);
+}
+
+.quick-btn:active {
+    transform: translateY(2px);
+    border-bottom-width: 2px;
+    box-shadow: 0 0 0 var(--terminal-dim);
 }
 
 /* Context-aware button styles */
@@ -521,8 +846,15 @@ body {
 
 /* Animations */
 @keyframes flicker {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.8; }
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.8;
+    }
 }
 
 .terminal-flicker {
@@ -544,4 +876,62 @@ body {
 
 .success {
     color: var(--terminal-green) !important;
+}
+
+/* Monitor Overlay */
+.monitor-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(transparent 50%,
+            rgba(0, 10, 0, 0.5) 50%);
+    background-size: 100% 3px;
+    pointer-events: none;
+    z-index: 50;
+    opacity: 0.5;
+    box-shadow: inset 0 0 100px rgba(0, 0, 0, 0.8);
+    animation: brightness-flicker 8s ease-in-out infinite;
+}
+
+/* Chromatic aberration effect */
+.container::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 49;
+    box-shadow:
+        inset 2px 0 3px rgba(255, 0, 0, 0.1),
+        inset -2px 0 3px rgba(0, 255, 255, 0.1);
+    border-radius: 20px;
+}
+
+/* CRT glow effect for text */
+.crt-glow {
+    text-shadow: 0 0 5px currentColor, 0 0 10px currentColor;
+}
+
+@keyframes brightness-flicker {
+
+    0%,
+    100% {
+        opacity: 0.5;
+    }
+
+    25% {
+        opacity: 0.45;
+    }
+
+    50% {
+        opacity: 0.52;
+    }
+
+    75% {
+        opacity: 0.48;
+    }
 }

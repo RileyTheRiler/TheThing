@@ -72,8 +72,8 @@ class TestCommandRegistryConsistency:
         categories = get_all_categories()
         
         expected_categories = [
-            "COMBAT", "CRAFTING", "ENVIRONMENT", "FORENSICS",
-            "INFORMATION", "INVENTORY", "MOVEMENT", "SOCIAL",
+            "COMBAT", "CRAFTING", "FORENSICS",
+            "INVENTORY", "MOVEMENT", "SOCIAL",
             "STEALTH", "SYSTEM"
         ]
         

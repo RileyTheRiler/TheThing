@@ -74,6 +74,10 @@ class SabotageManager:
         
         # Emit event for other systems to react
         event_bus.emit(GameEvent(EventType.POWER_FAILURE, {"duration": duration}))
+        event_bus.emit(GameEvent(EventType.ENVIRONMENTAL_STATE_CHANGE, {
+            "change_type": "power_loss",
+            "power_on": False
+        }))
         
         return "SABOTAGE: POWER OUTAGE. The lights flicker and die."
     
@@ -81,6 +85,13 @@ class SabotageManager:
         if self.power_sabotaged:
             game_state.power_on = True
             self.power_sabotaged = False
+            
+            # Emit environmental state change event
+            event_bus.emit(GameEvent(EventType.ENVIRONMENTAL_STATE_CHANGE, {
+                "change_type": "power_restored",
+                "power_on": True
+            }))
+            
             return "Power restored."
         return None
     

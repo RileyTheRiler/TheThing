@@ -191,26 +191,26 @@ class InterrogationSystem:
 
         # Get room modifiers for empathy check
         room_modifiers = None
-        if hasattr(game_state, 'room_states') and game_state.room_states:
-            room = getattr(game_state.station_map, 'get_room_name', lambda *args: "Unknown")(*subject.location)
-            if room != "Unknown":
-                room_modifiers = game_state.room_states.get_roll_modifiers(room)
+        current_room_states = getattr(game_state, 'room_states', self.room_states)
+        if current_room_states:
+            room_name = getattr(game_state.station_map, 'get_room_name', lambda *args: "Unknown")(*subject.location)
+            if room_name != "Unknown":
+                room_modifiers = current_room_states.get_resolution_modifiers(room_name)
 
         # Roll EMPATHY check to notice tells
         empathy_pool = (interrogator.attributes.get(Attribute.INFLUENCE, 1) +
                        interrogator.skills.get(Skill.EMPATHY, 0))
+                       
         # Apply environmental modifiers to empathy check
-        if self.room_states and getattr(subject, "location", None) and getattr(game_state, "station_map", None):
-            room = game_state.station_map.get_room_name(*subject.location)
-            modifiers = self.room_states.get_resolution_modifiers(room)
-            # Use ResolutionSystem to apply the modifier
-            from core.resolution import ResolutionSystem
-            # If ResolutionSystem.adjust_pool exists, use it, otherwise assume modifiers are compatible
-            if hasattr(ResolutionSystem, "adjust_pool"):
-                 empathy_pool = ResolutionSystem.adjust_pool(empathy_pool, modifiers.observation_pool)
-            else:
-                 # Fallback: manually adjust
-                 empathy_pool += modifiers.observation_pool
+        if room_modifiers:
+             # Use ResolutionSystem to apply the modifier if available or manual fallback
+             from core.resolution import ResolutionSystem
+             # If ResolutionSystem.adjust_pool exists, use it, otherwise assume modifiers are compatible
+             if hasattr(ResolutionSystem, "adjust_pool"):
+                  empathy_pool = ResolutionSystem.adjust_pool(empathy_pool, room_modifiers.observation_pool)
+             else:
+                  # Fallback: manually adjust
+                  empathy_pool += room_modifiers.observation_pool
 
         check = self.rng.calculate_success(empathy_pool)
 

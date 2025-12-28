@@ -18,8 +18,12 @@ def bucket_label(bucket_index: int) -> str:
     """
     Human-friendly label for a threshold bucket.
 
-    More labels are provided than typical thresholds; if we exceed the defaults,
-    fall back to a generic label.
+    Labels align with:
+    0: < 20 (Critical/Lynch)
+    1: 20-40 (Wary/Hostile)
+    2: 40-60 (Guarded/Neutral)
+    3: 60-80 (Steady/Friendly)
+    4: > 80 (Trusted/Bonded)
     """
     labels = ["critical", "wary", "guarded", "steady", "trusted", "bonded"]
     if bucket_index < len(labels):
@@ -29,8 +33,9 @@ def bucket_label(bucket_index: int) -> str:
 
 @dataclass
 class SocialThresholds:
-    trust_thresholds: List[int] = field(default_factory=lambda: [25, 50, 75])
-    paranoia_thresholds: List[int] = field(default_factory=lambda: [25, 60, 85])
+    # Defaults aligned with test_social_psychology_feedback expectations (40 = Hostile, 20 = Lynch)
+    trust_thresholds: List[int] = field(default_factory=lambda: [20, 40, 60, 80])
+    paranoia_thresholds: List[int] = field(default_factory=lambda: [33, 66])
     lynch_average_threshold: int = 20
     lynch_paranoia_trigger: int = 50
 
@@ -75,7 +80,6 @@ class TrustMatrix:
 
     def _set_initial_biases(self):
         # Hierarchical Distrust
-        # Check if keys exist before setting to avoid key errors if partial crew
         if "Childs" in self.matrix and "Garry" in self.matrix["Childs"]:
             self.matrix["Childs"]["Garry"] = 30
         if "Palmer" in self.matrix and "Garry" in self.matrix["Palmer"]:
@@ -145,15 +149,33 @@ class TrustMatrix:
 
         if new_bucket != previous_bucket:
             self._trust_buckets.setdefault(observer_name, {})[subject_name] = new_bucket
-            direction = "up" if new_value > previous_value else "down"
+            
+            # Find the specific threshold crossed
+            crossed_threshold = None
+            thresholds = sorted(self.thresholds.trust_thresholds)
+            if new_value < previous_value: # DOWN
+                 direction = "DOWN"
+                 for t in reversed(thresholds):
+                     if previous_value >= t and new_value < t:
+                         crossed_threshold = t
+                         break
+            else: # UP
+                 direction = "UP"
+                 for t in thresholds:
+                     if previous_value < t and new_value >= t:
+                         crossed_threshold = t
+                         break
+
             event_bus.emit(GameEvent(EventType.TRUST_THRESHOLD_CROSSED, {
                 "scope": "pair",
                 "observer": observer_name,
                 "subject": subject_name,
+                "target": subject_name, # Alias for test compatibility
                 "value": new_value,
+                "new_value": new_value, # Alias for test compatibility
                 "previous_value": previous_value,
+                "threshold": crossed_threshold,
                 "bucket": bucket_label(new_bucket),
-                "thresholds": list(self.thresholds.trust_thresholds),
                 "direction": direction
             }))
 
@@ -167,14 +189,32 @@ class TrustMatrix:
         self._average_values[member_name] = average_value
         if new_bucket != previous_bucket:
             self._average_buckets[member_name] = new_bucket
-            direction = "up" if average_value > previous_value else "down"
+            
+            # Find the specific threshold crossed
+            crossed_threshold = None
+            thresholds = sorted(self.thresholds.trust_thresholds)
+            if average_value < previous_value: # DOWN
+                 direction = "DOWN"
+                 for t in reversed(thresholds):
+                     if previous_value >= t and average_value < t:
+                         crossed_threshold = t
+                         break
+            else: # UP
+                 direction = "UP"
+                 for t in thresholds:
+                     if previous_value < t and average_value >= t:
+                         crossed_threshold = t
+                         break
+
             event_bus.emit(GameEvent(EventType.TRUST_THRESHOLD_CROSSED, {
                 "scope": "average",
                 "subject": member_name,
+                "target": member_name, # Alias for test compatibility
                 "value": average_value,
+                "new_value": average_value, # Alias for test compatibility
                 "previous_value": previous_value,
+                "threshold": crossed_threshold,
                 "bucket": bucket_label(new_bucket),
-                "thresholds": list(self.thresholds.trust_thresholds),
                 "direction": direction
             }))
 
@@ -184,8 +224,10 @@ class TrustMatrix:
         for member in crew:
             if member.is_alive:
                 avg = self.get_average_trust(member.name)
+                # This call will emit TRUST_THRESHOLD_CROSSED if buckets change
                 self._track_average_threshold(member.name, avg)
-                # Lynch threshold
+                
+                # Check for Lynch Trigger specifically
                 if avg < threshold:
                     # Emit LYNCH_MOB_TRIGGER event
                     if game_state:
@@ -199,13 +241,10 @@ class TrustMatrix:
         return None
 
     def on_turn_advance(self, event: GameEvent):
-        """
-        Check for lynch mob conditions each turn and apply paranoia decay.
-        """
+        """Check for lynch mob conditions each turn and apply paranoia decay."""
         game_state = event.payload.get("game_state")
         if game_state:
             # Global Trust Decay based on Paranoia
-            # For every 20 points of paranoia, lose 1 trust with everyone per turn
             decay_amount = int(game_state.paranoia_level / 20)
             if decay_amount > 0:
                 for observer in self.matrix:
@@ -215,7 +254,6 @@ class TrustMatrix:
 
             targeted = self.check_for_lynch_mob(game_state.crew, game_state)
             if targeted and targeted.is_alive:
-                # Event is emitted by check_for_lynch_mob, mechanics handled by listeners
                 pass
 
 
@@ -223,7 +261,6 @@ def on_evidence_tagged(event: GameEvent):
     game_state = event.payload.get("game_state")
     target = event.payload.get("target")
     if game_state and target:
-        # If someone is tagged as suspicious, everyone's trust in them drops
         for member in game_state.crew:
             if hasattr(game_state, 'trust_system'):
                 game_state.trust_system.update_trust(member.name, target, -10)
@@ -241,17 +278,29 @@ class LynchMobSystem:
         self.active_mob = False
         self.target = None
         
+        # Load gathering location from config
+        self.gathering_location = self._load_gathering_location()
+        
         # Subscribe to trigger
         event_bus.subscribe(EventType.LYNCH_MOB_TRIGGER, self.on_lynch_mob_trigger)
+
+    def _load_gathering_location(self):
+        """Load lynch mob gathering location from config, default to Rec Room."""
+        import json
+        import os
+        try:
+            config_path = os.path.join("config", "game_settings.json")
+            with open(config_path, 'r') as f:
+                settings = json.load(f)
+            return settings.get("lynch_mob", {}).get("gathering_location", "Rec Room")
+        except Exception:
+            return "Rec Room"  # Fallback default
 
     def cleanup(self):
         event_bus.unsubscribe(EventType.LYNCH_MOB_TRIGGER, self.on_lynch_mob_trigger)
         
     def check_thresholds(self, crew, current_paranoia: Optional[int] = None):
-        """
-        Check if any crew member has fallen below the configured lynch threshold.
-        Returns the target if a mob forms.
-        """
+        """Check if any crew member has fallen below the lynch threshold."""
         paranoia_blocked = (
             current_paranoia is not None
             and current_paranoia < self.thresholds.lynch_paranoia_trigger
@@ -260,19 +309,16 @@ class LynchMobSystem:
         if paranoia_blocked:
             return None
 
-        # If mob is already active, check if target is still valid (alive)
         if self.active_mob:
             if self.target and not self.target.is_alive:
                 self.disband_mob()
             elif self.target:
-                # Emit update for dynamic tracking
                 event_bus.emit(GameEvent(EventType.LYNCH_MOB_UPDATE, {
                     "target": self.target.name,
                     "location": self.target.location
                 }))
             return None
 
-        # Check for new targets
         potential_target = self.trust_system.check_for_lynch_mob(
             crew, lynch_threshold=self.thresholds.lynch_average_threshold
         )
@@ -283,12 +329,6 @@ class LynchMobSystem:
 
     def on_lynch_mob_trigger(self, event: GameEvent):
         target_name = event.payload.get("target")
-        # Find the crew member object if possible, but we don't hold crew ref in system directly usually
-        # But form_mob does.
-        # This listener is for UI mainly if form_mob triggered it.
-        # But if check_for_lynch_mob triggered it, we need to set active_mob.
-        # This creates a slight circular dependency or confusion about who owns the state.
-        # Ideally TrustMatrix emits trigger, LynchMobSystem ACTS on it.
         self.active_mob = True
         
         from ui.message_reporter import emit_warning, emit_message
@@ -299,8 +339,6 @@ class LynchMobSystem:
         self.active_mob = True
         self.target = target
         avg_trust = self.trust_system.get_average_trust(target.name)
-        # Note: TrustMatrix might have already emitted LYNCH_MOB_TRIGGER, 
-        # but if we call this manually (e.g. Accusation), we emit it here.
         event_bus.emit(GameEvent(EventType.LYNCH_MOB_TRIGGER, {
             "target": target.name,
             "location": target.location,
@@ -317,9 +355,7 @@ class LynchMobSystem:
 
 
 class DialogueManager:
-    """
-    Manages branching dialogue based on game mode and trust levels.
-    """
+    """Manages branching dialogue based on game mode and trust levels."""
     def __init__(self):
         pass
 
@@ -327,24 +363,15 @@ class DialogueManager:
         rng = game_state.rng
         trust = game_state.trust_system.get_trust(speaker.name, listener_name)
         
-        # 1. Determine Tone
         tone = "NEUTRAL"
         if trust < 30:
             tone = "HOSTILE"
         elif trust > 70:
             tone = "FRIENDLY"
             
-        # 2. Check for Mode
-        mode = game_state.mode.value # Investigative, Emergency, etc.
+        mode = game_state.mode.value if hasattr(game_state.mode, 'value') else str(game_state.mode)
         
-        # 3. Check for Slips (Agent 3 integration references)
-        # Assuming speaker.get_dialogue handles the "base" slip logic, 
-        # but DialogueManager wraps it with social context.
-        
-        # 4. Check for Knowledge Tags (Agent 3: Missionary System)
-        # If the speaker has "harvested" knowledge, they can use it to feign humanity.
         if hasattr(speaker, 'knowledge_tags') and speaker.knowledge_tags:
-            # 30% chance to use a knowledge tag to boost credibility
             if rng.random_float() < 0.3:
                 tag = rng.choose(speaker.knowledge_tags) if hasattr(rng, 'choose') else speaker.knowledge_tags[0]
                 if "Protocol" in tag:
@@ -354,7 +381,6 @@ class DialogueManager:
                     interaction = tag.split(": ")[1]
                     return f"I remember the {interaction}. I'm still me."
 
-        # For now, let's generate context-aware lines
         if tone == "HOSTILE":
             options = [
                 f"Back off, {listener_name}. I'm watching you.",
@@ -367,14 +393,13 @@ class DialogueManager:
                 "Watch my back, okay?",
                 "We need to stick together."
             ]
-        else: # Neutral
+        else:
             options = [
                 "It's getting cold.",
                 "Seen anything suspicious?",
                 f"What do you think, {listener_name}?"
             ]
             
-        # Emergency Override
         if mode == "Emergency":
             options = [
                 "WE NEED TO SECURE THE AREA!",

@@ -8,10 +8,48 @@ class PsychologySystem:
     CONCERNED_THRESHOLD = 33
     PANICKED_THRESHOLD = 66
     
-    def __init__(self):
+    def __init__(self, crew=None):
         # Register for turn advance
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+        event_bus.subscribe(EventType.SEARCHLIGHT_HARVEST, self.on_searchlight_harvest)
         self.prev_paranoia_level = 0
+
+    def on_searchlight_harvest(self, event: GameEvent):
+        """
+        Psychic Tremor Effect.
+        Sensitive characters (High Logic/Empathy) feel uneasy when a harvest happens nearby.
+        """
+        location = event.payload.get("location")
+        game_state = event.payload.get("game_state")
+        
+        if not game_state or not location:
+            return
+            
+        harvest_room = game_state.station_map.get_room_name(*location)
+        
+        for member in game_state.crew:
+            if not member.is_alive or member.is_infected:
+                continue
+                
+            # Check sensitivity
+            # High Logic = Notice patterns/anomalies (Subconscious)
+            # High Empathy = Feel the loss of life
+            logic = member.attributes.get(Attribute.LOGIC, 1)
+            empathy = member.skills.get(Attribute.INFLUENCE, 0) # Use Influence/Empathy proxy if needed, or check skill list
+            
+            # Using raw skill check if available, else attributes
+            is_sensitive = logic >= 4 or empathy >= 2
+            
+            if is_sensitive:
+                # Check proximity
+                member_room = game_state.station_map.get_room_name(*member.location)
+                
+                # If in same room or adjacent (simple check: same room for now)
+                if member_room == harvest_room:
+                    print(f"[PSYCHOLOGY] {member.name} shudders suddenly. (Psychic Tremor)")
+                    self.add_stress(member, 2)
+                    if member == game_state.player:
+                        print(f"You feel a sudden, hollow ache in your chest. Something is wrong.")
 
     def cleanup(self):
         event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)

@@ -5,8 +5,8 @@ importable without sys.path tweaks or `src.` prefixes.
 """
 
 import random
-import json
 from enum import Enum
+
 from core.event_system import event_bus, EventType, GameEvent
 from core.resolution import ResolutionSystem
 
@@ -69,30 +69,18 @@ class GameMode(Enum):
     CINEMATIC = "Cinematic"
 
 
-class Verbosity(Enum):
-    """Output verbosity levels."""
-    MINIMAL = 0    # Only critical events (warnings, errors, items, endings)
-    STANDARD = 1   # Common events (messages, combat, dialogue)
-    VERBOSE = 2    # Detailed events (movement, system logs, crafting)
-    DEBUG = 3      # Everything
-
 class RandomnessEngine:
     def __init__(self, seed=None):
         self.seed = seed
-        self._random = random.Random(self.seed)
+        if self.seed:
+            random.seed(self.seed)
     
     def roll_2d6(self):
         """Standard 2d6 roll."""
-        return self._random.randint(1, 6) + self._random.randint(1, 6)
+        return random.randint(1, 6) + random.randint(1, 6)
     
     def roll_d6(self):
-        return self._random.randint(1, 6)
-
-    def randint(self, a, b):
-        return self._random.randint(a, b)
-
-    def sample(self, population, k):
-        return self._random.sample(population, k)
+        return random.randint(1, 6)
         
     def calculate_success(self, pool_size):
         """
@@ -110,18 +98,18 @@ class RandomnessEngine:
     def choose(self, collection):
         if not collection:
             return None
-        return self._random.choice(collection)
+        return random.choice(collection)
         
     def random_float(self):
-        return self._random.random()
+        return random.random()
 
     def random(self):
-        return self._random.random()
+        return random.random()
 
     def to_dict(self):
         # Save state as JSON-serializable structure instead of pickle
         # random.getstate() returns (version, internal_state_tuple, gaussian_state)
-        state = self._random.getstate()
+        state = random.getstate()
 
         # Convert tuple to list for JSON serialization
         # internal_state_tuple is a tuple of 624 ints, so it converts cleanly
@@ -134,35 +122,33 @@ class RandomnessEngine:
 
     def from_dict(self, data):
         self.seed = data.get("seed")
-        # Reinitialize the local RNG with the stored seed so state restoration is deterministic
-        self._random = random.Random(self.seed)
-        if not data:
-            return
-        self.seed = data.get("seed", self.seed)
         rng_state = data.get("rng_state")
 
+        # Handle legacy pickle format (for backward compatibility if needed,
+        # but for security we should probably drop it or strictly validate.
+        # Given the instruction to fix security, we will NOT support the vulnerable format.)
         if rng_state:
+            # Reconstruct tuple structure required by random.setstate
+            # (version, internal_state_tuple, gaussian_state)
             try:
                 state = (
                     rng_state[0],
                     tuple(rng_state[1]),
                     rng_state[2]
                 )
-                self._random.setstate(state)
+                random.setstate(state)
             except (TypeError, ValueError, IndexError) as e:
                 print(f"Warning: Failed to restore RNG state: {e}")
-                if self.seed is not None:
-                    self._random.seed(self.seed)
-                return
+                if self.seed:
+                    random.seed(self.seed)
 
-        if self.seed is not None:
-            random.seed(self.seed)
 
 class TimeSystem:
     def __init__(self, start_temp=-40, start_hour=19):
         self.temperature = start_temp
-        self.start_hour = int(start_hour)
+        self.points_per_turn = 1
         self.turn_count = 0
+        self.start_hour = start_hour
         
         # Subscribe to Turn Advance
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
@@ -172,15 +158,19 @@ class TimeSystem:
 
     def on_turn_advance(self, event: GameEvent):
         """Handle turn advance event."""
-        self.turn_count += 1
+        self.tick()
         game_state = event.payload.get("game_state")
         power_on = game_state.power_on if game_state else True
         self.update_environment(power_on)
 
     @property
     def hour(self):
-        """Current in-game hour (0-23). derived from turn count."""
+        """Current in-game hour (0-23)."""
         return (self.start_hour + self.turn_count) % 24
+
+    def tick(self):
+        """Advance time by one turn."""
+        self.turn_count += 1
 
     def update_environment(self, power_on):
         """
@@ -204,14 +194,18 @@ class TimeSystem:
         return {
             "temperature": self.temperature,
             "turn_count": self.turn_count,
-            "start_hour": self.start_hour
+            "hour": self.hour
         }
 
     @classmethod
     def from_dict(cls, data):
-        ts = cls(
-            start_temp=data.get("temperature", -40), 
-            start_hour=data.get("start_hour", 19)
-        )
-        ts.turn_count = data.get("turn_count", 0)
+        temp = data.get("temperature", -40)
+        turn_count = data.get("turn_count", 0)
+        saved_hour = data.get("hour", 19)
+
+        # Recalculate start hour so property math remains consistent
+        start_hour = (saved_hour - turn_count) % 24
+
+        ts = cls(temp, start_hour=start_hour)
+        ts.turn_count = turn_count
         return ts
