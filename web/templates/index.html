@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Thing: Antarctic Research Station 31</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1 class="title">THE THING: ANTARCTIC RESEARCH STATION 31</h1>
+            <div class="subtitle">U.S. OUTPOST 31 - TERMINAL ACCESS</div>
+        </div>
+
+        <!-- Start Screen -->
+        <div id="start-screen" class="screen active">
+            <div class="menu">
+                <h2>SYSTEM MENU</h2>
+                <div class="menu-options">
+                    <button class="menu-btn" onclick="showDifficultySelect()">BEGIN SIMULATION</button>
+                    <button class="menu-btn" disabled>ACCESS RECORDS</button>
+                    <button class="menu-btn" disabled>SYSTEM CONFIG</button>
+                </div>
+            </div>
+
+            <!-- Difficulty Selection -->
+            <div id="difficulty-select" class="difficulty-select hidden">
+                <h3>SELECT DIFFICULTY</h3>
+                <div class="difficulty-options">
+                    <button class="difficulty-btn" onclick="startGame('EASY')">
+                        <span class="diff-name">EASY</span>
+                        <span class="diff-desc">More time, fewer Things</span>
+                    </button>
+                    <button class="difficulty-btn" onclick="startGame('NORMAL')">
+                        <span class="diff-name">NORMAL</span>
+                        <span class="diff-desc">Standard survival horror</span>
+                    </button>
+                    <button class="difficulty-btn" onclick="startGame('HARD')">
+                        <span class="diff-name">HARD</span>
+                        <span class="diff-desc">Paranoia intensifies</span>
+                    </button>
+                </div>
+                <button class="back-btn" onclick="hideDifficultySelect()">BACK</button>
+            </div>
+        </div>
+
+        <!-- Game Screen -->
+        <div id="game-screen" class="screen">
+            <!-- Game Status Bar -->
+            <div class="status-bar">
+                <div class="status-item">
+                    <span class="label">TURN:</span>
+                    <span id="turn-counter" class="value">0</span>
+                </div>
+                <div class="status-item">
+                    <span class="label">TIME:</span>
+                    <span id="game-time" class="value">00:00</span>
+                </div>
+                <div class="status-item">
+                    <span class="label">TEMP:</span>
+                    <span id="temperature" class="value">0.0°C</span>
+                </div>
+                <div class="status-item">
+                    <span class="label">POWER:</span>
+                    <span id="power-status" class="value">ON</span>
+                </div>
+                <div class="status-item">
+                    <span class="label">LOCATION:</span>
+                    <span id="location" class="value">Unknown</span>
+                </div>
+            </div>
+
+            <!-- Main Game Area -->
+            <div class="game-area">
+                <!-- Left Panel: Map and Status -->
+                <div class="left-panel">
+                    <div class="map-container">
+                        <h3>STATION MAP</h3>
+                        <pre id="game-map" class="map-display">Loading...</pre>
+                    </div>
+
+                    <div class="room-info">
+                        <h3>ROOM STATUS</h3>
+                        <div id="room-description" class="info-text"></div>
+                        <div id="room-icons" class="info-text"></div>
+                    </div>
+
+                    <div class="items-container">
+                        <h3>VISIBLE ITEMS</h3>
+                        <div id="room-items" class="items-list">None</div>
+                    </div>
+                </div>
+
+                <!-- Right Panel: Output and Input -->
+                <div class="right-panel">
+                    <div class="output-container">
+                        <div id="game-output" class="output-text"></div>
+                    </div>
+
+                    <div class="command-container">
+                        <div class="command-prompt">
+                            <span class="prompt-symbol">CMD&gt;</span>
+                            <input type="text" id="command-input" class="command-input" placeholder="Enter command..." autocomplete="off">
+                        </div>
+                        <div class="quick-commands">
+                            <button class="quick-btn" onclick="sendQuickCommand('STATUS')">STATUS</button>
+                            <button class="quick-btn" onclick="sendQuickCommand('INV')">INVENTORY</button>
+                            <button class="quick-btn" onclick="sendQuickCommand('TALK')">TALK</button>
+                            <button class="quick-btn" onclick="sendQuickCommand('HELP')">HELP</button>
+                        </div>
+                    </div>
+
+                    <!-- Crew Status -->
+                    <div class="crew-container">
+                        <h3>CREW STATUS</h3>
+                        <div id="crew-status" class="crew-list"></div>
+                    </div>
+
+                    <!-- Player Inventory -->
+                    <div class="inventory-container">
+                        <h3>INVENTORY</h3>
+                        <div id="player-inventory" class="inventory-list">Empty</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Game Over Screen -->
+        <div id="gameover-screen" class="screen">
+            <div class="gameover-content">
+                <h2 id="gameover-title">GAME OVER</h2>
+                <div id="gameover-message" class="gameover-message"></div>
+                <button class="menu-btn" onclick="location.reload()">RETURN TO MENU</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/game.js') }}"></script>
+</body>
+</html>

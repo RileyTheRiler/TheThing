@@ -75,6 +75,13 @@ def run_verification():
     
     # Create new game and load
     game3 = GameState()
+    # load_game now returns a GameState object because GameState injects the factory
+    loaded_game = game3.save_manager.load_game(save_slot)
+    
+    if loaded_game:
+        # No need to manually hydrate anymore
+        # loaded_game = GameState.from_dict(loaded_data)
+        
     loaded_game = game3.save_manager.load_game(save_slot)
     
     if loaded_game:

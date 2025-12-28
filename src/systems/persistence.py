@@ -1,7 +1,6 @@
 import json
 import os
-import pickle
-from datetime import datetime
+from core.event_system import event_bus, EventType, GameEvent
 
 class SaveManager:
     def __init__(self, save_dir="data/saves", game_state_factory=None):
@@ -9,6 +8,20 @@ class SaveManager:
         self.game_state_factory = game_state_factory
         if not os.path.exists(self.save_dir):
             os.makedirs(self.save_dir)
+            
+        event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+
+    def cleanup(self):
+        event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+        
+    def on_turn_advance(self, event: GameEvent):
+        """Subscriber for TURN_ADVANCE event. Handles auto-saving."""
+        game_state = event.payload.get("game_state")
+        if game_state and game_state.turn % 5 == 0:
+            try:
+                self.save_game(game_state, "autosave")
+            except Exception:
+                pass  # Don't interrupt gameplay on save failure
             
     def save_game(self, game_state, slot_name="auto"):
         """
@@ -45,8 +58,21 @@ class SaveManager:
             hydrator = factory if factory else self.game_state_factory
             if hydrator:
                 return hydrator(data)
+            # Use factory if provided to avoid circular dependencies
+            hydrator = factory if factory else self.game_state_factory
+            if hydrator:
+                try:
+                    return hydrator(data)
+                except Exception as e:
+                    print(f"Failed to hydrate game state from {filepath}: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    return None
 
             return data
+        except json.JSONDecodeError as e:
+            print(f"Malformed save file {filepath}: {e}")
+            return None
         except Exception as e:
-            print(f"Failed to load game: {e}")
+            print(f"Failed to load game from {filepath}: {e}")
             return None

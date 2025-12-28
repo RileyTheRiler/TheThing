@@ -1,6 +1,6 @@
 from enum import Enum, auto
 from core.event_system import event_bus, EventType, GameEvent
-from core.resolution import Attribute, Skill
+from core.resolution import Attribute, Skill, ResolutionModifiers
 
 
 class RoomState(Enum):
@@ -28,6 +28,10 @@ class RoomStateManager:
         # Subscribe to events
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
         event_bus.subscribe(EventType.POWER_FAILURE, self.on_power_failure)
+
+    def cleanup(self):
+        event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+        event_bus.unsubscribe(EventType.POWER_FAILURE, self.on_power_failure)
     
     def _set_initial_states(self):
         if "Kennel" in self.room_states:
@@ -110,6 +114,13 @@ class RoomStateManager:
             'text': f"Blood spatters across {room_name}."
         }))
         return f"Blood spatters across {room_name}."
+
+    def get_paranoia_modifier(self, room_name):
+        """Return paranoia modifier based on room states (e.g., BLOODY)."""
+        states = self.get_states(room_name)
+        if RoomState.BLOODY in states:
+            return 2
+        return 0
 
     def barricade_room(self, room_name, actor="You"):
         """Create or reinforce a barricade on a room."""
@@ -221,3 +232,21 @@ class RoomStateManager:
         if self.has_state(room_name, RoomState.BLOODY): modifier += 5
         if self.has_state(room_name, RoomState.DARK): modifier += 2
         return modifier
+
+    def get_resolution_modifiers(self, room_name):
+        """Return modifiers that affect ResolutionSystem calculations."""
+        modifiers = ResolutionModifiers()
+        states = self.get_states(room_name)
+
+        if RoomState.DARK in states:
+            modifiers.attack_pool -= 1
+            modifiers.observation_pool -= 1
+            modifiers.stealth_detection -= 0.15  # Harder to spot someone in the dark
+            # HEAD had more granular modifiers (Firearms -2, Melee -1, Empathy -1)
+            # These are roughly covered by attack_pool -= 1.
+
+        if RoomState.FROZEN in states:
+            modifiers.attack_pool -= 1  # Numb hands, sluggish attacks
+            modifiers.observation_pool -= 1  # Frosted visors, breath mist
+
+        return modifiers

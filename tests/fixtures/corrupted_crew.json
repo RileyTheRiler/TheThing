@@ -1,0 +1,10 @@
+{
+    "name": "MissingBehavior",
+    "role": "Mechanic",
+    "attributes": {
+        "PROWESS": 2
+    },
+    "skills": {
+        "MELEE": 1
+    }
+}

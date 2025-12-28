@@ -1,7 +1,6 @@
-import random
 from enum import Enum
-from src.core.event_system import event_bus, EventType, GameEvent
-from src.systems.architect import RandomnessEngine
+from core.event_system import event_bus, EventType, GameEvent
+from systems.architect import RandomnessEngine
 
 class WindDirection(Enum):
     NORTH = "north"
@@ -36,6 +35,9 @@ class WeatherSystem:
         
         # Subscribe to turn advances
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+
+    def cleanup(self):
+        event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
     
     def _recalculate_modifiers(self):
         """Update visibility and temperature modifiers based on current conditions."""
@@ -57,6 +59,10 @@ class WeatherSystem:
     def on_turn_advance(self, event: GameEvent):
         """Subscriber for TURN_ADVANCE event."""
         rng = event.payload.get("rng")
+        turn_inventory = event.payload.get("turn_inventory", {})
+        if isinstance(turn_inventory, dict):
+            turn_inventory["weather"] = turn_inventory.get("weather", 0) + 1
+
         if not rng:
             return
             

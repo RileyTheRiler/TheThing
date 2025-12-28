@@ -6,13 +6,12 @@ Cross-platform audio using winsound (Windows), terminal bell, or subprocess.
 
 import threading
 import queue
-import random
 import sys
 import os
 import subprocess
 import time
-import random
 from enum import Enum
+from core.event_system import event_bus, EventType, GameEvent
 
 # Determine audio backend
 AUDIO_BACKEND = None
@@ -105,24 +104,70 @@ class AudioManager:
         Sound.ALERT: 150,
     }
     
-    def __init__(self, enabled=True):
+    # Tier 6.4: Audio feedback alignment map
+    EVENT_MAP = {
+        # Warnings
+        EventType.WARNING: Sound.ALERT,
+        EventType.ERROR: Sound.ERROR,
+        EventType.POWER_FAILURE: Sound.POWER_DOWN,
+        
+        # Combat / Action
+        EventType.ATTACK_RESULT: Sound.BEEP,
+        EventType.LYNCH_MOB_TRIGGER: Sound.SCREECH,
+        
+        # Discoveries / Success
+        EventType.COMMUNION_SUCCESS: Sound.POWER_UP, # Dramatic success
+        EventType.TEST_RESULT: Sound.BEEP,
+        EventType.SOS_EMITTED: Sound.BEEP,
+        EventType.ESCAPE_SUCCESS: Sound.POWER_UP,
+        
+        # Movement
+        EventType.MOVEMENT: Sound.FOOTSTEPS,
+    }
+    
+    def __init__(self, enabled=True, rng=None):
         self.enabled = enabled and AUDIO_AVAILABLE
         self.muted = False
         self.volume = 1.0
+        from systems.architect import RandomnessEngine
+        self.rng = rng or RandomnessEngine()
         
         # Audio queue for async playback
         self.queue = queue.Queue()
         self.ambient_sound = None
         self.ambient_running = False
+        self._running = True  # Control flag for thread
         
         # Start audio thread
         if self.enabled:
             self._audio_thread = threading.Thread(target=self._audio_worker, daemon=True)
             self._audio_thread.start()
+
+        # Tier 6.4: Subscribe to events
+        self._subscribe_to_events()
+
+    def _subscribe_to_events(self):
+        """Subscribe to all events defined in EVENT_MAP."""
+        for event_type in self.EVENT_MAP:
+            event_bus.subscribe(event_type, self.handle_game_event)
+
+    def handle_game_event(self, event: GameEvent):
+        """Callback for event bus to trigger audio."""
+        if not self._running or not self.enabled:
+            return
+            
+        sound = self.EVENT_MAP.get(event.type)
+        if sound:
+            # Determine priority based on event type
+            priority = 5
+            if event.type in (EventType.LYNCH_MOB_TRIGGER, EventType.POWER_FAILURE):
+                priority = 10
+            
+            self.play(sound, priority)
     
     def _audio_worker(self):
         """Background thread for processing audio queue."""
-        while True:
+        while self._running:
             try:
                 sound, priority = self.queue.get(timeout=0.1)
                 if not self.muted:
@@ -133,7 +178,7 @@ class AudioManager:
                 if self.ambient_sound and self.ambient_running and not self.muted:
                     # Use volume to control density of ambient sound
                     # Lower volume = fewer loops play (creating gaps/sparser sound)
-                    if self.volume >= 1.0 or random.random() < self.volume:
+                    if self.volume >= 1.0 or self.rng.random() < self.volume:
                         self._play_sound(self.ambient_sound, ambient=True)
     
     def _play_sound(self, sound, ambient=False):
@@ -155,7 +200,7 @@ class AudioManager:
         if ambient:
             duration = int(duration * 0.3)  # Shorter for ambient loop
             # Simulate volume control for ambient sounds by adjusting density
-            if random.random() > self.volume:
+            if self.rng.random() > self.volume:
                 time.sleep(duration / 1000.0)
                 return
 
@@ -259,6 +304,12 @@ class AudioManager:
         """Get current volume level."""
         return self.volume
     
+    def shutdown(self):
+        """Stop the audio thread."""
+        self._running = False
+        if self.enabled and self._audio_thread.is_alive():
+            self._audio_thread.join(timeout=1.0)
+
     def trigger_event(self, event_type):
         """
         Trigger audio based on game events.

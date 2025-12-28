@@ -1,0 +1,203 @@
+from enum import Enum
+from typing import Dict, List, Optional
+
+from core.design_briefs import DesignBriefRegistry
+from core.event_system import event_bus, EventType, GameEvent
+from core.resolution import Attribute, ResolutionSystem, Skill
+from systems.room_state import RoomState
+
+
+class StealthPosture(Enum):
+    HIDDEN = "hidden"
+    EXPOSED = "exposed"
+
+
+class StealthSystem:
+    """
+    Handles stealth encounters by reacting to TURN_ADVANCE events.
+    Emits reporting events so the UI can surface outcomes without direct calls.
+    """
+
+    def __init__(self, design_registry: Optional[DesignBriefRegistry] = None, room_states=None):
+        self.design_registry = design_registry or DesignBriefRegistry()
+        self.config = self.design_registry.get_brief("stealth")
+        self.cooldown = 0
+        self.room_states = room_states
+        self.postures: Dict[str, StealthPosture] = {}
+        self.noise_levels: Dict[str, int] = {}
+        self.resolution = ResolutionSystem()
+        self.noise_step = self.config.get("noise_step", 0.25)
+        event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+
+    def cleanup(self):
+        event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+
+    def _detect_candidates(self, crew) -> List:
+        """Return infected crew sharing a room with the player."""
+        return [m for m in crew if getattr(m, "is_infected", False) and getattr(m, "is_alive", True)]
+
+    def on_turn_advance(self, event: GameEvent):
+        if self.cooldown > 0:
+            self.cooldown -= 1
+
+        game_state = event.payload.get("game_state")
+        rng = event.payload.get("rng")
+        if not game_state or rng is None:
+            return
+
+        # Passive decay for ambient noise between turns
+        self._decay_noise()
+
+        player = getattr(game_state, "player", None)
+        crew = getattr(game_state, "crew", [])
+        station_map = getattr(game_state, "station_map", None)
+        room_states = getattr(game_state, "room_states", None)
+        if not player or not station_map:
+            return
+
+        room = station_map.get_room_name(*player.location)
+        nearby_infected = [
+            m for m in self._detect_candidates(crew)
+            if getattr(m, "location", None) == player.location
+        ]
+
+        if not nearby_infected or self.cooldown > 0:
+            return
+
+        detection_chance = self.config.get("base_detection_chance", 0.35)
+
+        # Environmental penalties (darkness makes detection harder)
+        if self.room_states and room:
+            modifiers = self.room_states.get_resolution_modifiers(room)
+            detection_chance = max(0.0, detection_chance + modifiers.stealth_detection)
+        detection_chance = self.get_detection_chance(
+            observer=nearby_infected[0],
+            target=player,
+            game_state=game_state,
+            noise_level=self.get_noise_level(player),
+            room_name=room,
+        )
+        detected = rng.random_float() < detection_chance
+        opponent = nearby_infected[0]
+        
+        # 1. Subject Pool (Player Stealth)
+        prowess = player.attributes.get(Attribute.PROWESS, 1) if hasattr(player, "attributes") else 2
+        stealth = player.skills.get(Skill.STEALTH, 0) if hasattr(player, "skills") else 0
+        subject_pool = prowess + stealth
+
+        # 2. Observer Pool (Infected NPC Perception)
+        logic = opponent.attributes.get(Attribute.LOGIC, 1)
+        observation = opponent.skills.get(Skill.OBSERVATION, 0)
+        observer_pool = logic + observation
+
+        # 3. Modifiers (Posture and Environment)
+        from entities.crew_member import StealthPosture
+        
+        payload = {
+            "room": room,
+            "opponent": opponent.name,
+            "outcome": "detected" if detected else "evaded",
+            "posture": self.get_posture(player).value,
+            "detection_chance": round(detection_chance, 3),
+        }
+        event_bus.emit(GameEvent(EventType.STEALTH_REPORT, payload))
+        
+        # Emit AI perception event for other systems to hook into
+        event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, payload))
+
+        if not player_evaded:
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": f"{opponent.name} corners you in the {room}!"
+            }))
+        else:
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": f"You stay hidden from {opponent.name} in the {room}."
+            }))
+
+        self.cooldown = self.config.get("cooldown_turns", 1)
+
+    def set_posture(self, actor, posture: StealthPosture):
+        """Record the current stealth posture for an actor (player or NPC)."""
+        self.postures[self._actor_key(actor)] = posture
+
+    def get_posture(self, actor) -> StealthPosture:
+        return self.postures.get(self._actor_key(actor), StealthPosture.EXPOSED)
+
+    def register_noise(self, actor, level: int):
+        """Register noise generated by an actor (e.g., sprinting or loud actions)."""
+        self.noise_levels[self._actor_key(actor)] = max(0, level)
+
+    def get_noise_level(self, actor) -> int:
+        return self.noise_levels.get(self._actor_key(actor), 0)
+
+    def _decay_noise(self):
+        """Noise fades naturally between turns."""
+        for actor_key in list(self.noise_levels.keys()):
+            self.noise_levels[actor_key] = max(0, self.noise_levels[actor_key] - 1)
+            if self.noise_levels[actor_key] == 0:
+                del self.noise_levels[actor_key]
+
+    def get_detection_chance(
+        self,
+        observer,
+        target,
+        game_state,
+        noise_level: int = 0,
+        room_name: Optional[str] = None,
+    ) -> float:
+        """
+        Compute detection probability using ResolutionSystem probabilities and
+        environmental modifiers.
+        """
+        room_state_manager = getattr(game_state, "room_states", None)
+        station_map = getattr(game_state, "station_map", None)
+        room = room_name
+        if room is None and station_map and hasattr(target, "location"):
+            room = station_map.get_room_name(*target.location)
+
+        perception_pool = self._perception_pool(observer)
+        visibility_mod = self._visibility_modifier(game_state, room_state_manager, room)
+        posture_mod = 0.5 if self.get_posture(target) == StealthPosture.HIDDEN else 1.0
+        noise_mod = 1 + (self.noise_step * max(0, noise_level))
+
+        base_prob = self.resolution.success_probability(max(0, perception_pool))
+        detection_prob = base_prob * visibility_mod * posture_mod * noise_mod
+        return max(0.0, min(1.0, detection_prob))
+
+    def evaluate_detection(
+        self,
+        observer,
+        target,
+        game_state,
+        noise_level: int = 0,
+        force_roll: bool = True,
+    ) -> bool:
+        """
+        Hook for AI systems to determine if an observer detects a target.
+        """
+        rng = getattr(game_state, "rng", None)
+        if rng is None and not force_roll:
+            return False
+
+        chance = self.get_detection_chance(observer, target, game_state, noise_level)
+        roll = rng.random_float() if rng and force_roll else 1.0
+        return roll < chance
+
+    def _perception_pool(self, observer) -> int:
+        """Perception pool = base + LOGIC + OBSERVATION skill."""
+        logic_stat = getattr(observer, "attributes", {}).get(Attribute.LOGIC, 0)
+        observation_skill = getattr(observer, "skills", {}).get(Skill.OBSERVATION, 0)
+        base_pool = self.config.get("base_detection_pool", 1)
+        return max(1, base_pool + logic_stat + observation_skill)
+
+    def _visibility_modifier(self, game_state, room_state_manager, room_name: Optional[str]) -> float:
+        modifier = 1.0
+        if not game_state.power_on:
+            modifier *= self.config.get("lights_off_modifier", 0.6)
+        if room_state_manager and room_name and room_state_manager.has_state(room_name, RoomState.DARK):
+            modifier *= self.config.get("darkness_modifier", 0.5)
+        return modifier
+
+    @staticmethod
+    def _actor_key(actor) -> str:
+        return getattr(actor, "name", str(id(actor)))

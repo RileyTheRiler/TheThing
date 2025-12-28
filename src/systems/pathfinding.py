@@ -128,26 +128,52 @@ class PathfindingSystem:
             if current == goal:
                 return self._reconstruct_path(came_from, current)
 
-            # Check all 8 neighbors (including diagonals)
-            for dx, dy in [(-1, -1), (-1, 0), (-1, 1),
-                           (0, -1),          (0, 1),
-                           (1, -1),  (1, 0), (1, 1)]:
-                neighbor = (current[0] + dx, current[1] + dy)
+            # Process orthogonal neighbors
+            for dx, dy in [(-1, 0), (0, -1), (0, 1), (1, 0)]:
+                nx, ny = current[0] + dx, current[1] + dy
 
-                # Check walkability
-                if not station_map.is_walkable(neighbor[0], neighbor[1]):
+                if not station_map.is_walkable(nx, ny):
                     continue
 
-                # Calculate movement cost (diagonal is slightly more)
-                move_cost = 1.414 if dx != 0 and dy != 0 else 1.0
-                tentative_g = g_score[current] + move_cost
+                neighbor = (nx, ny)
+                tentative_g = g_score[current] + 1.0
 
                 if neighbor not in g_score or tentative_g < g_score[neighbor]:
-                    # This path is better
                     came_from[neighbor] = current
                     g_score[neighbor] = tentative_g
-                    f_score[neighbor] = tentative_g + self._heuristic(neighbor, goal)
 
+                    # Inline heuristic
+                    dx_h = abs(nx - goal[0])
+                    dy_h = abs(ny - goal[1])
+                    # Octile distance: max(dx, dy) + (sqrt(2) - 1) * min(dx, dy)
+                    h_val = max(dx_h, dy_h) + 0.41421356 * min(dx_h, dy_h)
+
+                    f_score[neighbor] = tentative_g + h_val
+                    if neighbor not in open_set_hash:
+                        counter += 1
+                        heapq.heappush(open_set, (f_score[neighbor], counter, neighbor))
+                        open_set_hash.add(neighbor)
+
+            # Process diagonal neighbors
+            for dx, dy in [(-1, -1), (-1, 1), (1, -1), (1, 1)]:
+                nx, ny = current[0] + dx, current[1] + dy
+
+                if not station_map.is_walkable(nx, ny):
+                    continue
+
+                neighbor = (nx, ny)
+                tentative_g = g_score[current] + 1.41421356
+
+                if neighbor not in g_score or tentative_g < g_score[neighbor]:
+                    came_from[neighbor] = current
+                    g_score[neighbor] = tentative_g
+
+                    # Inline heuristic
+                    dx_h = abs(nx - goal[0])
+                    dy_h = abs(ny - goal[1])
+                    h_val = max(dx_h, dy_h) + 0.41421356 * min(dx_h, dy_h)
+
+                    f_score[neighbor] = tentative_g + h_val
                     if neighbor not in open_set_hash:
                         counter += 1
                         heapq.heappush(open_set, (f_score[neighbor], counter, neighbor))

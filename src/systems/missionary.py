@@ -1,18 +1,14 @@
-import random
 from core.event_system import event_bus, EventType, GameEvent
 
 class MissionarySystem:
     def __init__(self):
-        self.communion_range = 1 # Same room/adjacent
+        self.communion_range = 1 # Adjacent for corridors
         self.base_decay = 2.0     # Mask decay per turn
         self.stress_multiplier = 1.5 # Multiplier if in high-stress environment
         
-        # Subscribe to turn advance
-        event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
-        
         # Agent 3: Role Habits (Standard Habits)
         self.role_habits = {
-            "Pilot": ["Rec Room", "Corridor"], # MacReady moves around
+            "Pilot": ["Rec Room", "Corridor"],
             "Mechanic": ["Rec Room", "Generator"],
             "Biologist": ["Infirmary", "Rec Room"],
             "Commander": ["Rec Room", "Corridor"],
@@ -27,21 +23,23 @@ class MissionarySystem:
         # Register for turn advance
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
 
+    def cleanup(self):
+        event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+
     def on_turn_advance(self, event: GameEvent):
         """
         Triggered when turn advances.
         """
         game_state = event.payload.get("game_state")
         if game_state:
+            # Reset per-turn flags
+            for member in game_state.crew:
+                member.slipped_vapor = False
             self.update(game_state)
 
     def update(self, game_state):
         """
         Main loop for the Missionary system.
-        1. Process Mask Decay for all infected.
-        2. Check for Role-based Habit Dissonance.
-        3. Check for Violent Reveal triggers.
-        4. Simple AI: Attempt Communion if conditions match.
         """
         for member in game_state.crew:
             if not member.is_alive:
@@ -66,7 +64,7 @@ class MissionarySystem:
         at_station = any(p in current_room for p in preferred)
         
         if not at_station:
-            # DIREC DISSONANCE: Being in the wrong place is taxing for the organism
+            # DIRECT DISSONANCE: Being in the wrong place is taxing for the organism
             dissonance_penalty = 5.0
             member.mask_integrity -= dissonance_penalty
 
@@ -82,7 +80,6 @@ class MissionarySystem:
             decay *= 1.5
             
         # 2. Social Friction: If trusting no one / low trust, harder to maintain facade
-        # (Simplified: if Paranoid, decay faster)
         if game_state.paranoia_level > 70:
             decay *= self.stress_multiplier
 
@@ -92,10 +89,8 @@ class MissionarySystem:
             
         # BIOLOGICAL SLIP HOOK
         if game_state.temperature < 0:
-            # P(Slip) = (1.0 - integrity/100.0) * BaseChance
-            # If integrity is 100, slip is 0. If 0, it's 50%.
             slip_chance = (1.0 - (member.mask_integrity / 100.0)) * 0.5
-            if random.random() < slip_chance:
+            if game_state.rng.random_float() < slip_chance:
                 event_bus.emit(GameEvent(EventType.BIOLOGICAL_SLIP, {
                     "character_name": member.name,
                     "type": "VAPOR"
@@ -111,7 +106,6 @@ class MissionarySystem:
             return
 
         # Trigger 2: Mortal Danger (Low Health)
-        # If health meets 1 (critical), self-preservation kicks in
         if member.health <= 1:
             self.trigger_reveal(member, "Critical Injury")
             return
@@ -120,14 +114,19 @@ class MissionarySystem:
         """
         Transforms the character into a monster.
         """
+        revealed_name = f"The-Thing-That-Was-{member.name}"
+        member.revealed_name = revealed_name
+
         print(f"!!! ALERT !!! {member.name} is convulsing... ({reason})")
         member.is_revealed = True
         member.role = "THING-BEAST"
-        member.name = f"The-Thing-That-Was-{member.name}"
-        member.health = 10 # hp buffer boost
-        # Attributes buff
-        # (In a full system, we'd swap stats properly)
-        print(f"!!! {member.name} TEARS THROUGH HUMAN FLESH! !!!")
+        member.health = 10
+        print(f"!!! {revealed_name} TEARS THROUGH HUMAN FLESH! !!!")
+        # Preserve the character's name to keep references stable for AI/tests;
+        # use a themed alias only for messaging to avoid breaking lookups.
+        thing_alias = f"The-Thing-That-Was-{member.name}"
+        member.health = 10
+        print(f"!!! {thing_alias} TEARS THROUGH HUMAN FLESH! !!!")
 
     def attempt_communion_ai(self, agent, game_state):
         """
@@ -139,13 +138,11 @@ class MissionarySystem:
         room_name = game_state.station_map.get_room_name(*agent.location)
         is_corridor = "Corridor" in room_name
 
+        CORRIDOR_VISUAL_RANGE = 5 # As per memory/test expectations
+
         potential_targets = []
-        human_witnesses_count = 0
 
-        # Corridor logic constants
-        # If in corridor, we can see further than just adjacent
-        CORRIDOR_VISUAL_RANGE = 4
-
+        # Identify valid targets and witnesses
         for other in game_state.crew:
             if other == agent or not other.is_alive:
                 continue
@@ -167,27 +164,26 @@ class MissionarySystem:
                 else:
                     potential_targets.append(other)
 
+            # Visibility Check
             if is_corridor:
-                # If agent is in corridor, only people in corridors are visible
                 if "Corridor" in other_room:
-                    # Calculate Manhattan distance
-                    dist = abs(agent.location[0] - other.location[0]) + abs(agent.location[1] - other.location[1])
-                    if dist <= CORRIDOR_VISUAL_RANGE:
-                        is_visible = True
+                     # Euclidean distance for visibility in corridors
+                     dist = ((agent.location[0] - other.location[0])**2 + (agent.location[1] - other.location[1])**2)**0.5
+                     if dist <= CORRIDOR_VISUAL_RANGE:
+                         is_visible = True
             else:
-                # Named room: anyone in the same room is visible
+                # Named Room: Visible if in same room
                 if other_room == room_name:
                     is_visible = True
 
             if is_visible:
-                # If visible and not infected, they are a witness
+                # If ANY human can see us, we cannot commune (unless they are the target and we are alone with them)
+                # We collect potential targets first
                 if not other.is_infected:
-                    human_witnesses_count += 1
-
-                    # Check if this person is close enough to be a target
+                    # Check distance for communion
                     is_in_range = False
                     if is_corridor:
-                         # In corridors, must be adjacent or same tile (communion_range = 1)
+                         # Manhattan distance for adjacency check
                          dist = abs(agent.location[0] - other.location[0]) + abs(agent.location[1] - other.location[1])
                          if dist <= self.communion_range:
                              is_in_range = True
@@ -200,24 +196,10 @@ class MissionarySystem:
 
         # We can proceed ONLY if:
         # 1. We have at least one valid target.
-        # 2. The total number of human witnesses (including the target) is exactly 1.
-        #    This ensures the target is the ONLY human who sees us.
+        # 2. There are no witnesses OTHER than the target.
         
-        if len(potential_targets) > 0 and human_witnesses_count == 1:
-            # Pick the target (should be only one if witnesses_count is 1)
-            target = potential_targets[0]
-            self.perform_communion(agent, target, game_state)
-            # Strict check: Must be in same 'room' (Same named room or same corridor tile)
-            if other_room == room_name:
-                if not other.is_infected:
-                    potential_targets.append(other)
-
-        # If there is EXACTLY ONE target in the immediate vicinity (same room/tile)
         if len(potential_targets) == 1:
             target = potential_targets[0]
-            
-            # 2. Robust Witness Check
-            # Check if any uninfected crew member (who is not the target) can see the event.
             if not self.has_witnesses(agent, target, game_state):
                 self.perform_communion(agent, target, game_state)
 
@@ -225,11 +207,13 @@ class MissionarySystem:
         """
         Checks for any uninfected crew members who can see the agent.
         """
+        CORRIDOR_VISUAL_RANGE = 5
+
         for other in game_state.crew:
             if other == agent or other == target or not other.is_alive:
                 continue
 
-            # Infected don't count as witnesses (per simplification)
+            # Infected don't count as witnesses
             if other.is_infected:
                 continue
 
@@ -240,40 +224,28 @@ class MissionarySystem:
     def is_visible(self, loc1, loc2, station_map):
         """
         Determines if loc2 is visible from loc1.
-        - Named Room <-> Named Room: Visible only if same room.
-        - Named Room <-> Corridor: Not visible (Walls).
-        - Corridor <-> Corridor: Visible if within range (Sight line).
         """
         room1 = station_map.get_room_name(*loc1)
         room2 = station_map.get_room_name(*loc2)
 
-        # Check if locations are in named rooms
-        # Note: station_map.rooms keys are the named rooms.
         in_named_room1 = room1 in station_map.rooms
         in_named_room2 = room2 in station_map.rooms
 
         if in_named_room1:
-            # Inside a room: Only visible if other is in the same room
             return room1 == room2
         elif in_named_room2:
-            # Observer is in a room, Agent is in Corridor/Outside -> Blocked by wall
             return False
         else:
-            # Both are in corridors/outside
-            # Check Euclidean distance
+            # Both corridors
             x1, y1 = loc1
             x2, y2 = loc2
             dist_sq = (x1 - x2)**2 + (y1 - y2)**2
-            # Sight range of 5 tiles (squared = 25)
-            return dist_sq <= 25
+            return dist_sq <= 25 # 5^2
 
     def perform_communion(self, agent, target, game_state):
         """
         Actual mechanics of assimilation.
         """
-        # Chance to succeed? 
-        # For now, deterministic if alone.
-        
         print(f">>> SILENT EVENT: {agent.name} approaches {target.name}...")
         
         # Refill Agent's Mask
@@ -289,34 +261,20 @@ class MissionarySystem:
     def searchlight_harvest(self, agent, target):
         """
         Transfer nomenclature data from target to agent.
-        Reduces the agent's slip chance by learning the host's logic.
         """
         print(f">>> SEARCHLIGHT HARVEST: {agent.name} extracts nomenclature from {target.name}.")
         
-        # Reduce slip chances for the Agent (mimicry becomes more precise)
-        # In this simplistic model, the agent just gets 'better' at being the host.
+        # Reduce slip chances for the Agent
         for inv in agent.invariants:
             if 'slip_chance' in inv:
-                # 50% reduction in detection chance
                 inv['slip_chance'] *= 0.5
         
-        # Generate Knowledge Tags / Memory Logs
-        # The agent learns the target's role protocols and behaviors
+        # Generate Knowledge Tags
         role_tag = f"Protocol: {target.role}"
         memory_tag = f"Memory: {target.name} interaction"
 
-        agent.add_knowledge_tag(role_tag)
-        agent.add_knowledge_tag(memory_tag)
-        # Advanced Mimicry: Grant Knowledge Tags
-        # The agent learns personal details to use in social defense
-        memories = [
-            f"details about {target.name}'s life",
-            f"a story about {target.name}'s childhood",
-            f"{target.name}'s favorite song",
-            f"{target.name}'s routine in the {target.role}",
-            f"a secret {target.name} kept"
-        ]
-        new_tag = random.choice(memories)
         if hasattr(agent, 'knowledge_tags'):
-            agent.knowledge_tags.append(new_tag)
-            print(f">>> MIMICRY UPDATE: {agent.name} learned '{new_tag}'")
+             if role_tag not in agent.knowledge_tags:
+                 agent.knowledge_tags.append(role_tag)
+             if memory_tag not in agent.knowledge_tags:
+                 agent.knowledge_tags.append(memory_tag)

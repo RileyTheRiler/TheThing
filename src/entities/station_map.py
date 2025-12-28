@@ -30,6 +30,22 @@ class StationMap:
             "Hangar": (5, 15, 10, 19),        # Helicopter storage (south-center)
         }
         self.room_items = {}
+        # Precompute room lookup to avoid repeated room-scan on every query.
+        # Hot paths (rendering, AI movement) call get_room_name thousands of times;
+        # this keeps the lookup O(1) instead of iterating every room definition.
+        self._coord_to_room = self._build_room_lookup()
+
+    def _build_room_lookup(self):
+        lookup = {}
+        for y in range(self.height):
+            for x in range(self.width):
+                room_name = None
+                for name, (x1, y1, x2, y2) in self.rooms.items():
+                    if x1 <= x <= x2 and y1 <= y <= y2:
+                        room_name = name
+                        break
+                lookup[(x, y)] = room_name or f"Corridor (Sector {x},{y})"
+        return lookup
 
     def add_item_to_room(self, item, x, y, turn=0):
         """Add an item to a room at the given coordinates."""
@@ -59,10 +75,9 @@ class StationMap:
 
     def get_room_name(self, x, y):
         """Get the name of the room at the given coordinates."""
-        for name, (x1, y1, x2, y2) in self.rooms.items():
-            if x1 <= x <= x2 and y1 <= y <= y2:
-                return name
-        return "Corridor (Sector {},{})".format(x, y)
+        # Fast O(1) lookup using precomputed grid map (see _build_room_lookup).
+        # Falls back gracefully for out-of-bounds coordinates to preserve behavior.
+        return self._coord_to_room.get((x, y), f"Corridor (Sector {x},{y})")
 
     def render(self, crew):
         """Render the map with crew member positions."""
@@ -93,9 +108,22 @@ class StationMap:
 
     @classmethod
     def from_dict(cls, data):
-        """Deserialize station map from dictionary."""
-        sm = cls(data["width"], data["height"])
+        """Deserialize station map from dictionary with defensive defaults."""
+        if not data or not isinstance(data, dict):
+            # Fallback to default map if data is missing/corrupt
+            return cls()
+
+        width = data.get("width", 20)
+        height = data.get("height", 20)
+        sm = cls(width, height)
+        
         items_dict = data.get("room_items", {})
         for room, items_data in items_dict.items():
-            sm.room_items[room] = [Item.from_dict(i) for i in items_data]
+            if not isinstance(items_data, list):
+                continue
+            sm.room_items[room] = []
+            for i_data in items_data:
+                item = Item.from_dict(i_data)
+                if item:
+                    sm.room_items[room].append(item)
         return sm

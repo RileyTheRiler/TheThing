@@ -39,6 +39,7 @@ class CommandParser:
         'put': 'DROP', 'place': 'DROP',
         'inventory': 'INVENTORY', 'inv': 'INVENTORY', 'items': 'INVENTORY',
         'bag': 'INVENTORY', 'stuff': 'INVENTORY',
+        'craft': 'CRAFT', 'build': 'CRAFT', 'assemble': 'CRAFT', 'make': 'CRAFT',
         
         # Combat
         'attack': 'ATTACK', 'hit': 'ATTACK', 'fight': 'ATTACK',
@@ -240,6 +241,7 @@ AVAILABLE COMMANDS:
 MOVEMENT:    go/move/walk [north/south/east/west] or just n/s/e/w
 LOOK:        look/examine/check [name or 'around']
 TALK:        talk/speak [to name]
+CRAFTING:    craft/build [recipe id]
 ITEMS:       get/take [item], drop [item], inventory/inv
 COMBAT:      attack/fight [name]
 NOTES:       tag [name] [note...], journal

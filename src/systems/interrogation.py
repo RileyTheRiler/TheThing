@@ -4,7 +4,7 @@ Allows players to question crew members and make formal accusations.
 """
 
 from enum import Enum
-from core.resolution import Attribute, Skill
+from core.resolution import Attribute, Skill, ResolutionSystem
 from core.event_system import event_bus, EventType, GameEvent
 
 
@@ -132,9 +132,10 @@ class InterrogationSystem:
         "Sweat beads on their forehead despite the cold.",
     ]
 
-    def __init__(self, rng):
+    def __init__(self, rng, room_states=None):
         self.rng = rng
         self.interrogation_count = {}  # name -> count (repeated interrogation raises suspicion)
+        self.room_states = room_states
 
     def interrogate(self, interrogator, subject, topic, game_state):
         """Conduct an interrogation on a subject.
@@ -188,9 +189,29 @@ class InterrogationSystem:
         # Determine if any tells are visible
         tells = []
 
+        # Get room modifiers for empathy check
+        room_modifiers = None
+        if hasattr(game_state, 'room_states') and game_state.room_states:
+            room = getattr(game_state.station_map, 'get_room_name', lambda *args: "Unknown")(*subject.location)
+            if room != "Unknown":
+                room_modifiers = game_state.room_states.get_roll_modifiers(room)
+
         # Roll EMPATHY check to notice tells
         empathy_pool = (interrogator.attributes.get(Attribute.INFLUENCE, 1) +
                        interrogator.skills.get(Skill.EMPATHY, 0))
+        # Apply environmental modifiers to empathy check
+        if self.room_states and getattr(subject, "location", None) and getattr(game_state, "station_map", None):
+            room = game_state.station_map.get_room_name(*subject.location)
+            modifiers = self.room_states.get_resolution_modifiers(room)
+            # Use ResolutionSystem to apply the modifier
+            from core.resolution import ResolutionSystem
+            # If ResolutionSystem.adjust_pool exists, use it, otherwise assume modifiers are compatible
+            if hasattr(ResolutionSystem, "adjust_pool"):
+                 empathy_pool = ResolutionSystem.adjust_pool(empathy_pool, modifiers.observation_pool)
+            else:
+                 # Fallback: manually adjust
+                 empathy_pool += modifiers.observation_pool
+
         check = self.rng.calculate_success(empathy_pool)
 
         if check['success']:
@@ -224,12 +245,25 @@ class InterrogationSystem:
             trust_change -= 5
             dialogue = f"(Annoyed) Again? Fine... {dialogue}"
 
-        return InterrogationResult(
+        result = InterrogationResult(
             response_type=response_type,
             dialogue=dialogue,
             tells=tells,
             trust_change=trust_change
         )
+
+        # Emit event for UI/message reporter
+        event_bus.emit(GameEvent(EventType.INTERROGATION_RESULT, {
+            "interrogator": interrogator.name,
+            "subject": subject.name,
+            "topic": topic.value,
+            "dialogue": dialogue,
+            "response_type": response_type.value,
+            "tells": tells,
+            "trust_change": trust_change
+        }))
+
+        return result
 
     def make_accusation(self, accuser, accused, evidence, game_state):
         """Make a formal accusation against a crew member.
@@ -302,6 +336,15 @@ class InterrogationSystem:
             game_state.trust_system.modify_trust(accused.name, accuser.name, -20)
             for voter in voters:
                 game_state.trust_system.modify_trust(voter.name, accuser.name, -5)
+
+        # Emit reporting event
+        event_bus.emit(GameEvent(EventType.ACCUSATION_RESULT, {
+            "target": accused.name,
+            "outcome": outcome,
+            "supporters": [s.name for s in supporters],
+            "opposers": [o.name for o in opposers],
+            "supported": supported
+        }))
 
         return AccusationResult(
             supported=supported,

@@ -1,12 +1,20 @@
-from src.core.resolution import Attribute
-from src.core.event_system import event_bus, EventType, GameEvent
+from core.resolution import Attribute
+from core.event_system import event_bus, EventType, GameEvent
 
 class PsychologySystem:
     MAX_STRESS = 10
     
+    # Paranoia Thresholds
+    CONCERNED_THRESHOLD = 33
+    PANICKED_THRESHOLD = 66
+    
     def __init__(self):
         # Register for turn advance
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+        self.prev_paranoia_level = 0
+
+    def cleanup(self):
+        event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
 
     def update(self, game_state):
         """
@@ -22,7 +30,21 @@ class PsychologySystem:
                     stress_gain = abs(game_state.temperature) // 20
                     self.add_stress(m, max(1, int(stress_gain)))
 
-        # 2. Panic Resolution
+        # 2. Isolation Checks
+        # Humans gain stress when alone (fear of being picked off)
+        room_counts = {}
+        for m in game_state.crew:
+            if m.is_alive:
+                room_name = game_state.station_map.get_room_name(*m.location)
+                room_counts[room_name] = room_counts.get(room_name, 0) + 1
+        
+        for m in game_state.crew:
+            if m.is_alive and not m.is_infected: # Things don't feel isolation stress
+                room_name = game_state.station_map.get_room_name(*m.location)
+                if room_counts[room_name] == 1:
+                    self.add_stress(m, 1)
+
+        # 3. Panic Resolution & Cascades
         for m in game_state.crew:
             if m.is_alive:
                 is_panic, effect = self.resolve_panic(m, game_state)
@@ -30,6 +52,16 @@ class PsychologySystem:
                     game_state.journal.append(f"[TURN {game_state.turn}] {m.name} PANICKED: {effect}!")
                     if m == game_state.player:
                         print(f"\n*** SYSTEM WARNING: {m.name.upper()} IS PANICKING! Effect: {effect.upper()} ***")
+                    
+                    # Panic Cascade: Everyone in the same room gains stress
+                    room_name = game_state.station_map.get_room_name(*m.location)
+                    for witness in game_state.crew:
+                        if witness != m and witness.is_alive:
+                            witness_room = game_state.station_map.get_room_name(*witness.location)
+                            if witness_room == room_name:
+                                self.add_stress(witness, 2)
+                                if witness == game_state.player:
+                                    print(f"Seeing {m.name} lose it makes you uneasy. (+2 Stress)")
 
     def calculate_panic_threshold(self, character):
         """
@@ -79,4 +111,37 @@ class PsychologySystem:
         """Handle turn advancement via event bus."""
         game_state = event.payload.get("game_state")
         if game_state:
+            old_level = self.prev_paranoia_level
+            
+            # Update paranoia level
+            game_state.paranoia_level = min(100, game_state.paranoia_level + 1)
+            
+            # Process Local Environment Paranoia Modifiers
+            player_room = game_state.station_map.get_room_name(*game_state.player.location)
+            paranoia_mod = game_state.room_states.get_paranoia_modifier(player_room)
+            if paranoia_mod > 0:
+                game_state.paranoia_level = min(100, game_state.paranoia_level + paranoia_mod)
+            
+            new_level = game_state.paranoia_level
+            
+            # Threshold Check
+            thresholds = [self.CONCERNED_THRESHOLD, self.PANICKED_THRESHOLD]
+            for t in thresholds:
+                if old_level < t and new_level >= t:
+                    event_bus.emit(GameEvent(EventType.PARANOIA_THRESHOLD_CROSSED, {
+                        "threshold": t,
+                        "direction": "UP",
+                        "new_value": new_level,
+                        "old_value": old_level
+                    }))
+                elif old_level >= t and new_level < t:
+                    event_bus.emit(GameEvent(EventType.PARANOIA_THRESHOLD_CROSSED, {
+                        "threshold": t,
+                        "direction": "DOWN",
+                        "new_value": new_level,
+                        "old_value": old_level
+                    }))
+            
+            self.prev_paranoia_level = new_level
+                
             self.update(game_state)

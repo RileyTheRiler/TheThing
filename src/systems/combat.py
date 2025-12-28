@@ -4,7 +4,7 @@ Provides initiative, cover, and retreat mechanics for tactical combat.
 """
 
 from enum import Enum
-from core.resolution import Attribute, Skill
+from core.resolution import Attribute, Skill, ResolutionSystem
 from core.event_system import event_bus, EventType, GameEvent
 
 
@@ -61,8 +61,9 @@ class CombatSystem:
         "Mess Hall": [CoverType.LIGHT, CoverType.LIGHT],    # Tables
     }
 
-    def __init__(self, rng):
+    def __init__(self, rng, room_states=None):
         self.rng = rng
+        self.room_states = room_states
         self.active_combats = {}  # room_name -> CombatEncounter
 
     def roll_initiative(self, combatant):
@@ -120,8 +121,8 @@ class CombatSystem:
         available.remove(best)
         return best
 
-    def calculate_attack(self, attacker, defender, weapon, cover=CoverType.NONE):
-        """Calculate an attack roll with cover modifiers.
+    def calculate_attack(self, attacker, defender, weapon, cover=CoverType.NONE, room_modifiers=None):
+        """Calculate an attack roll with cover and environmental modifiers.
 
         Returns CombatResult with outcome.
         """
@@ -129,14 +130,27 @@ class CombatSystem:
         weapon_skill = getattr(weapon, 'weapon_skill', Skill.MELEE) if weapon else Skill.MELEE
         attr = Skill.get_attribute(weapon_skill)
 
-        attack_pool = attacker.attributes.get(attr, 1) + attacker.skills.get(weapon_skill, 0)
+        base_attack_pool = attacker.attributes.get(attr, 1) + attacker.skills.get(weapon_skill, 0)
+        
+        # Apply environmental modifiers
+        from core.resolution import ResolutionSystem
+        attack_pool = ResolutionSystem.resolve_pool(base_attack_pool, [attr, weapon_skill], room_modifiers)
+
+        # Apply environmental modifiers (e.g., darkness, cold)
+        modifiers = None
+        if self.room_states and room_name:
+            modifiers = self.room_states.get_resolution_modifiers(room_name)
+            attack_pool = ResolutionSystem.adjust_pool(attack_pool, modifiers.attack_pool)
 
         # Defense pool: PROWESS + Melee + cover bonus
-        defense_pool = (
+        base_defense_pool = (
             defender.attributes.get(Attribute.PROWESS, 1) +
-            defender.skills.get(Skill.MELEE, 0) +
-            self.COVER_BONUS[cover]
+            defender.skills.get(Skill.MELEE, 0)
         )
+        defense_pool = ResolutionSystem.resolve_pool(base_defense_pool, [Attribute.PROWESS, Skill.MELEE], room_modifiers)
+        
+        # Add cover bonus after environmental modifiers
+        defense_pool += self.COVER_BONUS[cover]
 
         # Can't attack if defender is in full cover
         if cover == CoverType.FULL:
@@ -227,22 +241,22 @@ class CombatSystem:
             # Failed retreat - opponents get free attacks
             return False, f"{combatant.name} fails to disengage! Opponents get free attacks!", None
 
-    def process_free_attack(self, attacker, defender, weapon=None):
+    def process_free_attack(self, attacker, defender, weapon=None, room_name=None):
         """Process a free attack (from failed retreat).
 
         Free attacks ignore cover.
         """
-        return self.calculate_attack(attacker, defender, weapon, CoverType.NONE)
+        return self.calculate_attack(attacker, defender, weapon, CoverType.NONE, room_name)
 
 
 class CombatEncounter:
     """Represents an active combat encounter in a room."""
 
-    def __init__(self, room_name, combatants, rng):
+    def __init__(self, room_name, combatants, rng, room_states=None):
         self.room_name = room_name
         self.combatants = combatants  # List of CrewMember
         self.rng = rng
-        self.combat_system = CombatSystem(rng)
+        self.combat_system = CombatSystem(rng, room_states)
         self.round = 0
         self.turn_order = []
         self.cover_assignments = {}  # combatant_name -> CoverType
