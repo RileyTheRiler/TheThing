@@ -1,9 +1,9 @@
 from typing import Dict, List, Optional
-from src.core.design_briefs import DesignBriefRegistry
-from src.core.event_system import event_bus, EventType, GameEvent
-from src.core.resolution import Attribute, ResolutionSystem, Skill
-from src.systems.room_state import RoomState
-from src.entities.crew_member import StealthPosture
+from core.design_briefs import DesignBriefRegistry
+from core.event_system import event_bus, EventType, GameEvent
+from core.resolution import Attribute, ResolutionSystem, Skill
+from systems.room_state import RoomState
+from entities.crew_member import StealthPosture
 
 class StealthSystem:
     """

@@ -11,6 +11,14 @@ from core.event_system import event_bus, EventType, GameEvent
 from core.resolution import ResolutionSystem
 
 
+class Verbosity(Enum):
+    """Logging verbosity levels."""
+    MINIMAL = 0
+    STANDARD = 1
+    VERBOSE = 2
+    DEBUG = 3
+
+
 class Difficulty(Enum):
     """Game difficulty levels affecting infection rates, mask decay, and starting conditions."""
     EASY = "Easy"
