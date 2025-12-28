@@ -23,7 +23,8 @@ app = Flask(__name__,
             template_folder='web/templates')
 app.config['SECRET_KEY'] = 'the-thing-secret-key-2025'
 CORS(app)
-socketio = SocketIO(app, cors_allowed_origins="*")
+# Use threading async_mode for Python 3.14 compatibility (eventlet not supported)
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # Global game state
 game_sessions = {}
