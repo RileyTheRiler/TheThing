@@ -168,7 +168,9 @@ class TerminalRenderer:
     
     def _render_legend(self, game_state):
         """Render the character legend."""
-        # Show NPCs in current viewport
+        legend_items = []
+
+        # Priority 1: NPCs in current viewport
         visible_npcs = []
         for member in game_state.crew:
             if self.camera.is_visible(*member.location):
@@ -176,6 +178,42 @@ class TerminalRenderer:
                 visible_npcs.append(f"{member.name[0]}={member.name}{status}")
         
         if visible_npcs:
+            legend_items.append(f"[{'] ['.join(visible_npcs[:3])}]")
+
+        # Priority 2: Items in current viewport
+        visible_items = []
+        # Iterate rooms to find those with items and origins in viewport
+        for room_name, items in self.map.room_items.items():
+            if not items:
+                continue
+
+            room_bounds = self.map.rooms.get(room_name)
+            if not room_bounds:
+                continue
+
+            # Origin is top-left
+            origin_x, origin_y = room_bounds[0], room_bounds[1]
+
+            if self.camera.is_visible(origin_x, origin_y):
+                # We see the * marker
+                # Add unique item names
+                for item in items:
+                    if item.name not in visible_items:
+                        visible_items.append(item.name)
+
+        if visible_items:
+            # Truncate if too many
+            if len(visible_items) > 2:
+                item_str = f"{visible_items[0]}, {visible_items[1]}, ..."
+            else:
+                item_str = ", ".join(visible_items)
+            legend_items.append(f"[*={item_str}]")
+
+        base_legend = "[@=You]"
+        if not legend_items:
+            return f"{base_legend} [.=Floor] [#=Wall] [+=Door]"
+
+        return f"{base_legend} {' '.join(legend_items)}"
             shown = visible_npcs[:4]
             extra = len(visible_npcs) - len(shown)
             legend = f"[@=You] [{'] ['.join(shown)}]"

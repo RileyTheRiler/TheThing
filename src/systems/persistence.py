@@ -54,6 +54,10 @@ class SaveManager:
             with open(filepath, 'r') as f:
                 data = json.load(f)
 
+            # Use provided factory, or instance factory, or return raw data
+            hydrator = factory if factory else self.game_state_factory
+            if hydrator:
+                return hydrator(data)
             # Use factory if provided to avoid circular dependencies
             hydrator = factory if factory else self.game_state_factory
             if hydrator:

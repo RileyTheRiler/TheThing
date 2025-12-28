@@ -70,11 +70,154 @@ class GameState:
                 "direction": direction
             }))
         else:
+            base_dialogue = f"I'm {self.behavior_type}."
+        
+        # Advanced Mimicry: Use Knowledge Tags
+        if self.is_infected and self.knowledge_tags and rng.random_float() < 0.4:
+            tag = rng.choose(self.knowledge_tags) if hasattr(rng, 'choose') else random.choice(self.knowledge_tags)
+            base_dialogue += f" I remember {tag}."
+
+        if game_state.time_system.temperature < 0:
+            show_vapor = True
+            # BIOLOGICAL SLIP HOOK
+            if self.is_infected and self.slipped_vapor:
+                show_vapor = False
+            
+            if show_vapor:
+                base_dialogue += " [VAPOR]"
+            else:
+                base_dialogue += " [NO VAPOR]"
+        return base_dialogue
+
+    def to_dict(self):
+        return {
+            "name": self.name,
+            "role": self.role,
+            "behavior_type": self.behavior_type,
+            "is_infected": self.is_infected,
+            "trust_score": self.trust_score,
+            "location": self.location,
+            "is_alive": self.is_alive,
+            "health": self.health,
+            "stress": self.stress,
+            "mask_integrity": self.mask_integrity,
+            "is_revealed": self.is_revealed,
+            "attributes": {k.name: v for k, v in self.attributes.items()},
+            "skills": {k.name: v for k, v in self.skills.items()},
+            "inventory": [i.to_dict() for i in self.inventory],
+            "knowledge_tags": self.knowledge_tags,
+            "schedule": self.schedule,
+            "invariants": self.invariants
+        }
+    
+    @classmethod
+    def from_dict(cls, data):
+        attrs = {Attribute[k]: v for k, v in data.get("attributes", {}).items()}
+        skills = {Skill[k]: v for k, v in data.get("skills", {}).items()}
+                    
+        m = cls(
+            name=data["name"],
+            role=data["role"],
+            behavior_type=data["behavior_type"],
+            attributes=attrs,
+            skills=skills
+        )
+        m.is_infected = data["is_infected"]
+        m.trust_score = data["trust_score"]
+        m.location = tuple(data["location"])
+        m.is_alive = data["is_alive"]
+        m.health = data["health"]
+        m.stress = data["stress"]
+        m.mask_integrity = data.get("mask_integrity", 100.0)
+        m.is_revealed = data.get("is_revealed", False)
+        m.schedule = data.get("schedule", [])
+        m.invariants = data.get("invariants", [])
+        m.knowledge_tags = data.get("knowledge_tags", [])
+        m.inventory = [Item.from_dict(i) for i in data.get("inventory", [])]
+        return m
+
+class StationMap:
+    def __init__(self, width=20, height=20):
+        self.width = width
+        self.height = height
+        self.grid = [['.' for _ in range(width)] for _ in range(height)]
+        self.rooms = {
+            "Rec Room": (5, 5, 10, 10),
+            "Infirmary": (0, 0, 4, 4),
+            "Generator": (15, 15, 19, 19),
+            "Kennel": (0, 15, 4, 19)
+        }
+        self.room_items = {} 
+
+    def add_item_to_room(self, item, x, y, turn=0):
+        room_name = self.get_room_name(x, y)
+        if room_name not in self.room_items:
+            self.room_items[room_name] = []
+        self.room_items[room_name].append(item)
+        item.add_history(turn, f"Dropped in {room_name}")
+
+    def get_items_in_room(self, x, y):
+        room_name = self.get_room_name(x, y)
+        return self.room_items.get(room_name, [])
+
+    def remove_item_from_room(self, item_name, x, y):
+        room_name = self.get_room_name(x, y)
+        if room_name in self.room_items:
+            for i, item in enumerate(self.room_items[room_name]):
+                if item.name.upper() == item_name.upper():
+                    return self.room_items[room_name].pop(i)
+        return None
+
+    def is_walkable(self, x, y):
+        return 0 <= x < self.width and 0 <= y < self.height
+
+    def get_room_name(self, x, y):
+        for name, (x1, y1, x2, y2) in self.rooms.items():
+            if x1 <= x <= x2 and y1 <= y <= y2:
+                return name
+        return "Corridor (Sector {},{})".format(x, y)
+
+    def render(self, crew):
+        display_grid = [row[:] for row in self.grid]
+        for member in crew:
+            if member.is_alive:
+                x, y = member.location
+                if 0 <= x < self.width and 0 <= y < self.height:
+                    display_grid[y][x] = member.name[0] 
+        output = []
+        for row in display_grid:
+            output.append(" ".join(row))
+        return "\n".join(output)
+    
+    def to_dict(self):
+        # Serialize room_items
+        # room_items is Dict[RoomName, List[Item]]
+        items_dict = {}
+        for room, items in self.room_items.items():
+            items_dict[room] = [i.to_dict() for i in items]
+            
+        return {
+            "width": self.width,
+            "height": self.height,
+            "room_items": items_dict
+            # rooms and grid are static/derived for now, so we don't save grid unless it changes
+        }
+
+    @classmethod
+    def from_dict(cls, data):
+        sm = cls(data["width"], data["height"])
+        items_dict = data.get("room_items", {})
+        for room, items_data in items_dict.items():
+            sm.room_items[room] = [Item.from_dict(i) for i in items_data]
+        return sm
             self._paranoia_bucket = new_bucket
 
     def __init__(self, seed=None, difficulty=Difficulty.NORMAL, characters_path=None, start_hour=None, thresholds: SocialThresholds = None):
         self.social_thresholds = thresholds or SocialThresholds()
         self.rng = RandomnessEngine(seed)
+        self.time_system = TimeSystem()
+        self.save_manager = SaveManager(game_state_factory=GameState.from_dict)
+
         self.time_system = TimeSystem(start_hour=start_hour if start_hour is not None else 19)
         self.save_manager = SaveManager(game_state_factory=GameState.from_dict)
         self.characters_config_path = characters_path or os.path.join("config", "characters.json")
