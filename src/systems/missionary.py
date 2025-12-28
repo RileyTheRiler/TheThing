@@ -140,7 +140,6 @@ class MissionarySystem:
         is_corridor = "Corridor" in room_name
 
         potential_targets = []
-        witnesses = []
         human_witnesses_count = 0
 
         # Corridor logic constants
@@ -163,7 +162,7 @@ class MissionarySystem:
 
             if is_visible:
                 if other.is_infected:
-                    witnesses.append(other) # Other things don't count as witnesses against you, strictly speaking, but for now let's say they complicate the ritual? No, actually they help.
+                    pass
                     # Simplification: Only non-infected count as "Witnesses" that prevent the act.
                 else:
                     potential_targets.append(other)
