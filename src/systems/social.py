@@ -1,4 +1,4 @@
-from core.event_system import event_bus, EventType, GameEvent
+from src.core.event_system import event_bus, EventType, GameEvent
 
 __all__ = ['TrustMatrix', 'LynchMobSystem', 'DialogueManager']
 
@@ -116,12 +116,6 @@ class LynchMobSystem:
         if self.active_mob:
             if self.target and not self.target.is_alive:
                 self.disband_mob()
-            elif self.target:
-                # Emit update for dynamic tracking
-                event_bus.emit(GameEvent(EventType.LYNCH_MOB_UPDATE, {
-                    "target": self.target.name,
-                    "location": self.target.location
-                }))
             return None
 
         # Check for new targets
@@ -171,19 +165,6 @@ class DialogueManager:
         # Assuming speaker.get_dialogue handles the "base" slip logic, 
         # but DialogueManager wraps it with social context.
         
-        # 4. Check for Knowledge Tags (Agent 3: Missionary System)
-        # If the speaker has "harvested" knowledge, they can use it to feign humanity.
-        if hasattr(speaker, 'knowledge_tags') and speaker.knowledge_tags:
-            # 30% chance to use a knowledge tag to boost credibility
-            if rng.random_float() < 0.3:
-                tag = rng.choose(speaker.knowledge_tags) if hasattr(rng, 'choose') else speaker.knowledge_tags[0]
-                if "Protocol" in tag:
-                    role = tag.split(": ")[1]
-                    return f"I'm following {role} protocols exactly. You have nothing to worry about."
-                elif "Memory" in tag:
-                    interaction = tag.split(": ")[1]
-                    return f"I remember the {interaction}. I'm still me."
-
         # For now, let's generate context-aware lines
         if tone == "HOSTILE":
             options = [

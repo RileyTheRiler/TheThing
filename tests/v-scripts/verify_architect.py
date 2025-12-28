@@ -11,7 +11,7 @@ if src_path not in sys.path:
 # Import directly as 'engine' and 'process' since src is in path
 try:
     from engine import GameState, GameMode
-    from core.resolution import Attribute, Skill
+    from process.resolution import Attribute, Skill
 except ImportError as e:
     print(f"Import Error: {e}")
     # Fallback to try src. if direct fails? No, simpler to fail hard and debug path.
@@ -75,13 +75,10 @@ def run_verification():
     
     # Create new game and load
     game3 = GameState()
-    loaded_game = game3.save_manager.load_game(save_slot)
+    loaded_data = game3.save_manager.load_game(save_slot)
     
-    if loaded_game:
-        # If it returned a dict for some reason (shouldn't with the fix), handle it
-        if isinstance(loaded_game, dict):
-            print("WARNING: load_game returned dict instead of object.")
-            loaded_game = GameState.from_dict(loaded_game)
+    if loaded_data:
+        loaded_game = GameState.from_dict(loaded_data)
 
         print(f"Loaded State: HP={loaded_game.player.health}, Loc={loaded_game.player.location}")
         if loaded_game.player.health == 1 and loaded_game.player.location == (10, 10):

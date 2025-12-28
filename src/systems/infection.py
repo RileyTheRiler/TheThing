@@ -21,7 +21,8 @@ def check_for_communion(game_state):
             location_groups[loc] = []
         location_groups[loc].append(member)
     
-    # Instantiate ResolutionSystem once
+    # PERF: Hoist ResolutionSystem instantiation out of the loop to avoid O(N) allocations.
+    # Also fixes a crash where calculate_infection_risk was called with incorrect arguments.
     res = ResolutionSystem()
 
     # 2. Check each group
@@ -42,7 +43,6 @@ def check_for_communion(game_state):
                 lighting = "DARK" if not game_state.power_on else "LIGHT"
                 
                 # Corrected call signature: removed game_state argument
-                # Fixed call to match ResolutionSystem.calculate_infection_risk signature
                 risk = res.calculate_infection_risk(lighting, member.mask_integrity, game_state.paranoia_level)
                 
                 rng = game_state.rng

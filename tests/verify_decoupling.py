@@ -2,7 +2,6 @@ import os
 import sys
 
 # Add root to path so we can import src.x.y
-# Add root to path so we can import src as a package
 sys.path.append(os.getcwd())
 
 from src.engine import GameState
