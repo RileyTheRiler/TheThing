@@ -140,6 +140,7 @@ class MissionarySystem:
         is_corridor = "Corridor" in room_name
 
         potential_targets = []
+        witnesses = []
         human_witnesses_count = 0
 
         # Corridor logic constants
