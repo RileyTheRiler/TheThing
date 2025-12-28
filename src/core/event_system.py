@@ -12,7 +12,6 @@ class EventType(Enum):
 
     # "Lynch Mob" Hook (Psychologist -> Architect)
     LYNCH_MOB_TRIGGER = auto()
-    LYNCH_MOB_UPDATE = auto()
 
     # "Searchlight" Hook (Missionary -> Psychologist)
     SEARCHLIGHT_HARVEST = auto()
@@ -23,25 +22,6 @@ class EventType(Enum):
 
     # Sabotage
     POWER_FAILURE = auto()
-
-    # === REPORTING PATTERN (Tier 2.6) ===
-    # Systems emit these instead of returning strings
-
-    # Message display events
-    MESSAGE = auto()          # General message to display
-    WARNING = auto()          # Warning message (high visibility)
-    ERROR = auto()            # Error message
-    COMBAT_LOG = auto()       # Combat action results
-    DIALOGUE = auto()         # NPC dialogue
-    SYSTEM_LOG = auto()       # System/mechanical info
-
-    # Action result events
-    MOVEMENT = auto()         # Player/NPC movement
-    ITEM_PICKUP = auto()      # Item picked up
-    ITEM_DROP = auto()        # Item dropped
-    ATTACK_RESULT = auto()    # Attack outcome
-    TEST_RESULT = auto()      # Blood test result
-    BARRICADE_ACTION = auto() # Barricade built/broken
 
 @dataclass
 class GameEvent:

@@ -55,11 +55,6 @@ class CommandParser:
         # System
         'help': 'HELP', 'quit': 'EXIT', 'exit': 'EXIT',
         'advance': 'ADVANCE', 'wait': 'ADVANCE', 'pass': 'ADVANCE',
-
-        # Tier 6.3: Endings
-        'fix': 'REPAIR', 'repair': 'REPAIR', 'patch': 'REPAIR',
-        'signal': 'SIGNAL', 'call': 'SIGNAL', 'transmit': 'SIGNAL',
-        'fly': 'ESCAPE', 'escape': 'ESCAPE', 'takeoff': 'ESCAPE',
     }
     
     # Direction keywords

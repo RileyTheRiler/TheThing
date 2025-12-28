@@ -1,13 +1,12 @@
 import sys
 import os
 
-# Add root to path so we can import src.x.y
-sys.path.append(os.getcwd())
+sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
 
-from src.core.event_system import event_bus, EventType, GameEvent
-from src.engine import GameState, CrewMember
-from src.systems.psychology import PsychologySystem
-from src.systems.missionary import MissionarySystem
+from core.event_system import event_bus, EventType, GameEvent
+from engine import GameState, CrewMember
+from systems.psychology import PsychologySystem
+from systems.missionary import MissionarySystem
 
 def test_event_handling():
     print("Testing Event Bus & System Integration...")
@@ -26,9 +25,8 @@ def test_event_handling():
     print(f"Temp set to {game.time_system.temperature}. Blair Stress: {blair.stress}")
     
     # Emit Advance Turn
-    # Note: Event bus assumes RNG is in payload for some listeners
     print("Emitting TURN_ADVANCE...")
-    event_bus.emit(GameEvent(EventType.TURN_ADVANCE, {"game_state": game, "rng": game.rng}))
+    event_bus.emit(GameEvent(EventType.TURN_ADVANCE, {"game_state": game}))
     
     # Check if Stress Increased (Logic: abs(-20)//20 = 1 stress)
     print(f"Blair Stress after event: {blair.stress}")
@@ -49,7 +47,7 @@ def test_event_handling():
     game.paranoia_level = 80
     
     print("Emitting TURN_ADVANCE...")
-    event_bus.emit(GameEvent(EventType.TURN_ADVANCE, {"game_state": game, "rng": game.rng}))
+    event_bus.emit(GameEvent(EventType.TURN_ADVANCE, {"game_state": game}))
     
     print(f"Norris Mask after event: {norris.mask_integrity}")
     if norris.mask_integrity < 100:

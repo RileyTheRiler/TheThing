@@ -79,17 +79,7 @@ def run_verification():
     loaded_game = game3.save_manager.load_game(save_slot)
     
     if loaded_game:
-        # No need to manually hydrate anymore
-        # loaded_game = GameState.from_dict(loaded_data)
-        
-    loaded_game = game3.save_manager.load_game(save_slot)
-    
-    if loaded_game:
-        # If it returned a dict for some reason (shouldn't with the fix), handle it
-        if isinstance(loaded_game, dict):
-            print("WARNING: load_game returned dict instead of object.")
-            loaded_game = GameState.from_dict(loaded_game)
-
+        # Factory handled hydration
         print(f"Loaded State: HP={loaded_game.player.health}, Loc={loaded_game.player.location}")
         if loaded_game.player.health == 1 and loaded_game.player.location == (10, 10):
              print("PASS: Game state restored correctly.")
