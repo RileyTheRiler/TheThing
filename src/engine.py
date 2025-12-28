@@ -14,6 +14,9 @@ from src.systems.room_state import RoomStateManager, RoomState
 # Agent 4: Forensics
 from src.systems.forensics import BiologicalSlipGenerator, BloodTestSim, ForensicDatabase, EvidenceLog
 
+# Agent 8: Infection System (Ensure registration)
+from src.systems.infection import check_for_communion
+
 # Terminal Designer Systems (Agent 5)
 from src.ui.renderer import TerminalRenderer
 from src.ui.crt_effects import CRTOutput
