@@ -6,6 +6,60 @@ let commandHistory = [];
 let historyIndex = -1;
 let crewFilter = 'nearby'; // 'nearby', 'alive', or 'all'
 let currentEventMode = null; // 'blood-test', 'interrogation', 'combat', or null
+let commandModalOpen = false;
+let currentCommandCategory = 'all';
+
+// Command database for the command browser
+const COMMAND_DATABASE = [
+    // Movement
+    { name: 'NORTH', syntax: 'NORTH, N, GO NORTH', desc: 'Move north to an adjacent room', category: 'movement' },
+    { name: 'SOUTH', syntax: 'SOUTH, S, GO SOUTH', desc: 'Move south to an adjacent room', category: 'movement' },
+    { name: 'EAST', syntax: 'EAST, E, GO EAST', desc: 'Move east to an adjacent room', category: 'movement' },
+    { name: 'WEST', syntax: 'WEST, W, GO WEST', desc: 'Move west to an adjacent room', category: 'movement' },
+    { name: 'GO', syntax: 'GO <direction>', desc: 'Move in the specified direction', category: 'movement' },
+
+    // Investigation
+    { name: 'LOOK', syntax: 'LOOK, LOOK <target>', desc: 'Examine your surroundings or a specific target', category: 'investigation' },
+    { name: 'EXAMINE', syntax: 'EXAMINE <target>', desc: 'Closely examine a person, item, or feature', category: 'investigation' },
+    { name: 'SEARCH', syntax: 'SEARCH, SEARCH <location>', desc: 'Search the room or a specific area for hidden items', category: 'investigation' },
+    { name: 'LISTEN', syntax: 'LISTEN', desc: 'Listen carefully for sounds or movement', category: 'investigation' },
+
+    // Social
+    { name: 'TALK', syntax: 'TALK, TALK <person>', desc: 'Talk to nearby crew members', category: 'social' },
+    { name: 'INTERROGATE', syntax: 'INTERROGATE <person>', desc: 'Begin an interrogation to gather information', category: 'social' },
+    { name: 'ASK', syntax: 'ASK <topic>', desc: 'Ask about whereabouts, alibi, suspicions, behavior, or knowledge', category: 'social' },
+    { name: 'ACCUSE', syntax: 'ACCUSE <person>', desc: 'Formally accuse someone of being infected', category: 'social' },
+    { name: 'TAG', syntax: 'TAG <person>', desc: 'Mark someone as suspicious for tracking', category: 'social' },
+
+    // Combat
+    { name: 'ATTACK', syntax: 'ATTACK <target>', desc: 'Attack a target with your equipped weapon', category: 'combat' },
+    { name: 'DEFEND', syntax: 'DEFEND', desc: 'Take a defensive stance to reduce incoming damage', category: 'combat' },
+    { name: 'RETREAT', syntax: 'RETREAT <direction>', desc: 'Attempt to flee combat in a direction', category: 'combat' },
+    { name: 'HIDE', syntax: 'HIDE', desc: 'Attempt to hide from enemies', category: 'combat' },
+    { name: 'SNEAK', syntax: 'SNEAK <direction>', desc: 'Move quietly to avoid detection', category: 'combat' },
+
+    // Items
+    { name: 'TAKE', syntax: 'TAKE <item>, GET <item>', desc: 'Pick up an item from the room', category: 'items' },
+    { name: 'DROP', syntax: 'DROP <item>', desc: 'Drop an item from your inventory', category: 'items' },
+    { name: 'USE', syntax: 'USE <item>, USE <item> ON <target>', desc: 'Use an item, optionally on a target', category: 'items' },
+    { name: 'EQUIP', syntax: 'EQUIP <weapon>', desc: 'Equip a weapon for combat', category: 'items' },
+    { name: 'CRAFT', syntax: 'CRAFT <item1> <item2>', desc: 'Combine two items to create something new', category: 'items' },
+    { name: 'INVENTORY', syntax: 'INVENTORY, INV, I', desc: 'View your current inventory', category: 'items' },
+
+    // Blood Testing
+    { name: 'TEST', syntax: 'TEST <person>', desc: 'Begin a blood test on someone (requires blood test kit)', category: 'investigation' },
+    { name: 'HEAT', syntax: 'HEAT', desc: 'Heat the test wire during blood testing', category: 'investigation' },
+    { name: 'APPLY', syntax: 'APPLY', desc: 'Apply heated wire to blood sample', category: 'investigation' },
+
+    // System
+    { name: 'STATUS', syntax: 'STATUS', desc: 'View your current status and health', category: 'system' },
+    { name: 'HELP', syntax: 'HELP, HELP <command>', desc: 'Show available commands or help for a specific command', category: 'system' },
+    { name: 'WAIT', syntax: 'WAIT', desc: 'Wait and let time pass', category: 'system' },
+    { name: 'REST', syntax: 'REST', desc: 'Rest to recover health (if safe)', category: 'system' },
+    { name: 'BARRICADE', syntax: 'BARRICADE <direction>', desc: 'Barricade a door to slow enemies', category: 'system' },
+    { name: 'SAVE', syntax: 'SAVE', desc: 'Save your current game progress', category: 'system' },
+    { name: 'QUIT', syntax: 'QUIT', desc: 'End the current game session', category: 'system' }
+];
 
 // Common commands for autocomplete
 const COMMON_COMMANDS = [
@@ -38,14 +92,90 @@ function setupEventListeners() {
         });
     });
 
+    // Setup navigation buttons
+    document.querySelectorAll('.nav-btn[data-dir]').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const direction = this.dataset.dir.toUpperCase();
+            sendQuickCommand(direction);
+        });
+    });
+
+    // Setup command category buttons
+    document.querySelectorAll('.category-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.category-btn').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            currentCommandCategory = this.dataset.category;
+            filterCommands();
+        });
+    });
+
+    // Setup command modal close on outside click
+    const modal = document.getElementById('command-modal');
+    if (modal) {
+        modal.addEventListener('click', function(e) {
+            if (e.target === modal) {
+                closeCommandModal();
+            }
+        });
+    }
+
+    // Populate command list on load
+    populateCommandList();
+
     // Setup keyboard shortcuts for quick actions
     document.addEventListener('keydown', handleGlobalKeydown);
 }
 
 function handleGlobalKeydown(event) {
-    // Don't trigger shortcuts when typing in command input
+    // Handle Escape key to close modal
+    if (event.key === 'Escape') {
+        if (commandModalOpen) {
+            closeCommandModal();
+            event.preventDefault();
+            return;
+        }
+    }
+
+    // Handle ? key to open command browser
+    if (event.key === '?' || (event.key === '/' && event.shiftKey)) {
+        event.preventDefault();
+        openCommandModal();
+        return;
+    }
+
+    // Don't trigger shortcuts when typing in command input or search
     const commandInput = document.getElementById('command-input');
-    if (document.activeElement === commandInput) return;
+    const searchInput = document.getElementById('command-search');
+    if (document.activeElement === commandInput || document.activeElement === searchInput) {
+        // Allow arrow keys for navigation when in command input
+        if (document.activeElement === commandInput) {
+            if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+                return; // Let handleCommandInput handle history
+            }
+        }
+        return;
+    }
+
+    // Arrow keys for navigation
+    const arrowDirs = {
+        'ArrowUp': 'NORTH',
+        'ArrowDown': 'SOUTH',
+        'ArrowLeft': 'WEST',
+        'ArrowRight': 'EAST'
+    };
+
+    if (arrowDirs[event.key] && !event.ctrlKey && !event.altKey && !event.metaKey) {
+        event.preventDefault();
+        sendQuickCommand(arrowDirs[event.key]);
+        // Visual feedback on nav buttons
+        const navBtn = document.querySelector(`.nav-btn[data-dir="${arrowDirs[event.key].toLowerCase()}"]`);
+        if (navBtn) {
+            navBtn.classList.add('shortcut-active');
+            setTimeout(() => navBtn.classList.remove('shortcut-active'), 150);
+        }
+        return;
+    }
 
     // Number keys 1-9 for quick action buttons
     if (event.key >= '1' && event.key <= '9') {
@@ -511,6 +641,13 @@ function updateGameDisplay(state) {
     // Update event highlighting
     updateEventHighlight(state);
 
+    // Update minigame panels
+    updateBloodTestPanel(state);
+    updateInterrogationPanel(state);
+
+    // Update navigation buttons availability
+    updateNavigationButtons(state);
+
     // Update room items with shortcuts
     const itemsContainer = document.getElementById('room-items');
     if (state.items && state.items.length > 0) {
@@ -609,3 +746,163 @@ function startGameStateRefresh() {
 
 // Start refresh when game begins
 setTimeout(startGameStateRefresh, 1000);
+
+// ===== COMMAND BROWSER MODAL =====
+
+function openCommandModal() {
+    const modal = document.getElementById('command-modal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        commandModalOpen = true;
+        const searchInput = document.getElementById('command-search');
+        if (searchInput) {
+            searchInput.value = '';
+            searchInput.focus();
+        }
+        filterCommands();
+    }
+}
+
+function closeCommandModal() {
+    const modal = document.getElementById('command-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+        commandModalOpen = false;
+        document.getElementById('command-input').focus();
+    }
+}
+
+function populateCommandList() {
+    const container = document.getElementById('command-list');
+    if (!container) return;
+
+    container.innerHTML = COMMAND_DATABASE.map(cmd => `
+        <div class="command-item" data-category="${cmd.category}" data-name="${cmd.name}" onclick="insertCommand('${cmd.name}')">
+            <div class="command-item-header">
+                <span class="command-name">${cmd.name}</span>
+                <span class="command-category">${cmd.category}</span>
+            </div>
+            <div class="command-syntax">${cmd.syntax}</div>
+            <div class="command-desc">${cmd.desc}</div>
+        </div>
+    `).join('');
+}
+
+function filterCommands() {
+    const searchInput = document.getElementById('command-search');
+    const searchTerm = searchInput ? searchInput.value.toLowerCase() : '';
+    const items = document.querySelectorAll('.command-item');
+
+    items.forEach(item => {
+        const name = item.dataset.name.toLowerCase();
+        const category = item.dataset.category;
+        const desc = item.querySelector('.command-desc').textContent.toLowerCase();
+        const syntax = item.querySelector('.command-syntax').textContent.toLowerCase();
+
+        const matchesSearch = name.includes(searchTerm) ||
+                             desc.includes(searchTerm) ||
+                             syntax.includes(searchTerm);
+        const matchesCategory = currentCommandCategory === 'all' || category === currentCommandCategory;
+
+        if (matchesSearch && matchesCategory) {
+            item.classList.remove('hidden');
+        } else {
+            item.classList.add('hidden');
+        }
+    });
+}
+
+function insertCommand(command) {
+    closeCommandModal();
+    const input = document.getElementById('command-input');
+    if (input) {
+        input.value = command + ' ';
+        input.focus();
+    }
+}
+
+// ===== BLOOD TEST PANEL =====
+
+function updateBloodTestPanel(state) {
+    const panel = document.getElementById('blood-test-panel');
+    if (!panel) return;
+
+    if (state.blood_test_active) {
+        panel.classList.remove('hidden');
+
+        // Update subject
+        const subject = document.getElementById('blood-test-subject');
+        if (subject && state.blood_test_subject) {
+            subject.textContent = `Testing: ${state.blood_test_subject}`;
+        }
+
+        // Update thermometer
+        const thermometerFill = document.getElementById('thermometer-fill');
+        const wireTemp = document.getElementById('wire-temp');
+        const sampleStatus = document.getElementById('sample-status');
+
+        const temp = state.wire_temperature || 0;
+        if (thermometerFill) {
+            thermometerFill.style.width = `${temp}%`;
+        }
+        if (wireTemp) {
+            wireTemp.textContent = temp;
+        }
+        if (sampleStatus) {
+            if (temp >= 70) {
+                sampleStatus.textContent = 'READY TO APPLY';
+                sampleStatus.style.color = '#00ff41';
+            } else if (temp >= 40) {
+                sampleStatus.textContent = 'Warming...';
+                sampleStatus.style.color = '#ffaa00';
+            } else {
+                sampleStatus.textContent = 'Wire cold';
+                sampleStatus.style.color = '#ff3333';
+            }
+        }
+    } else {
+        panel.classList.add('hidden');
+    }
+}
+
+// ===== INTERROGATION PANEL =====
+
+function updateInterrogationPanel(state) {
+    const panel = document.getElementById('interrogation-panel');
+    if (!panel) return;
+
+    if (state.interrogation_active) {
+        panel.classList.remove('hidden');
+
+        // Update subject
+        const subject = document.getElementById('interrogation-subject');
+        if (subject && state.interrogation_subject) {
+            subject.textContent = `Interrogating: ${state.interrogation_subject}`;
+        }
+    } else {
+        panel.classList.add('hidden');
+    }
+}
+
+// ===== NAVIGATION AVAILABILITY =====
+
+function updateNavigationButtons(state) {
+    const directions = ['north', 'south', 'east', 'west'];
+
+    directions.forEach(dir => {
+        const btn = document.querySelector(`.nav-btn[data-dir="${dir}"]`);
+        if (btn) {
+            // Check if direction is available (if the game state provides this info)
+            const available = state.available_exits ?
+                state.available_exits.includes(dir.toUpperCase()) : true;
+
+            if (available) {
+                btn.classList.remove('nav-unavailable');
+                btn.disabled = false;
+            } else {
+                btn.classList.add('nav-unavailable');
+                btn.disabled = true;
+            }
+        }
+    });
+}
