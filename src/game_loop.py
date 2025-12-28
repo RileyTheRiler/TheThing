@@ -347,6 +347,28 @@ def _get_player_input(game):
         if not user_input:
             return []
 
+        # Single-key shortcuts (roguelike style)
+        if len(user_input) == 1:
+            shortcuts = {
+                'i': 'INVENTORY',
+                's': 'STATUS',
+                '?': 'HELP',
+                '.': 'ADVANCE',
+                ',': 'GET',  # Context: will list items if multiple
+                ';': 'LOOK',  # Look around
+                'w': 'MOVE NORTH',
+                'a': 'MOVE WEST',
+                'd': 'MOVE EAST',
+            }
+
+            if user_input.lower() in shortcuts:
+                expanded = shortcuts[user_input.lower()]
+                game.crt.output(f"[{expanded}]", crawl=False)
+                user_input = expanded
+
+        # Store original input for feedback comparison
+        original_input = user_input.upper()
+
         # Use CommandParser
         parsed = game.parser.parse(user_input)
         if not parsed:
@@ -360,6 +382,13 @@ def _get_player_input(game):
                 cmd.append(target)
             if parsed.get('args'):
                 cmd.extend(parsed['args'])
+
+            # Show command feedback if parser transformed the input
+            # (e.g., fuzzy matching, synonyms, natural language)
+            if parsed.get('raw') and parsed['raw'] != original_input:
+                interpreted_cmd = ' '.join(cmd)
+                if interpreted_cmd != original_input:
+                    game.crt.output(f"→ {interpreted_cmd}", crawl=False)
 
         game.audio.trigger_event('success')
         return cmd
@@ -431,6 +460,11 @@ HELP [TOPIC]  - Show help (topics: MOVEMENT, COMBAT, SOCIAL, FORENSICS,
 
 Type HELP <TOPIC> for detailed help on a category.
 Topics: MOVEMENT, COMBAT, SOCIAL, FORENSICS, INVENTORY, ENVIRONMENT, SYSTEM
+
+--- SINGLE-KEY SHORTCUTS ---
+i    Inventory          s    Status             ?    Help
+.    Advance/Wait       ,    Get item           ;    Look around
+w    Move North         a    Move West          d    Move East
 
 --- QUICK REFERENCE ---
 MOVE <DIR>         Move in a direction
@@ -986,6 +1020,10 @@ def _execute_command(game, cmd):
                     print("Sample prepared. Use HEAT to heat the wire, then APPLY.")
     else:
         print("Unknown command. Type HELP for a list of commands.")
+        # Suggest correction if available
+        suggestion = game.parser.suggest_correction(' '.join(cmd))
+        if suggestion:
+            print(suggestion)
 
     return True
 

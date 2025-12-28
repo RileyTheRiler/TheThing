@@ -136,6 +136,33 @@ function sendQuickCommand(command) {
     input.value = '';
 }
 
+function updateQuickActions(actions) {
+    const container = document.getElementById('context-actions');
+    if (!container) return;
+
+    // Clear existing buttons
+    container.innerHTML = '';
+
+    // Style mapping for different action types
+    const styleClasses = {
+        'info': 'quick-btn-info',
+        'social': 'quick-btn-social',
+        'forensic': 'quick-btn-forensic',
+        'item': 'quick-btn-item',
+        'danger': 'quick-btn-danger'
+    };
+
+    // Add new buttons based on context
+    actions.forEach(action => {
+        const button = document.createElement('button');
+        const styleClass = styleClasses[action.style] || 'quick-btn';
+        button.className = `quick-btn ${styleClass}`;
+        button.textContent = action.label;
+        button.onclick = () => sendQuickCommand(action.command);
+        container.appendChild(button);
+    });
+}
+
 function updateGameDisplay(state) {
     if (!state) return;
 
@@ -145,6 +172,11 @@ function updateGameDisplay(state) {
     document.getElementById('temperature').textContent = state.temperature + '°C';
     document.getElementById('power-status').textContent = state.power_on ? 'ON' : 'OFF';
     document.getElementById('location').textContent = state.location;
+
+    // Update context-aware quick actions
+    if (state.quick_actions) {
+        updateQuickActions(state.quick_actions);
+    }
 
     // Update room info
     document.getElementById('room-description').textContent = state.room_description || '';
