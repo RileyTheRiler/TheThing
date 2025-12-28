@@ -5,12 +5,19 @@ The game now supports a browser-based interface running on localhost!
 ## Quick Start
 
 ### Windows
+**Easiest Method:**
+1. Double-click `start_game.bat`
+2. Your browser will automatically open to `http://localhost:5000`
+
+**Alternative:**
 1. Double-click `start_web_server.bat`
-2. Open your browser to `http://localhost:5000`
+2. Manually navigate to `http://localhost:5000`
 
 ### Linux/Mac
 1. Run `./start_web_server.sh` (or `python3 start_web_server.py`)
 2. Open your browser to `http://localhost:5000`
+
+> **Note:** `start_game.bat` now launches the browser interface by default. If you prefer the original terminal version, use `start_game_terminal.bat` instead.
 
 ## Features
 
@@ -117,10 +124,12 @@ pip install Flask flask-socketio flask-cors python-socketio
 ## Original Terminal Version
 
 The original terminal version is still available! Use:
-- Windows: `start_game.bat`
+- Windows: `start_game_terminal.bat`
 - Linux/Mac: `python3 main.py`
 
 Both versions use the same game engine and save files.
+
+**Note:** The main `start_game.bat` launcher now opens the browser interface by default for the best experience.
 
 ## Enjoy!
 
