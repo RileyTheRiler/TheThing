@@ -32,18 +32,47 @@ if errorlevel 1 (
 echo.
 
 REM Start the web server and open browser
-echo Starting web server on http://localhost:5000
-echo Opening browser...
+echo ====================================================================
+echo   STARTING SERVERS...
+echo ====================================================================
 echo.
-echo Press CTRL+C in this window to stop the server
+echo [1/2] Starting Backend Server (Flask API)...
+echo       - Game logic and state management
+echo       - WebSocket connections
+echo       - Port: 5000
+echo.
+echo [2/2] Starting Frontend Server (Browser UI)...
+echo       - HTML/CSS/JavaScript interface
+echo       - Served by Flask at http://localhost:5000
+echo.
+echo Browser will open automatically in 3 seconds...
+echo Press CTRL+C in this window to stop all servers
 echo ====================================================================
 echo.
 
-REM Open browser after a brief delay to let server start
+REM Start the web server in background first
+start "The Thing - Backend Server" /MIN python start_web_server.py
+
+REM Wait for server to initialize
+timeout /t 3 /nobreak >nul
+
+REM Open browser
+echo Opening browser interface...
 start "" http://localhost:5000
 
-REM Start the web server
-python start_web_server.py
+echo.
+echo ====================================================================
+echo   ALL SERVERS RUNNING
+echo ====================================================================
+echo Backend Server: http://localhost:5000
+echo Frontend UI: Open in your browser
+echo.
+echo Keep this window open to keep servers running
+echo Press CTRL+C to stop all servers
+echo ====================================================================
+
+REM Wait for user to close
+pause >nul
 
 REM Pause if server exits with error
 if errorlevel 1 (
