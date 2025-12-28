@@ -725,6 +725,57 @@ body {
     box-shadow: 0 0 0 var(--terminal-dim);
 }
 
+/* Context-aware button styles */
+.quick-btn-info {
+    border-color: #0099ff;
+    color: #0099ff;
+}
+
+.quick-btn-info:hover {
+    background-color: #0099ff;
+    color: var(--bg-dark);
+}
+
+.quick-btn-social {
+    border-color: #00ffaa;
+    color: #00ffaa;
+}
+
+.quick-btn-social:hover {
+    background-color: #00ffaa;
+    color: var(--bg-dark);
+}
+
+.quick-btn-forensic {
+    border-color: #ffaa00;
+    color: #ffaa00;
+}
+
+.quick-btn-forensic:hover {
+    background-color: #ffaa00;
+    color: var(--bg-dark);
+}
+
+.quick-btn-item {
+    border-color: #aa00ff;
+    color: #aa00ff;
+}
+
+.quick-btn-item:hover {
+    background-color: #aa00ff;
+    color: var(--bg-dark);
+}
+
+.quick-btn-danger {
+    border-color: var(--danger-red);
+    color: var(--danger-red);
+}
+
+.quick-btn-danger:hover {
+    background-color: var(--danger-red);
+    color: var(--bg-dark);
+}
+
 /* Game Over Screen */
 #gameover-screen {
     justify-content: center;

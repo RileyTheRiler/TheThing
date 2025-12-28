@@ -30,6 +30,49 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 game_sessions = {}
 
 
+def _generate_quick_actions(game, player_room):
+    """Generate context-aware quick action buttons based on game state"""
+    actions = []
+
+    # Always available actions
+    actions.append({'label': 'Status', 'command': 'STATUS', 'style': 'info'})
+    actions.append({'label': 'Inventory', 'command': 'INVENTORY', 'style': 'info'})
+
+    # Crew members in the same room
+    crew_in_room = [m for m in game.crew if game.station_map.get_room_name(*m.location) == player_room and m.is_alive]
+
+    if crew_in_room:
+        actions.append({'label': 'Talk', 'command': 'TALK', 'style': 'social'})
+
+        # Add actions for each crew member in room
+        for member in crew_in_room[:3]:  # Limit to 3 to avoid clutter
+            actions.append({'label': f'Look at {member.name}', 'command': f'LOOK {member.name}', 'style': 'social'})
+
+            # Check if we can test them
+            scalpel = next((i for i in game.player.inventory if "SCALPEL" in i.name.upper()), None)
+            wire = next((i for i in game.player.inventory if "WIRE" in i.name.upper()), None)
+            if scalpel and wire:
+                actions.append({'label': f'Test {member.name}', 'command': f'TEST {member.name}', 'style': 'forensic'})
+
+    # Items in room
+    room_items = game.station_map.get_items_in_room(*game.player.location)
+    if room_items:
+        for item in room_items[:2]:  # Limit to 2
+            actions.append({'label': f'Get {item.name}', 'command': f'GET {item.name}', 'style': 'item'})
+
+    # Blood test in progress
+    if hasattr(game, 'blood_test_sim') and game.blood_test_sim.active:
+        actions.append({'label': 'Heat Wire', 'command': 'HEAT', 'style': 'forensic'})
+        if game.blood_test_sim.wire_temperature >= game.blood_test_sim.activation_temp:
+            actions.append({'label': 'Apply Wire', 'command': 'APPLY', 'style': 'forensic'})
+        actions.append({'label': 'Cancel Test', 'command': 'CANCEL', 'style': 'danger'})
+
+    # Always show help
+    actions.append({'label': 'Help', 'command': 'HELP', 'style': 'info'})
+
+    return actions
+
+
 def serialize_game_state(game):
     """Convert game state to JSON-serializable format"""
     player_room = game.station_map.get_room_name(*game.player.location)
@@ -64,6 +107,9 @@ def serialize_game_state(game):
     # Room description modifiers
     room_desc = game.room_states.get_room_description_modifiers(player_room)
 
+    # Generate context-aware quick actions
+    quick_actions = _generate_quick_actions(game, player_room)
+
     return {
         'turn': game.turn,
         'mode': game.mode.value,
@@ -81,7 +127,8 @@ def serialize_game_state(game):
         'map': map_display,
         'paranoia': game.paranoia_level,
         'player_health': game.player.health,
-        'player_alive': game.player.is_alive
+        'player_alive': game.player.is_alive,
+        'quick_actions': quick_actions
     }
 
 
