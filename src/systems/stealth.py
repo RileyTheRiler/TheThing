@@ -4,6 +4,7 @@ from core.event_system import event_bus, EventType, GameEvent
 from core.resolution import Attribute, ResolutionSystem, Skill
 from systems.room_state import RoomState
 from entities.crew_member import StealthPosture
+from systems.dialogue import DialogueSystem
 
 class StealthSystem:
     """
@@ -31,6 +32,45 @@ class StealthSystem:
         is_dark = room_states.has_state(room_name, RoomState.DARK)
         # Assuming most rooms have some furniture, but darkness guarantees it
         return True # Simplified: Can always TRY to hide, but darkness helps
+
+    def set_posture(self, subject, posture: StealthPosture):
+        """Assign a stealth posture to a subject."""
+        if hasattr(subject, "set_posture"):
+            subject.set_posture(posture)
+        else:
+            subject.stealth_posture = posture
+
+    def get_detection_chance(self, observer, subject, game_state, noise_level: int = 0) -> float:
+        """
+        Estimate probability that observer detects subject based on current modifiers.
+        Used by tests to ensure darkness/noise/posture affect detection odds.
+        """
+        observer_pool = observer.attributes.get(Attribute.LOGIC, 1) + observer.skills.get(Skill.OBSERVATION, 0)
+        subject_pool = subject.attributes.get(Attribute.PROWESS, 1) + subject.skills.get(Skill.STEALTH, 0)
+
+        posture = getattr(subject, "stealth_posture", StealthPosture.STANDING)
+        if posture == StealthPosture.CROUCHING:
+            subject_pool += 1
+        elif posture in (StealthPosture.CRAWLING,):
+            subject_pool += 2
+        elif posture in (StealthPosture.HIDING, StealthPosture.HIDDEN):
+            subject_pool += 4
+        elif posture in (StealthPosture.EXPOSED,):
+            subject_pool = max(1, subject_pool - 1)
+
+        room_name = game_state.station_map.get_room_name(*subject.location)
+        is_dark = not getattr(game_state, "power_on", True) or (game_state.room_states and game_state.room_states.has_state(room_name, RoomState.DARK))
+        if is_dark:
+            subject_pool += 2
+            observer_pool = max(1, observer_pool - 2)
+
+        noise_penalty = noise_level // 2
+        noise_bonus = noise_level
+        subject_pool = max(1, subject_pool - noise_penalty)
+        observer_pool = max(1, observer_pool + noise_bonus)
+
+        # Simple opposed-pool probability estimate: observer chance relative to combined pools
+        return min(1.0, max(0.0, observer_pool / (observer_pool + subject_pool)))
 
     def on_turn_advance(self, event: GameEvent):
         if self.cooldown > 0:
@@ -132,12 +172,7 @@ class StealthSystem:
                 "text": f"{opponent.name} spots you in {room}!"
             }))
             
-            # Contextual Dialogue
-            dialogue = opponent.get_reaction_dialogue("STEALTH_DETECTED")
-            event_bus.emit(GameEvent(EventType.DIALOGUE, {
-                "speaker": opponent.name,
-                "text": dialogue
-            }))
+            self._trigger_explain_away(opponent, player, game_state)
         else:
             opponent.detected_player = False
             event_bus.emit(GameEvent(EventType.MESSAGE, {
@@ -179,3 +214,32 @@ class StealthSystem:
         
         # Detected if observer wins
         return observer_result['success_count'] >= subject_result['success_count']
+
+    def _trigger_explain_away(self, observer, intruder, game_state):
+        """Route detection into the Explain Away dialogue node."""
+        dialogue_system = getattr(game_state, "dialogue_system", None) or DialogueSystem(rng=getattr(game_state, "rng", None))
+        result = dialogue_system.run_node("EXPLAIN_AWAY", observer, intruder, game_state, {"trigger_type": "STEALTH_DETECTED"}) if dialogue_system else None
+
+        if not result:
+            # Fallback to legacy single-line reaction
+            dialogue = observer.get_reaction_dialogue("STEALTH_DETECTED")
+            event_bus.emit(GameEvent(EventType.DIALOGUE, {
+                "speaker": observer.name,
+                "text": dialogue
+            }))
+            return
+
+        for line in result.lines:
+            event_bus.emit(GameEvent(EventType.DIALOGUE, {
+                "speaker": line.get("speaker", observer.name),
+                "text": line.get("text", "...")
+            }))
+
+        if result.success:
+            event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+                "text": f"{observer.name}'s suspicion drops after your explanation."
+            }))
+        elif result.success is False:
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": f"{observer.name} grows hostile and keeps eyes on you!"
+            }))
