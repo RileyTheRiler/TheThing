@@ -105,6 +105,22 @@ class StealthSystem:
         observer_result = res.roll_check(observer_pool, rng)
         
         player_evaded = subject_result['success_count'] > observer_result['success_count']
+        current_turn = event.payload.get("turn") or getattr(game_state, "turn", None)
+
+        # Suspicion adjustments (toward the player)
+        suspicion_delta = 0
+        if not player_evaded:
+            suspicion_delta = 3
+        elif player_evaded and (subject_result['success_count'] - observer_result['success_count']) < 2:
+            suspicion_delta = 1
+
+        # Biological slip/location hint exposes player to extra scrutiny
+        if getattr(player, "location_hint_active", False):
+            suspicion_delta += 1
+
+        if suspicion_delta and hasattr(opponent, "increase_suspicion"):
+            opponent.increase_suspicion(suspicion_delta, turn=current_turn)
+            opponent.suspicion_state = getattr(opponent, "suspicion_state", "idle")
         
         payload = {
             "room": room,
@@ -116,7 +132,9 @@ class StealthSystem:
             "player_successes": subject_result['success_count'],
             "opponent_successes": observer_result['success_count'],
             "subject_pool": subject_pool,
-            "observer_pool": observer_pool
+            "observer_pool": observer_pool,
+            "suspicion_delta": suspicion_delta,
+            "suspicion_level": getattr(opponent, "suspicion_level", 0)
         }
         event_bus.emit(GameEvent(EventType.STEALTH_REPORT, payload))
         
