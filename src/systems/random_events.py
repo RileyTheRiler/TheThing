@@ -17,6 +17,8 @@ class EventCategory(Enum):
     DISCOVERY = auto()    # Finding items, clues
     ATMOSPHERE = auto()   # Creepy sounds, paranoia triggers
     CREATURE = auto()     # Thing-related events
+    SABOTAGE = auto()     # Discovered sabotage
+    NPC = auto()          # NPC-triggered events
 
 
 class EventSeverity(Enum):
@@ -47,202 +49,89 @@ class RandomEvent:
 class RandomEventSystem:
     """Manages random event generation and execution."""
 
-    def __init__(self, rng):
+    def __init__(self, rng, config_registry=None):
         self.rng = rng
-        self.events = self._define_events()
+        self.config_registry = config_registry
+        self.events = self._load_events()
         self.event_history = []  # List of (turn, event_id)
         self.cooldowns = {}  # event_id -> turns until available
+        
+        event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
 
-    def _define_events(self) -> List[RandomEvent]:
-        """Define all possible random events."""
-        return [
-            # === WEATHER EVENTS ===
-            RandomEvent(
-                id="sudden_blizzard",
-                name="Sudden Blizzard",
-                description="A fierce blizzard strikes without warning! "
-                           "Visibility drops to zero. All outdoor movement halted.",
-                category=EventCategory.WEATHER,
-                severity=EventSeverity.MODERATE,
-                weight=8,
-                cooldown=10,
-                effect=self._effect_blizzard
-            ),
-            RandomEvent(
-                id="temperature_plunge",
-                name="Temperature Plunge",
-                description="The temperature drops sharply. "
-                           "Frost begins forming on the walls.",
-                category=EventCategory.WEATHER,
-                severity=EventSeverity.MINOR,
-                weight=15,
-                effect=self._effect_temp_drop
-            ),
-            RandomEvent(
-                id="calm_weather",
-                name="Brief Calm",
-                description="The storm briefly subsides. "
-                           "An eerie silence falls over the station.",
-                category=EventCategory.WEATHER,
-                severity=EventSeverity.MINOR,
-                weight=10,
-            ),
+    def cleanup(self):
+        event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
 
-            # === EQUIPMENT EVENTS ===
-            RandomEvent(
-                id="lights_flicker",
-                name="Lights Flicker",
-                description="The lights flicker ominously for a moment. "
-                           "Power fluctuation detected.",
-                category=EventCategory.EQUIPMENT,
-                severity=EventSeverity.MINOR,
-                weight=20,
-                requires_power=True,
-            ),
-            RandomEvent(
-                id="generator_sputter",
-                name="Generator Sputter",
-                description="The generator sputters and coughs! "
-                           "It stabilizes, but power output is reduced.",
-                category=EventCategory.EQUIPMENT,
-                severity=EventSeverity.MODERATE,
-                weight=5,
-                requires_power=True,
-                cooldown=15,
-                effect=self._effect_generator_trouble
-            ),
-            RandomEvent(
-                id="radio_static",
-                name="Radio Static",
-                description="The radio crackles with unusual static. "
-                           "For a moment, you think you hear voices...",
-                category=EventCategory.EQUIPMENT,
-                severity=EventSeverity.MINOR,
-                weight=12,
-            ),
+    def _load_events(self) -> List[RandomEvent]:
+        """Load events from config or fallback to definitions."""
+        events = []
+        
+        if self.config_registry:
+            brief = self.config_registry.get_brief("random_events")
+            if brief and "events" in brief:
+                for event_data in brief["events"]:
+                    try:
+                        # Map string category to Enum
+                        category_str = event_data.get("category", "ATMOSPHERE")
+                        category = getattr(EventCategory, category_str, EventCategory.ATMOSPHERE)
+                        
+                        severity_str = event_data.get("severity", "MINOR")
+                        severity = getattr(EventSeverity, severity_str, EventSeverity.MINOR)
+                        
+                        # Create closure for effect execution
+                        effects_list = event_data.get("effects", [])
+                        
+                        # We need to capture effects_list in the lambda correctly
+                        def create_effect_runner(effects_data):
+                            return lambda game: self._execute_effects(game, effects_data)
+                        
+                        event_effect = create_effect_runner(effects_list) if effects_list else None
 
-            # === DISCOVERY EVENTS ===
-            RandomEvent(
-                id="hidden_supplies",
-                name="Hidden Supplies",
-                description="You notice a panel slightly ajar. "
-                           "Behind it: emergency supplies!",
-                category=EventCategory.DISCOVERY,
-                severity=EventSeverity.MODERATE,
-                weight=5,
-                min_turn=5,
-                effect=self._effect_find_supplies
-            ),
-            RandomEvent(
-                id="old_journal",
-                name="Old Journal Entry",
-                description="A crumpled journal page falls from a shelf. "
-                           "Previous crew notes about 'strange behavior'...",
-                category=EventCategory.DISCOVERY,
-                severity=EventSeverity.MINOR,
-                weight=8,
-                min_turn=3,
-            ),
+                        event = RandomEvent(
+                            id=event_data["id"],
+                            name=event_data["name"],
+                            description=event_data["description"],
+                            category=category,
+                            severity=severity,
+                            weight=event_data.get("weight", 10),
+                            min_turn=event_data.get("min_turn", 1),
+                            max_turn=event_data.get("max_turn", 999),
+                            cooldown=event_data.get("cooldown", 0),
+                            requires_power=event_data.get("requires_power"),
+                            requires_infected=event_data.get("requires_infected"),
+                            effect=event_effect
+                        )
+                        events.append(event)
+                    except Exception as e:
+                        print(f"Error loading event {event_data.get('id')}: {e}")
+        
+        return events
 
-            # === ATMOSPHERE EVENTS ===
-            RandomEvent(
-                id="distant_scream",
-                name="Distant Scream",
-                description="A blood-curdling scream echoes through the station! "
-                           "It came from... somewhere.",
-                category=EventCategory.ATMOSPHERE,
-                severity=EventSeverity.MODERATE,
-                weight=6,
-                min_turn=10,
-                requires_infected=True,
-                effect=self._effect_paranoia_spike
-            ),
-            RandomEvent(
-                id="shadow_movement",
-                name="Shadow Movement",
-                description="You catch movement in your peripheral vision. "
-                           "When you look, nothing is there.",
-                category=EventCategory.ATMOSPHERE,
-                severity=EventSeverity.MINOR,
-                weight=15,
-                min_turn=5,
-                effect=self._effect_minor_paranoia
-            ),
-            RandomEvent(
-                id="dogs_howl",
-                name="Dogs Howling",
-                description="The remaining dogs begin howling in unison. "
-                           "Something has them spooked.",
-                category=EventCategory.ATMOSPHERE,
-                severity=EventSeverity.MINOR,
-                weight=10,
-                requires_infected=True,
-            ),
-            RandomEvent(
-                id="power_outage_scare",
-                name="Momentary Blackout",
-                description="The lights go out completely for three seconds. "
-                           "When they return, everyone looks around nervously.",
-                category=EventCategory.ATMOSPHERE,
-                severity=EventSeverity.MODERATE,
-                weight=8,
-                requires_power=True,
-                effect=self._effect_blackout_scare
-            ),
-
-            # === CREATURE EVENTS (Thing-related) ===
-            RandomEvent(
-                id="strange_sounds",
-                name="Inhuman Sounds",
-                description="An unnatural gurgling sound comes from the walls. "
-                           "It stops as suddenly as it started.",
-                category=EventCategory.CREATURE,
-                severity=EventSeverity.MODERATE,
-                weight=4,
-                min_turn=15,
-                requires_infected=True,
-                effect=self._effect_paranoia_spike
-            ),
-            RandomEvent(
-                id="blood_trail",
-                name="Blood Trail Discovered",
-                description="Fresh blood droplets lead down the corridor... "
-                           "They disappear around the corner.",
-                category=EventCategory.CREATURE,
-                severity=EventSeverity.MAJOR,
-                weight=3,
-                min_turn=10,
-                requires_infected=True,
-                effect=self._effect_blood_trail
-            ),
-        ]
+    def on_turn_advance(self, event):
+        game_state = event.payload.get("game_state")
+        if game_state:
+            res_event = self.check_for_event(game_state)
+            if res_event:
+                self.execute_event(res_event, game_state)
 
     def check_for_event(self, game_state) -> Optional[RandomEvent]:
-        """Check if a random event should trigger this turn.
-
-        Args:
-            game_state: Current game state
-
-        Returns:
-            A RandomEvent if one triggers, None otherwise
-        """
+        """Check if a random event should trigger this turn."""
         # Update cooldowns
         for event_id in list(self.cooldowns.keys()):
             self.cooldowns[event_id] -= 1
             if self.cooldowns[event_id] <= 0:
                 del self.cooldowns[event_id]
 
-        # Base chance of event (increases with paranoia)
-        base_chance = 0.15 + (game_state.paranoia_level / 200)
+        # Base chance from config
+        base_chance = 0.15
+        if self.config_registry:
+            brief = self.config_registry.get_brief("random_events")
+            if brief:
+                base_chance = brief.get("base_chance", 0.15)
+                # Increase chance with paranoia
+                base_chance += (game_state.paranoia_level * brief.get("paranoia_multiplier", 0.005))
 
-        # Fix: RandomnessEngine wraps random but does not expose random() directly.
-        # Use random_float() if available or random.random()
-        if hasattr(self.rng, 'random_float'):
-            val = self.rng.random_float()
-        else:
-             import random
-             val = random.random()
-
+        val = self.rng.random_float()
+        
         if val > base_chance:
             return None
 
@@ -277,11 +166,7 @@ class RandomEventSystem:
 
         # Weighted random selection
         total_weight = sum(e.weight for e in eligible)
-        if hasattr(self.rng, 'random_float'):
-            roll = self.rng.random_float() * total_weight
-        else:
-            import random
-            roll = random.random() * total_weight
+        roll = self.rng.random_float() * total_weight
 
         cumulative = 0
         for event in eligible:
@@ -299,19 +184,30 @@ class RandomEventSystem:
         return None
 
     def execute_event(self, event: RandomEvent, game_state):
-        """Execute a random event's effect.
-
-        Args:
-            event: The event to execute
-            game_state: Current game state
-        """
+        """Execute a random event's effect."""
+        # Process description templates
+        description = event.description
+        
+        # Replace template placeholders if any
+        if "{{npc_name}}" in description or "{{target_name}}" in description:
+            # Pick valid agents for template
+            candidates = [m for m in game_state.crew if m.is_alive and m != game_state.player]
+            if candidates:
+                actor = self.rng.choose(candidates)
+                description = description.replace("{{npc_name}}", actor.name)
+                
+                targets = [m for m in game_state.crew if m.is_alive and m != actor]
+                if targets:
+                    target = self.rng.choose(targets)
+                    description = description.replace("{{target_name}}", target.name)
+        
         # Emit message event
         event_bus.emit(GameEvent(EventType.MESSAGE, {
-            'text': f"\n[EVENT: {event.name}]",
+            'text': f"\\n[EVENT: {event.name}]",
             'crawl': False
         }))
         event_bus.emit(GameEvent(EventType.MESSAGE, {
-            'text': event.description,
+            'text': description,
             'crawl': True
         }))
 
@@ -319,64 +215,147 @@ class RandomEventSystem:
         if event.effect:
             event.effect(game_state)
 
-    # === EVENT EFFECTS ===
+    def _execute_effects(self, game_state, effects_data: List[dict]):
+        """Execute a list of effect definitions."""
+        for effect in effects_data:
+            eff_type = effect.get("type")
+            
+            if eff_type == "power_off":
+                game_state.power_on = False
+                event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "The hum of the generator dies. Silence falls."}))
+                
+            elif eff_type == "all_rooms_dark":
+                if hasattr(game_state, 'room_states') and hasattr(game_state, 'station_map'):
+                    rooms = list(game_state.station_map.rooms.keys())
+                    for room in rooms:
+                        game_state.room_states.add_state(room, "DARK")
+                
+            elif eff_type == "random_rooms_dark":
+                count = effect.get("count", 1)
+                # This would require accessing RoomStateManager to set DARK state
+                if hasattr(game_state, 'room_states') and hasattr(game_state, 'station_map'):
+                    rooms = list(game_state.station_map.rooms.keys())
+                    targets = self.rng.choose_many(rooms, count)
+                    for room in targets:
+                        game_state.room_states.add_state(room, "DARK")
+                    target_str = ", ".join(targets)
+                    event_bus.emit(GameEvent(EventType.MESSAGE, {"text": f"Power lost in: {target_str}."}))
 
-    def _effect_blizzard(self, game):
-        """Blizzard effect: temperature drop, visibility issues."""
-        game.weather.trigger_northeasterly()
-        # Temperature is a property in GameState that reads from weather,
-        # but we might want to affect the base temp in time_system?
-        # GameState.temperature is a property: return self.weather.get_effective_temperature(self.time_system.temperature)
-        # So we can't subtract from it directly.
-        # We should modify time_system or let weather handle it.
-        # The weather system handles temp modification via intensity.
-        # But if we want an EXTRA drop:
-        game.time_system.temperature -= 10
+            elif eff_type == "paranoia":
+                amount = effect.get("amount", 5)
+                game_state.paranoia_level = min(100, game_state.paranoia_level + amount)
+                
+            elif eff_type == "require_repair":
+                target = effect.get("target")
+                if hasattr(game_state, 'sabotage'):
+                    if target == "generator":
+                        game_state.sabotage.generator_stress = 100 # Max stress/broken
+                        
+            elif eff_type == "destroy_equipment":
+                target = effect.get("target")
+                if target == "radio" and hasattr(game_state, 'sabotage'):
+                    game_state.sabotage.radio_working = False
+                    
+            elif eff_type == "sabotage_helicopter":
+                if hasattr(game_state, 'sabotage'):
+                    game_state.sabotage.helicopter_working = False
 
-    def _effect_temp_drop(self, game):
-        """Temperature drop effect."""
-        game.time_system.temperature -= 5
+            elif eff_type == "emit_event":
+                evt_type_str = effect.get("event_type")
+                target = effect.get("target")
+                if evt_type_str and hasattr(EventType, evt_type_str):
+                    evt_type = getattr(EventType, evt_type_str)
+                    event_bus.emit(GameEvent(evt_type, {"target": target}))
 
-    def _effect_generator_trouble(self, game):
-        """Generator trouble: possible power issues next few turns."""
-        # Increase chance of power failure
-        if hasattr(game, 'sabotage'):
-            game.sabotage.generator_stress += 20
+            elif eff_type == "weather_intensity":
+                amount = effect.get("amount", 1)
+                if hasattr(game_state, 'weather'):
+                    game_state.weather.intensity = min(3, game_state.weather.intensity + amount)
+                    
+            elif eff_type == "temperature_drop":
+                amount = effect.get("amount", 5)
+                if hasattr(game_state, 'time_system'):
+                    game_state.time_system.temperature -= amount
 
-    def _effect_find_supplies(self, game):
-        """Find hidden supplies."""
-        from entities.item import Item
-        # Add a useful item to player's current room
-        items = [
-            Item("First Aid Kit", "Emergency medical supplies", healing=2),
-            Item("Flare", "Emergency signal flare", weapon_skill=None, damage=1),
-            Item("Batteries", "Fresh batteries for flashlight"),
-        ]
-        chosen = self.rng.choose(items)
-        game.station_map.add_item_to_room(chosen, *game.player.location, game.turn)
-        event_bus.emit(GameEvent(EventType.MESSAGE, {
-            'text': f"Found: {chosen.name}!"
-        }))
+            elif eff_type == "flicker_lights":
+                if hasattr(game_state, 'crt'):
+                    game_state.crt.flicker(count=3, interval=0.1)
 
-    def _effect_paranoia_spike(self, game):
-        """Major paranoia increase."""
-        game.paranoia_level = min(100, game.paranoia_level + 15)
+            elif eff_type == "npc_action":
+                action = effect.get("action")
+                # Flavor logic for NPC actions
+                pass
+            
+            elif eff_type == "trust_change":
+                 # Simple trust hit to everyone or specific target
+                 amount = effect.get("amount", -5)
+                 if hasattr(game_state, 'trust_system'):
+                     # We'd need to know WHO caused it to lower trust specifically
+                     # For now, maybe lower global trust average or just player trust in random
+                     pass
 
-    def _effect_minor_paranoia(self, game):
-        """Minor paranoia increase."""
-        game.paranoia_level = min(100, game.paranoia_level + 5)
+            elif eff_type == "force_move_player":
+                # Forcing player to a random adjacent room
+                if hasattr(game_state, "player") and hasattr(game_state, "station_map"):
+                    current_room = game_state.station_map.get_room_name(*game_state.player.location)
+                    connections = game_state.station_map.get_connections(current_room)
+                    if connections:
+                        target_room = self.rng.choose(connections)
+                        
+                        # Calculate center of new room
+                        room_coords = game_state.station_map.rooms[target_room]
+                        cx = (room_coords[0] + room_coords[2]) // 2
+                        cy = (room_coords[1] + room_coords[3]) // 2
+                        
+                        game_state.player.location = (cx, cy)
+                        event_bus.emit(GameEvent(EventType.MOVEMENT, {
+                            "character": game_state.player.name,
+                            "from_room": current_room,
+                            "to_room": target_room,
+                            "forced": True
+                        }))
+                        event_bus.emit(GameEvent(EventType.MESSAGE, {
+                            "text": f"You scramble into the {target_room} to escape the burst!"
+                        }))
 
-    def _effect_blackout_scare(self, game):
-        """Momentary blackout: paranoia and glitch effect."""
-        game.paranoia_level = min(100, game.paranoia_level + 10)
-        game.crt.flicker(count=2, interval=0.15)
-
-    def _effect_blood_trail(self, game):
-        """Blood trail discovered: mark a random adjacent room as bloody."""
-        player_room = game.station_map.get_room_name(*game.player.location)
-        # Find adjacent rooms and mark one as bloody
-        adjacent = game.station_map.get_adjacent_rooms(*game.player.location)
-        if adjacent:
-            target_room = self.rng.choose(adjacent)
-            game.room_states.mark_bloody(target_room)
-            game.paranoia_level = min(100, game.paranoia_level + 8)
+            elif eff_type == "spawn_item":
+                # Spawn an item in the player's current room or a random room
+                category = effect.get("category", "resource")
+                count = effect.get("count", 1)
+                
+                from entities.item import Item
+                
+                items_to_spawn = []
+                if category == "resource":
+                    items_to_spawn = [Item("Canned Food", "Emergency rations", category="resource"), Item("Fuel Canister", "Fuel for generator", category="resource")]
+                elif category == "weapon":
+                    items_to_spawn = [Item("Scalpel", "Medical tool, can be used as weapon", category="weapon")]
+                
+                if items_to_spawn:
+                    item_template = self.rng.choose(items_to_spawn)
+                    
+                    if hasattr(game_state, "station_map"):
+                        target_room_name = None
+                        if effect.get("location") == "player_room" and game_state.player:
+                            target_room_name = game_state.station_map.get_room_name(*game_state.player.location)
+                        else:
+                            target_room_name = self.rng.choose(list(game_state.station_map.rooms.keys()))
+                            
+                        if target_room_name:
+                             # Add to room inventory
+                             item_coords = game_state.station_map.rooms[target_room_name]
+                             item_x = (item_coords[0] + item_coords[2]) // 2
+                             item_y = (item_coords[1] + item_coords[3]) // 2
+                             game_state.station_map.add_item_to_room(item_template, item_x, item_y, game_state.turn)
+                             
+                             event_bus.emit(GameEvent(EventType.MESSAGE, {
+                                "text": f"You spot a {item_template.name} in the {target_room_name}."
+                            }))
+            
+            elif eff_type == "weather_clear":
+                amount = effect.get("amount", 1)
+                if hasattr(game_state, 'weather'):
+                    game_state.weather.intensity = max(0, game_state.weather.intensity - amount)
+                    event_bus.emit(GameEvent(EventType.MESSAGE, {
+                        "text": "The weather seems to be clearing up."
+                    }))

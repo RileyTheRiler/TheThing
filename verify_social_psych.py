@@ -6,12 +6,15 @@ Tests LynchMobSystem and DialogueManager functionality.
 import sys
 import os
 
+import sys
+import os
+
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-from src.systems.social import TrustMatrix, LynchMobSystem, DialogueManager
-from src.systems.architect import RandomnessEngine, GameMode
-from src.engine import CrewMember
+from systems.social import TrustMatrix, LynchMobSystem, DialogueManager
+from systems.architect import RandomnessEngine, GameMode
+from engine import CrewMember
 
 def test_lynch_mob_formation():
     print("Testing Lynch Mob Formation...")

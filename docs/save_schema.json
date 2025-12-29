@@ -1,0 +1,162 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "The Thing Save File",
+    "type": "object",
+    "description": "Minimal JSON schema describing persisted game state.",
+    "required": ["rng", "station_map", "crew"],
+    "properties": {
+        "turn": {
+            "type": "integer",
+            "minimum": 1
+        },
+        "power_on": {
+            "type": "boolean"
+        },
+        "paranoia_level": {
+            "type": "integer",
+            "minimum": 0
+        },
+        "mode": {
+            "type": "string",
+            "enum": ["Investigative", "Emergency", "Standoff", "Cinematic"]
+        },
+        "difficulty": {
+            "type": "string",
+            "enum": ["Easy", "Normal", "Hard"]
+        },
+        "helicopter_status": {
+            "type": "string",
+            "enum": ["BROKEN", "FIXED", "ESCAPED"]
+        },
+        "rescue_signal_active": {
+            "type": "boolean"
+        },
+        "rescue_turns_remaining": {
+            "type": ["integer", "null"]
+        },
+        "rng": {
+            "$ref": "#/definitions/rngState"
+        },
+        "time_system": {
+            "type": "object",
+            "properties": {
+                "temperature": { "type": "number" },
+                "turn_count": { "type": "integer" },
+                "hour": { "type": "integer", "minimum": 0, "maximum": 23 }
+            }
+        },
+        "station_map": {
+            "$ref": "#/definitions/stationMap"
+        },
+        "crew": {
+            "type": "array",
+            "items": { "$ref": "#/definitions/crewMember" }
+        },
+        "journal": {
+            "type": "array",
+            "items": { "type": "string" }
+        },
+        "trust": {
+            "type": "object",
+            "additionalProperties": { "type": "number" }
+        }
+    },
+    "definitions": {
+        "rngState": {
+            "type": "object",
+            "properties": {
+                "seed": { "type": ["integer", "null"] },
+                "rng_state": {
+                    "type": ["array", "null"],
+                    "items": [
+                        { "type": "integer" },
+                        { "type": "array", "items": { "type": "integer" } },
+                        { "type": ["integer", "null"] }
+                    ],
+                    "minItems": 3,
+                    "maxItems": 3
+                }
+            }
+        },
+        "item": {
+            "type": "object",
+            "required": ["name", "description"],
+            "properties": {
+                "name": { "type": "string" },
+                "description": { "type": "string" },
+                "is_evidence": { "type": "boolean" },
+                "weapon_skill": { "type": ["string", "null"] },
+                "damage": { "type": "integer" },
+                "uses": { "type": "integer" },
+                "effect": { "type": ["string", "null"] },
+                "effect_value": { "type": "number" },
+                "category": { "type": "string" },
+                "history": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                }
+            }
+        },
+        "crewMember": {
+            "type": "object",
+            "required": ["name", "role", "behavior_type"],
+            "properties": {
+                "name": { "type": "string" },
+                "role": { "type": "string" },
+                "behavior_type": { "type": "string" },
+                "is_infected": { "type": "boolean" },
+                "trust_score": { "type": "integer" },
+                "location": {
+                    "type": "array",
+                    "items": { "type": "integer" },
+                    "minItems": 2,
+                    "maxItems": 2
+                },
+                "is_alive": { "type": "boolean" },
+                "health": { "type": "integer" },
+                "stress": { "type": "integer" },
+                "mask_integrity": { "type": "number" },
+                "is_revealed": { "type": "boolean" },
+                "attributes": {
+                    "type": "object",
+                    "additionalProperties": { "type": "integer" }
+                },
+                "skills": {
+                    "type": "object",
+                    "additionalProperties": { "type": "integer" }
+                },
+                "inventory": {
+                    "type": "array",
+                    "items": { "$ref": "#/definitions/item" }
+                },
+                "schedule": {
+                    "type": "array",
+                    "items": { "type": ["string", "object"] }
+                },
+                "invariants": {
+                    "type": "array",
+                    "items": { "type": "object" }
+                },
+                "knowledge_tags": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                }
+            }
+        },
+        "stationMap": {
+            "type": "object",
+            "required": ["width", "height"],
+            "properties": {
+                "width": { "type": "integer" },
+                "height": { "type": "integer" },
+                "room_items": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": { "$ref": "#/definitions/item" }
+                    }
+                }
+            }
+        }
+    }
+}

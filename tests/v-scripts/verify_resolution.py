@@ -1,20 +1,21 @@
 import sys
 import os
-import random
 
 # Add project root to path
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from core.resolution import Attribute, Skill
 from engine import GameState, CrewMember
+from systems.architect import RandomnessEngine
 
 def test_dice_stats():
     print("Testing Dice Statistics (1000 rolls per pool)...")
+    rng = RandomnessEngine(seed=1337)
     # New logic: Success is a 6.
     for pool in [1, 3, 5, 8]:
         successes = 0
         for _ in range(1000):
-            dice = [random.randint(1, 6) for _ in range(pool)]
+            dice = [rng.roll_d6() for _ in range(pool)]
             if dice.count(6) > 0:
                 successes += 1
         

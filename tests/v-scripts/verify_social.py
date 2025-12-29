@@ -17,6 +17,9 @@ def test_social_systems():
     blair = next(m for m in game.crew if m.name == "Blair")
     # Set turn_count so derived hour is 10:00 AM, should be at Infirmary
     game.time_system.turn_count = (10 - game.time_system.start_hour) % 24
+    # Set turn_count so the derived hour is 10:00 AM (Infirmary shift)
+    desired_hour = 10
+    game.time_system.turn_count = (desired_hour - game.time_system.start_hour) % 24
     
     print(f"Blair current location: {blair.location} ({game.station_map.get_room_name(*blair.location)})")
     print("Advancing turn to trigger movement towards Infirmary...")

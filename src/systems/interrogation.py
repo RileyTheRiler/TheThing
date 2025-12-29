@@ -4,7 +4,7 @@ Allows players to question crew members and make formal accusations.
 """
 
 from enum import Enum
-from core.resolution import Attribute, Skill
+from core.resolution import Attribute, Skill, ResolutionSystem
 from core.event_system import event_bus, EventType, GameEvent
 
 
@@ -15,6 +15,7 @@ class InterrogationTopic(Enum):
     SUSPICION = "suspicion"      # Who do you suspect?
     BEHAVIOR = "behavior"        # Why did you do X?
     KNOWLEDGE = "knowledge"      # What do you know about X?
+    SCHEDULE_SLIP = "schedule_slip"  # Why are you off-schedule?
 
 
 class ResponseType(Enum):
@@ -110,6 +111,18 @@ class InterrogationSystem:
                 ("I saw {target} acting strange near the kennels.", ResponseType.HONEST),
                 ("I wish I knew more. This is terrifying.", ResponseType.NERVOUS),
             ]
+        },
+        InterrogationTopic.SCHEDULE_SLIP: {
+            True: [
+                ("You're imagining things. I go where I'm needed.", ResponseType.DEFENSIVE),
+                ("Someone must have messed with the schedule.", ResponseType.EVASIVE),
+                ("Why does it matter? Everything's falling apart.", ResponseType.ACCUSATORY),
+            ],
+            False: [
+                ("I... got lost. The corridors all look the same.", ResponseType.NERVOUS),
+                ("I was helping elsewhere. Didn't anyone tell you?", ResponseType.DEFENSIVE),
+                ("Sorry, I thought I was supposed to be in {room}.", ResponseType.HONEST),
+            ]
         }
     }
 
@@ -132,9 +145,10 @@ class InterrogationSystem:
         "Sweat beads on their forehead despite the cold.",
     ]
 
-    def __init__(self, rng):
+    def __init__(self, rng, room_states=None):
         self.rng = rng
         self.interrogation_count = {}  # name -> count (repeated interrogation raises suspicion)
+        self.room_states = room_states
 
     def interrogate(self, interrogator, subject, topic, game_state):
         """Conduct an interrogation on a subject.
@@ -188,9 +202,29 @@ class InterrogationSystem:
         # Determine if any tells are visible
         tells = []
 
+        # Get room modifiers for empathy check
+        room_modifiers = None
+        current_room_states = getattr(game_state, 'room_states', self.room_states)
+        if current_room_states:
+            room_name = getattr(game_state.station_map, 'get_room_name', lambda *args: "Unknown")(*subject.location)
+            if room_name != "Unknown":
+                room_modifiers = current_room_states.get_resolution_modifiers(room_name)
+
         # Roll EMPATHY check to notice tells
         empathy_pool = (interrogator.attributes.get(Attribute.INFLUENCE, 1) +
                        interrogator.skills.get(Skill.EMPATHY, 0))
+                       
+        # Apply environmental modifiers to empathy check
+        if room_modifiers:
+             # Use ResolutionSystem to apply the modifier if available or manual fallback
+             from core.resolution import ResolutionSystem
+             # If ResolutionSystem.adjust_pool exists, use it, otherwise assume modifiers are compatible
+             if hasattr(ResolutionSystem, "adjust_pool"):
+                  empathy_pool = ResolutionSystem.adjust_pool(empathy_pool, room_modifiers.observation_pool)
+             else:
+                  # Fallback: manually adjust
+                  empathy_pool += room_modifiers.observation_pool
+
         check = self.rng.calculate_success(empathy_pool)
 
         if check['success']:
@@ -224,12 +258,25 @@ class InterrogationSystem:
             trust_change -= 5
             dialogue = f"(Annoyed) Again? Fine... {dialogue}"
 
-        return InterrogationResult(
+        result = InterrogationResult(
             response_type=response_type,
             dialogue=dialogue,
             tells=tells,
             trust_change=trust_change
         )
+
+        # Emit event for UI/message reporter
+        event_bus.emit(GameEvent(EventType.INTERROGATION_RESULT, {
+            "interrogator": interrogator.name,
+            "subject": subject.name,
+            "topic": topic.value,
+            "dialogue": dialogue,
+            "response_type": response_type.value,
+            "tells": tells,
+            "trust_change": trust_change
+        }))
+
+        return result
 
     def make_accusation(self, accuser, accused, evidence, game_state):
         """Make a formal accusation against a crew member.
@@ -303,12 +350,81 @@ class InterrogationSystem:
             for voter in voters:
                 game_state.trust_system.modify_trust(voter.name, accuser.name, -5)
 
+        # Emit reporting event
+        event_bus.emit(GameEvent(EventType.ACCUSATION_RESULT, {
+            "target": accused.name,
+            "outcome": outcome,
+            "supporters": [s.name for s in supporters],
+            "opposers": [o.name for o in opposers],
+            "supported": supported
+        }))
+
         return AccusationResult(
             supported=supported,
             supporters=supporters,
             opposers=opposers,
             outcome_message=outcome
         )
+
+    def confront_schedule_slip(self, interrogator, subject, game_state):
+        """Special confrontation unlocked when a schedule slip is detected."""
+        if not getattr(subject, "schedule_slip_flag", False):
+            return InterrogationResult(
+                response_type=ResponseType.EVASIVE,
+                dialogue=f"{subject.name} looks confused. 'I'm on task, what's the problem?'",
+                tells=[],
+                trust_change=0
+            )
+
+        # Boosted empathy pool when you have concrete slip evidence
+        empathy_pool = (interrogator.attributes.get(Attribute.INFLUENCE, 1) +
+                        interrogator.skills.get(Skill.EMPATHY, 0) + 2)
+        check = self.rng.calculate_success(max(0, empathy_pool))
+
+        # Use slip reason as the confrontation opener
+        slip_reason = getattr(subject, "schedule_slip_reason", "You weren't where you were supposed to be.")
+        dialogue = f"You confront {subject.name}: {slip_reason}"
+
+        tells = [slip_reason]
+        trust_change = -5  # Baseline distrust from being called out
+
+        # Successful pressure yields bigger tells and suspicion shifts
+        if check["success"] or self.rng.random_float() < 0.35:
+            extra_tell = self.rng.choose(self.INFECTED_TELLS if subject.is_infected else self.HUMAN_TELLS)
+            if extra_tell:
+                tells.append(extra_tell)
+            trust_change -= 5  # Greater fallout when you catch them
+            # Tilt trust in player's perception of the subject
+            if hasattr(game_state, "trust_system"):
+                game_state.trust_system.modify_trust(interrogator.name, subject.name, -10)
+            # Amplify global suspicion slightly
+            game_state.paranoia_level = min(100, game_state.paranoia_level + 1)
+            dialogue += " They freeze under questioning."
+        else:
+            dialogue += " They deflect, but you make your concerns clear."
+
+        # Clear the slip so it can't be exploited repeatedly in one loop
+        subject.schedule_slip_flag = False
+
+        result = InterrogationResult(
+            response_type=ResponseType.DEFENSIVE if subject.is_infected else ResponseType.NERVOUS,
+            dialogue=dialogue,
+            tells=tells,
+            trust_change=trust_change
+        )
+
+        event_bus.emit(GameEvent(EventType.INTERROGATION_RESULT, {
+            "interrogator": interrogator.name,
+            "subject": subject.name,
+            "topic": InterrogationTopic.SCHEDULE_SLIP.value,
+            "dialogue": dialogue,
+            "response_type": result.response_type.value,
+            "tells": tells,
+            "trust_change": trust_change,
+            "slip_detected": True
+        }))
+
+        return result
 
     def get_interrogation_topics(self):
         """Return available interrogation topics."""

@@ -6,6 +6,11 @@ import time
 class EventType(Enum):
     # Core Game Events
     TURN_ADVANCE = auto()
+    CREW_DEATH = auto()
+    HELICOPTER_REPAIRED = auto()
+    SOS_EMITTED = auto()
+    ESCAPE_SUCCESS = auto()
+    POPULATION_STATUS = auto()
 
     # "Biological Slip" Hook (Missionary -> Terminal)
     BIOLOGICAL_SLIP = auto()
@@ -13,6 +18,9 @@ class EventType(Enum):
     # "Lynch Mob" Hook (Psychologist -> Architect)
     LYNCH_MOB_TRIGGER = auto()
     LYNCH_MOB_UPDATE = auto()
+    LYNCH_MOB_VOTE = auto()
+    TRUST_THRESHOLD_CROSSED = auto()
+    PARANOIA_THRESHOLD_CROSSED = auto()
 
     # "Searchlight" Hook (Missionary -> Psychologist)
     SEARCHLIGHT_HARVEST = auto()
@@ -23,6 +31,13 @@ class EventType(Enum):
 
     # Sabotage
     POWER_FAILURE = auto()
+
+    # Environmental (Weather/Temperature/Power interplay)
+    TEMPERATURE_THRESHOLD_CROSSED = auto()
+    ENVIRONMENTAL_STATE_CHANGE = auto()
+
+    # Social thresholds
+    # TRUST_THRESHOLD_CROSSED and PARANOIA_THRESHOLD_CROSSED defined above
 
     # === REPORTING PATTERN (Tier 2.6) ===
     # Systems emit these instead of returning strings
@@ -42,6 +57,15 @@ class EventType(Enum):
     ATTACK_RESULT = auto()    # Attack outcome
     TEST_RESULT = auto()      # Blood test result
     BARRICADE_ACTION = auto() # Barricade built/broken
+    STEALTH_REPORT = auto()   # Stealth encounter updates
+    CRAFTING_REPORT = auto()  # Crafting queue/status updates
+    REPAIR_COMPLETE = auto()  # Helicopter repair/escape status updates
+    SOS_SENT = auto()         # Radio rescue signal/arrival
+    ENDING_REPORT = auto()    # Ending triggers/results
+    INTERROGATION_RESULT = auto() # Questioning results
+    ACCUSATION_RESULT = auto()    # Formal accusation results
+    PERCEPTION_EVENT = auto()     # AI perception results (stealth)
+    DIAGNOSTIC = auto()           # System diagnostics (performance, budget)
 
 @dataclass
 class GameEvent:

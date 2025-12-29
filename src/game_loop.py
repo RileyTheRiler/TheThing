@@ -51,14 +51,52 @@ def _save_history():
         pass  # Can't write history file
 
 
+def _current_hiding_spot(game):
+    """Return hiding spot metadata for the player's current tile if available."""
+    station_map = getattr(game, "station_map", None)
+    if not station_map or not hasattr(station_map, "get_hiding_spot"):
+        return None
+    return station_map.get_hiding_spot(*game.player.location)
+
+
+def _movement_blocked_by_hiding(game):
+    """Prevent movement while the player is actively hiding in a cover tile."""
+    hiding_spot = _current_hiding_spot(game)
+    if hiding_spot and getattr(game.player, "stealth_posture", StealthPosture.STANDING) == StealthPosture.HIDING:
+        game.crt.warning("You are tucked into cover. Use UNHIDE or STAND before moving.")
+        return True
+    return False
+
+
+def _handle_hiding_entry(game, new_location):
+    """Auto-adjust posture when stepping into or out of a hiding tile."""
+    station_map = getattr(game, "station_map", None)
+    if not station_map or not hasattr(station_map, "get_hiding_spot"):
+        return
+
+    hiding_spot = station_map.get_hiding_spot(*new_location)
+    if hiding_spot:
+        game.player.set_posture(StealthPosture.HIDING)
+        cover_bonus = hiding_spot.get("cover_bonus", 0)
+        desc = hiding_spot.get("label", "cover")
+        los_note = " Line of sight is narrow here." if hiding_spot.get("blocks_los") else ""
+        game.crt.output(f"You melt into {desc} (+{cover_bonus} stealth).{los_note}")
+    elif getattr(game.player, "stealth_posture", StealthPosture.STANDING) == StealthPosture.HIDING:
+        game.player.set_posture(StealthPosture.CROUCHING)
+
+
 from core.resolution import Attribute, Skill
 from core.event_system import event_bus, EventType, GameEvent
-from systems.architect import Difficulty, DifficultySettings
+from systems.architect import Difficulty, DifficultySettings, RandomnessEngine
 from systems.combat import CombatSystem, CoverType, CombatEncounter
 from systems.interrogation import InterrogationSystem, InterrogationTopic
+from systems.commands import GameContext
 from systems.statistics import stats
+from entities.crew_member import StealthPosture
 from audio.audio_manager import Sound
 from ui.settings import settings, show_settings_menu
+from ui.crt_effects import CRTOutput
+from ui.title_screen import show_title_screen
 from engine import GameState
 
 
@@ -152,6 +190,24 @@ If the blood reacts violently - they're infected!
 Warning: A revealed Thing becomes hostile.
 """, "Continue..."),
         ("""
+STEALTH MECHANICS
+-----------------
+HIDE           - Attempt to hide in the current room
+SNEAK <DIR>    - Move stealthily to avoid detection
+
+Darkness and room conditions affect detection chances.
+Use stealth to avoid confrontations or observe unnoticed.
+""", "Continue..."),
+        ("""
+CRAFTING SYSTEM
+---------------
+CRAFT <RECIPE> - Combine items to create new tools
+
+Crafting allows you to create useful items from components.
+Check your inventory and experiment with combinations.
+Some items require multiple turns to craft.
+""", "Continue..."),
+        ("""
 COMBAT & SURVIVAL
 -----------------
 ATTACK <NAME>  - Attack someone (need weapon for damage)
@@ -177,10 +233,81 @@ Revealed Things will hunt humans aggressively.
     print("=" * 60 + "\n")
 
 
+def _show_help(topic=None):
+    """Display help information from command registry."""
+    from core.command_registry import COMMAND_REGISTRY, get_commands_by_category, get_all_categories
+    
+    if topic:
+        # Show commands for a specific category
+        topic = topic.upper()
+        commands = get_commands_by_category(topic)
+        if commands:
+            print(f"\n=== {topic} COMMANDS ===\n")
+            for cmd in commands:
+                print(f"{cmd.name:15} - {cmd.description}")
+                if cmd.aliases:
+                    print(f"{'':15}   Aliases: {', '.join(cmd.aliases)}")
+                print(f"{'':15}   Usage: {cmd.usage}")
+                print()
+        else:
+            print(f"Unknown help topic: {topic}")
+            print("Available topics: " + ", ".join(get_all_categories()))
+    else:
+        # Show overview with all categories
+        print("""
+=== THE THING: COMMAND REFERENCE ===
+
+Commands are organized by category. Use HELP <CATEGORY> for details.
+For example: HELP MOVEMENT, HELP COMBAT, HELP FORENSICS
+
+Available Categories:
+""")
+        categories = get_all_categories()
+        for category in categories:
+            commands = get_commands_by_category(category)
+            cmd_names = [cmd.name for cmd in commands[:5]]  # Show first 5
+            more = f" (+{len(commands)-5} more)" if len(commands) > 5 else ""
+            print(f"  {category:12} - {', '.join(cmd_names)}{more}")
+        
+        print("\nType HELP <CATEGORY> for detailed command information.")
+
+
 def main():
     """Main game loop - can be called from launcher or run directly."""
     # Set up readline for command history (arrow keys, history file)
     _setup_readline()
+
+    # Show title screen first
+    temp_crt = CRTOutput(palette="green")
+    temp_rng = RandomnessEngine()
+
+    menu_choice = show_title_screen(temp_crt, temp_rng)
+
+    # Handle menu selection
+    if menu_choice == 3:  # TERMINATE
+        print("\n\033[38;5;46mSystem terminated. Goodbye.\033[0m\n")
+        return
+    elif menu_choice == 1:  # ACCESS RECORDS
+        print("\n\033[38;5;46m[ACCESS DENIED] Personnel records are classified.\033[0m")
+        print("\033[38;5;46mPress ENTER to continue...\033[0m")
+        try:
+            input()
+        except EOFError:
+            pass
+        # Return to main menu by recursing
+        return main()
+    elif menu_choice == 2:  # SYSTEM CONFIG
+        print("\n\033[38;5;46m[SYSTEM CONFIG] This option will be available in a future update.\033[0m")
+        print("\033[38;5;46mPress ENTER to continue...\033[0m")
+        try:
+            input()
+        except EOFError:
+            pass
+        # Return to main menu by recursing
+        return main()
+
+    # menu_choice == 0: BEGIN SIMULATION
+    # Continue with game setup
 
     # Select difficulty before starting
     difficulty = _select_difficulty()
@@ -283,7 +410,11 @@ def _render_game_state(game):
     weather_status = game.weather.get_status()
     room_icons = game.room_states.get_status_icons(player_room)
 
-    game.crt.output(f"\n[TURN {game.turn}] MODE: {game.mode.value} | TIME: {game.time_system.hour:02}:00 | TEMP: {game.temperature:.1f}C | POWER: {'ON' if game.power_on else 'OFF'}")
+    mode_label = game.mode.value
+    if getattr(game.player, "in_vent", False):
+        mode_label += " (VENT)"
+
+    game.crt.output(f"\n[TURN {game.turn}] MODE: {mode_label} | TIME: {game.time_system.hour:02}:00 | TEMP: {game.temperature:.1f}C | POWER: {'ON' if game.power_on else 'OFF'}")
     game.crt.output(f"[LOC: {player_room}] {room_icons}")
     game.crt.output(f"[{weather_status}]")
 
@@ -295,6 +426,12 @@ def _render_game_state(game):
     room_desc = game.room_states.get_room_description_modifiers(player_room)
     if room_desc:
         game.crt.output(f">>> {room_desc}", crawl=True)
+
+    hiding_spot = _current_hiding_spot(game)
+    if hiding_spot and getattr(game.player, "stealth_posture", StealthPosture.STANDING) == StealthPosture.HIDING:
+        cover = hiding_spot.get("cover_bonus", 0)
+        los_text = "Vision is restricted from this angle." if hiding_spot.get("blocks_los") else "You stay concealed but keep your view."
+        game.crt.output(f"[HIDING] +{cover} cover from {hiding_spot.get('label', 'cover')}. {los_text}")
 
     room_items = game.station_map.get_items_in_room(*game.player.location)
     if room_items:
@@ -313,6 +450,28 @@ def _get_player_input(game):
         if not user_input:
             return []
 
+        # Single-key shortcuts (roguelike style)
+        if len(user_input) == 1:
+            shortcuts = {
+                'i': 'INVENTORY',
+                's': 'STATUS',
+                '?': 'HELP',
+                '.': 'ADVANCE',
+                ',': 'GET',  # Context: will list items if multiple
+                ';': 'LOOK',  # Look around
+                'w': 'MOVE NORTH',
+                'a': 'MOVE WEST',
+                'd': 'MOVE EAST',
+            }
+
+            if user_input.lower() in shortcuts:
+                expanded = shortcuts[user_input.lower()]
+                game.crt.output(f"[{expanded}]", crawl=False)
+                user_input = expanded
+
+        # Store original input for feedback comparison
+        original_input = user_input.upper()
+
         # Use CommandParser
         parsed = game.parser.parse(user_input)
         if not parsed:
@@ -327,6 +486,13 @@ def _get_player_input(game):
             if parsed.get('args'):
                 cmd.extend(parsed['args'])
 
+            # Show command feedback if parser transformed the input
+            # (e.g., fuzzy matching, synonyms, natural language)
+            if parsed.get('raw') and parsed['raw'] != original_input:
+                interpreted_cmd = ' '.join(cmd)
+                if interpreted_cmd != original_input:
+                    game.crt.output(f"→ {interpreted_cmd}", crawl=False)
+
         game.audio.trigger_event('success')
         return cmd
     except EOFError:
@@ -334,89 +500,42 @@ def _get_player_input(game):
 
 
 def _show_help(topic=None):
-    """Display help information for commands."""
-    help_topics = {
-        "MOVEMENT": """
-=== MOVEMENT ===
-MOVE <DIR>    - Move in a direction (NORTH/SOUTH/EAST/WEST or N/S/E/W)
-ADVANCE       - Pass time without moving
-""",
-        "COMBAT": """
-=== COMBAT ===
-ATTACK <NAME> - Attack a crew member (initiates combat with initiative rolls)
-COVER [TYPE]  - Take cover (LIGHT/HEAVY/FULL or auto-select best)
-RETREAT       - Attempt to flee from revealed Things
-BREAK <DIR>   - Break through a barricade in the given direction
-""",
-        "SOCIAL": """
-=== SOCIAL ===
-TALK               - Hear dialogue from everyone in the room
-LOOK <NAME>        - Observe a crew member for visual tells
-INTERROGATE <NAME> [TOPIC] - Question someone
-                     Topics: WHEREABOUTS, ALIBI, SUSPICION, BEHAVIOR, KNOWLEDGE
-ACCUSE <NAME>      - Make a formal accusation (triggers crew vote)
-""",
-        "FORENSICS": """
-=== FORENSICS ===
-TEST <NAME>   - Perform blood test (requires Scalpel + Copper Wire)
-HEAT          - Heat the wire during a test
-APPLY         - Apply hot wire to blood sample
-CANCEL        - Cancel current blood test
-TAG <NAME> <CATEGORY> <NOTE> - Log forensic observation
-                Categories: IDENTITY, TRUST, SUSPICION, BEHAVIOR
-DOSSIER <NAME> - View forensic file on a crew member
-LOG <ITEM>    - View chain of custody for an item
-""",
-        "INVENTORY": """
-=== INVENTORY ===
-INV / INVENTORY - View your inventory
-GET <ITEM>      - Pick up an item from the room
-DROP <ITEM>     - Drop an item in the room
-""",
-        "ENVIRONMENT": """
-=== ENVIRONMENT ===
-BARRICADE     - Barricade the current room (reinforces if already barricaded)
-STATUS        - View all crew locations and health
-TRUST <NAME>  - View trust matrix for a crew member
-JOURNAL       - View MacReady's journal entries
-""",
-        "SYSTEM": """
-=== SYSTEM ===
-SAVE [SLOT]   - Save game (default: auto)
-LOAD [SLOT]   - Load game (default: auto)
-SETTINGS      - Open settings menu (palette, text speed, audio)
-STATS         - View game statistics (session and career)
-EXIT          - Quit the game
-HELP [TOPIC]  - Show help (topics: MOVEMENT, COMBAT, SOCIAL, FORENSICS,
-                           INVENTORY, ENVIRONMENT, SYSTEM)
-""",
-    }
-
-    if topic and topic in help_topics:
-        print(help_topics[topic])
-    elif topic:
-        print(f"Unknown help topic: {topic}")
-        print("Available topics: " + ", ".join(help_topics.keys()))
+    """Display help information from command registry."""
+    from core.command_registry import COMMAND_REGISTRY, get_commands_by_category, get_all_categories
+    
+    if topic:
+        # Show commands for a specific category
+        topic = topic.upper()
+        commands = get_commands_by_category(topic)
+        if commands:
+            print(f"\n=== {topic} COMMANDS ===\n")
+            for cmd in commands:
+                print(f"{cmd.name:15} - {cmd.description}")
+                if cmd.aliases:
+                    print(f"{'':15}   Aliases: {', '.join(cmd.aliases)}")
+                print(f"{'':15}   Usage: {cmd.usage}")
+                print()
+        else:
+            print(f"Unknown help topic: {topic}")
+            print("Available topics: " + ", ".join(get_all_categories()))
     else:
+        # Show overview with all categories
         print("""
 === THE THING: COMMAND REFERENCE ===
 
-Type HELP <TOPIC> for detailed help on a category.
-Topics: MOVEMENT, COMBAT, SOCIAL, FORENSICS, INVENTORY, ENVIRONMENT, SYSTEM
+Commands are organized by category. Use HELP <CATEGORY> for details.
+For example: HELP MOVEMENT, HELP COMBAT, HELP FORENSICS
 
---- QUICK REFERENCE ---
-MOVE <DIR>         Move in a direction
-LOOK <NAME>        Observe someone
-TALK               Hear dialogue
-INTERROGATE <NAME> Question someone
-ATTACK <NAME>      Attack someone
-TEST <NAME>        Blood test (need Scalpel + Wire)
-BARRICADE          Barricade room
-STATUS             View crew status
-INV                View inventory
-SAVE / LOAD        Save/load game
-EXIT               Quit game
+Available Categories:
 """)
+        categories = get_all_categories()
+        for category in categories:
+            commands = get_commands_by_category(category)
+            cmd_names = [cmd.name for cmd in commands[:5]]  # Show first 5
+            more = f" (+{len(commands)-5} more)" if len(commands) > 5 else ""
+            print(f"  {category:12} - {', '.join(cmd_names)}{more}")
+        
+        print("\nType HELP <CATEGORY> for detailed command information.")
 
 
 def _execute_command(game, cmd):
@@ -425,137 +544,34 @@ def _execute_command(game, cmd):
         return True
 
     player_room = game.station_map.get_room_name(*game.player.location)
+    
+    # Use the CommandParser if available (Unified Command Handling)
+    if hasattr(game.parser, 'parse_and_execute'):
+        # Ensure context is set
+        context = GameContext(game)
+        game.parser.execute(cmd, context)
+        return True
+
+    # FALLBACK for legacy or direct handling if parser fails/missing
     action = cmd[0]
 
     if action == "EXIT":
         return False
-
     elif action == "HELP":
         topic = cmd[1].upper() if len(cmd) > 1 else None
         _show_help(topic)
-
     elif action == "ADVANCE":
         game.advance_turn()
-    elif action == "SETTINGS":
-        show_settings_menu(game, settings)
-    elif action == "STATS":
-        # Update session stats before display
-        if stats.current_session:
-            stats.current_session.turns_survived = game.turn
-        print(stats.get_current_session_summary())
-        print()
-        print(stats.get_career_summary())
     elif action == "SAVE":
         slot = cmd[1] if len(cmd) > 1 else "auto"
         game.save_manager.save_game(game, slot)
     elif action == "LOAD":
-        slot = cmd[1] if len(cmd) > 1 else "auto"
-        # The save manager now hydrates the object automatically via the factory we injected
-        new_state = game.save_manager.load_game(slot)
-        if new_state:
-            # Update the existing game object with state from the loaded object
-            game.__dict__.update(new_state.__dict__)
-        new_game_state = game.save_manager.load_game(slot)
-        if new_game_state:
-            # Note: This modifies the local game variable but won't affect the caller
-            # For a proper implementation, we'd need to return the new game state
-            # If load_game returned a dict (legacy fallback), rehydrate it
-            if isinstance(new_game_state, dict):
-                 new_game_state = GameState.from_dict(new_game_state)
-
-            game.__dict__.update(new_game_state.__dict__)
-            print("*** GAME LOADED ***")
-    elif action == "STATUS":
-        for m in game.crew:
-            status = "Alive" if m.is_alive else "DEAD"
-            msg = f"{m.name} ({m.role}): Loc {m.location} | HP: {m.health} | {status}"
-            avg_trust = game.trust_system.get_average_trust(m.name)
-            msg += f" | Trust: {avg_trust:.1f}"
-            print(msg)
-    elif action == "TRUST":
-        if len(cmd) < 2:
-            print("Usage: TRUST <NAME>")
-        else:
-            target_name = cmd[1]
-            print(f"--- TRUST MATRIX FOR {target_name.upper()} ---")
-            for m in game.crew:
-                if m.name in game.trust_system.matrix:
-                    val = game.trust_system.matrix[m.name].get(target_name.title(), 50)
-                    print(f"{m.name} -> {target_name.title()}: {val}")
-
-    # --- FORENSIC COMMANDS ---
-    elif action == "HEAT":
-        print(game.blood_test_sim.heat_wire())
-    elif action == "APPLY":
-        if not game.blood_test_sim.active:
-            print("No test in progress.")
-        else:
-            sample_name = game.blood_test_sim.current_sample
-            subject = next((m for m in game.crew if m.name == sample_name), None)
-            if subject:
-                print(game.blood_test_sim.apply_wire(subject.is_infected))
-    elif action == "CANCEL":
-        print(game.blood_test_sim.cancel())
-
-    # --- SOCIAL COMMANDS ---
-    elif action == "TALK":
-        for m in game.crew:
-            room = game.station_map.get_room_name(*m.location)
-            if room == player_room:
-                print(f"{m.name}: {m.get_dialogue(game)}")
-
-    elif action == "INTERROGATE" or action == "ASK":
-        if len(cmd) < 2:
-            print("Usage: INTERROGATE <NAME> [TOPIC]")
-            print("Topics: WHEREABOUTS, ALIBI, SUSPICION, BEHAVIOR, KNOWLEDGE")
-        else:
-            target_name = cmd[1]
-            target = next((m for m in game.crew if m.name.upper() == target_name.upper()), None)
-
-            if not target:
-                print(f"Unknown target: {target_name}")
-            elif game.station_map.get_room_name(*target.location) != player_room:
-                print(f"{target.name} is not here.")
-            elif not target.is_alive:
-                print(f"{target.name} cannot answer...")
-            else:
-                # Determine topic
-                if len(cmd) > 2:
-                    topic_name = cmd[2].upper()
-                    topic_map = {
-                        "WHEREABOUTS": InterrogationTopic.WHEREABOUTS,
-                        "ALIBI": InterrogationTopic.ALIBI,
-                        "SUSPICION": InterrogationTopic.SUSPICION,
-                        "BEHAVIOR": InterrogationTopic.BEHAVIOR,
-                        "KNOWLEDGE": InterrogationTopic.KNOWLEDGE
-                    }
-                    topic = topic_map.get(topic_name, InterrogationTopic.WHEREABOUTS)
-                else:
-                    topic = InterrogationTopic.WHEREABOUTS
-
-                # Initialize interrogation system if needed
-                if not hasattr(game, 'interrogation_system'):
-                    game.interrogation_system = InterrogationSystem(game.rng)
-
-                result = game.interrogation_system.interrogate(
-                    game.player, target, topic, game
-                )
-
-                print(f"\n[INTERROGATION: {target.name} - {topic.value.upper()}]")
-                print(f"\"{result.dialogue}\"")
-                print(f"[Response: {result.response_type.value}]")
-
-                if result.tells:
-                    print("\n[OBSERVATION]")
-                    for tell in result.tells:
-                        print(f"  - {tell}")
-
-                # Apply trust change
-                game.trust_system.modify_trust(target.name, game.player.name, result.trust_change)
-                if result.trust_change != 0:
-                    change_str = f"+{result.trust_change}" if result.trust_change > 0 else str(result.trust_change)
-                    print(f"[Trust: {change_str}]")
-
+         slot = cmd[1] if len(cmd) > 1 else "auto"
+         game.save_manager.load_game(slot)
+    
+    # ... (Most other logic is now handled by parser.execute)
+    # Keeping minimal fallback or specific debug commands if needed
+    
     elif action == "ACCUSE":
         if len(cmd) < 2:
             print("Usage: ACCUSE <NAME>")
@@ -581,7 +597,7 @@ def _execute_command(game, cmd):
 
                 # Initialize interrogation system if needed
                 if not hasattr(game, 'interrogation_system'):
-                    game.interrogation_system = InterrogationSystem(game.rng)
+                    game.interrogation_system = InterrogationSystem(game.rng, game.room_states)
 
                 result = game.interrogation_system.make_accusation(
                     game.player, target, evidence, game
@@ -712,7 +728,7 @@ def _execute_command(game, cmd):
                 print(f"{target.name} is already dead.")
             else:
                 # Initialize combat system
-                combat = CombatSystem(game.rng)
+                combat = CombatSystem(game.rng, game.room_states)
 
                 # Roll initiative
                 player_init = combat.roll_initiative(game.player)
@@ -730,11 +746,18 @@ def _execute_command(game, cmd):
                 if target_cover != CoverType.NONE:
                     print(f"[COVER] {target.name} has {target_cover.value} cover!")
 
-                result = combat.calculate_attack(game.player, target, weapon, target_cover)
+                result = combat.calculate_attack(
+                    game.player,
+                    target,
+                    weapon,
+                    target_cover,
+                    player_room,
+                    game
+                )
                 print(result.message)
 
                 if result.success:
-                    died = target.take_damage(result.damage)
+                    died = target.take_damage(result.damage, game_state=game)
                     if died:
                         print(f"*** {target.name} HAS DIED ***")
                         # Clear cover assignment
@@ -746,7 +769,7 @@ def _execute_command(game, cmd):
         if not hasattr(game, 'combat_cover'):
             game.combat_cover = {}
 
-        combat = CombatSystem(game.rng)
+        combat = CombatSystem(game.rng, game.room_states)
         available = combat.get_available_cover(player_room)
 
         if len(cmd) > 1:
@@ -788,7 +811,7 @@ def _execute_command(game, cmd):
         if not hostiles:
             print("There are no hostiles here to retreat from.")
         else:
-            combat = CombatSystem(game.rng)
+            combat = CombatSystem(game.rng, game.room_states)
             exits = ["NORTH", "SOUTH", "EAST", "WEST"]
 
             # Check which exits are valid
@@ -809,6 +832,7 @@ def _execute_command(game, cmd):
                 dx, dy = dx_map[exit_dir]
                 game.player.move(dx, dy, game.station_map)
                 print(f"You flee {exit_dir}!")
+                _handle_hiding_entry(game, game.player.location)
                 # Clear cover
                 if game.player.name in game.combat_cover:
                     del game.combat_cover[game.player.name]
@@ -817,7 +841,7 @@ def _execute_command(game, cmd):
                 # Failed retreat - hostiles get free attacks
                 print("[COMBAT] Hostiles get free attacks!")
                 for hostile in hostiles:
-                    free_result = combat.process_free_attack(hostile, game.player)
+                    free_result = combat.process_free_attack(hostile, game.player, room_name=player_room)
                     print(f"  {hostile.name}: {free_result.message}")
                     if free_result.success:
                         died = game.player.take_damage(free_result.damage)
@@ -829,6 +853,8 @@ def _execute_command(game, cmd):
         if len(cmd) < 2:
             print("Usage: MOVE <NORTH/SOUTH/EAST/WEST>")
         else:
+            if _movement_blocked_by_hiding(game):
+                return True
             direction = cmd[1]
             dx, dy = 0, 0
             if direction in ["NORTH", "N"]:
@@ -855,9 +881,15 @@ def _execute_command(game, cmd):
                 else:
                     game.player.location = (new_x, new_y)
                     print(f"You moved {direction}.")
+                    _handle_hiding_entry(game, game.player.location)
                     game.advance_turn()
             else:
                 print("Blocked.")
+
+    elif action in ["UNHIDE", "EXITCOVER"]:
+        game.player.set_posture(StealthPosture.STANDING)
+        print("You step out from cover and stand up.")
+        game.advance_turn()
 
     elif action == "BREAK":
         if len(cmd) < 2:
@@ -897,6 +929,7 @@ def _execute_command(game, cmd):
                         # Barricade broken - enter the room
                         game.player.location = (new_x, new_y)
                         print(f"You burst into the {target_room}!")
+                        _handle_hiding_entry(game, game.player.location)
 
                     game.advance_turn()
             else:
@@ -952,6 +985,10 @@ def _execute_command(game, cmd):
                     print("Sample prepared. Use HEAT to heat the wire, then APPLY.")
     else:
         print("Unknown command. Type HELP for a list of commands.")
+        # Suggest correction if available
+        suggestion = game.parser.suggest_correction(' '.join(cmd))
+        if suggestion:
+            print(suggestion)
 
     return True
 

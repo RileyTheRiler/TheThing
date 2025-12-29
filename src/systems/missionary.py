@@ -1,4 +1,6 @@
 import random
+from src.core.event_system import event_bus, EventType, GameEvent
+from src.core.logger import hidden_logger
 from core.event_system import event_bus, EventType, GameEvent
 
 class MissionarySystem:
@@ -7,20 +9,8 @@ class MissionarySystem:
         self.base_decay = 2.0     # Mask decay per turn
         self.stress_multiplier = 1.5 # Multiplier if in high-stress environment
         
-        # Agent 3: Role Habits (Standard Habits)
-        self.role_habits = {
-            "Pilot": ["Rec Room", "Corridor"],
-            "Mechanic": ["Rec Room", "Generator"],
-            "Biologist": ["Infirmary", "Rec Room"],
-            "Commander": ["Rec Room", "Corridor"],
-            "Cook": ["Rec Room"],
-            "Radio Op": ["Rec Room", "Corridor"], 
-            "Doctor": ["Infirmary", "Rec Room"],
-            "Geologist": ["Rec Room", "Corridor"],
-            "Meteorologist": ["Rec Room", "Corridor"],
-            "Dog Handler": ["Kennel", "Rec Room"],
-            "Assistant Mechanic": ["Rec Room", "Generator"]
-        }
+        # Register for turn advance
+        event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
         # Register for turn advance
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
 
@@ -33,6 +23,9 @@ class MissionarySystem:
         """
         game_state = event.payload.get("game_state")
         if game_state:
+            # Reset per-turn flags
+            for member in game_state.crew:
+                member.slipped_vapor = False
             self.update(game_state)
 
     def update(self, game_state):
@@ -50,13 +43,17 @@ class MissionarySystem:
                 
                 # Simple AI: Try to infect others
                 self.attempt_communion_ai(member, game_state)
+                
+                # Sabotage AI: Try to destroy equipment when alone
+                self.attempt_sabotage_ai(member, game_state)
 
     def process_habit_checks(self, member, game_state):
         """
         Calculates dissonance if NPC is away from their 'Standard' habitat.
+        Preferred rooms are derived from the member's schedule.
         """
         current_room = game_state.station_map.get_room_name(*member.location)
-        preferred = self.role_habits.get(member.role, ["Rec Room"])
+        preferred = self._extract_preferred_rooms(member)
         
         # If the room name contains any of the preferred room strings
         at_station = any(p in current_room for p in preferred)
@@ -65,6 +62,24 @@ class MissionarySystem:
             # DIRECT DISSONANCE: Being in the wrong place is taxing for the organism
             dissonance_penalty = 5.0
             member.mask_integrity -= dissonance_penalty
+
+    def _extract_preferred_rooms(self, member):
+        """
+        Extract preferred rooms from a member's schedule.
+        Returns a list of room names where the member spends time.
+        """
+        if not hasattr(member, 'schedule') or not member.schedule:
+            # Fallback: if no schedule, current location is "preferred"
+            return ["Corridor"]
+        
+        # Extract unique room names from schedule entries
+        rooms = set()
+        for entry in member.schedule:
+            room = entry.get("room")
+            if room:
+                rooms.add(room)
+        
+        return list(rooms) if rooms else ["Corridor"]
 
     def process_decay(self, member, game_state):
         """
@@ -88,7 +103,7 @@ class MissionarySystem:
         # BIOLOGICAL SLIP HOOK
         if game_state.temperature < 0:
             slip_chance = (1.0 - (member.mask_integrity / 100.0)) * 0.5
-            if random.random() < slip_chance:
+            if game_state.rng.random_float() < slip_chance:
                 event_bus.emit(GameEvent(EventType.BIOLOGICAL_SLIP, {
                     "character_name": member.name,
                     "type": "VAPOR"
@@ -112,12 +127,19 @@ class MissionarySystem:
         """
         Transforms the character into a monster.
         """
+        revealed_name = f"The-Thing-That-Was-{member.name}"
+        member.revealed_name = revealed_name
+
         print(f"!!! ALERT !!! {member.name} is convulsing... ({reason})")
         member.is_revealed = True
         member.role = "THING-BEAST"
-        member.name = f"The-Thing-That-Was-{member.name}"
         member.health = 10
-        print(f"!!! {member.name} TEARS THROUGH HUMAN FLESH! !!!")
+        print(f"!!! {revealed_name} TEARS THROUGH HUMAN FLESH! !!!")
+        # Preserve the character's name to keep references stable for AI/tests;
+        # use a themed alias only for messaging to avoid breaking lookups.
+        thing_alias = f"The-Thing-That-Was-{member.name}"
+        member.health = 10
+        print(f"!!! {thing_alias} TEARS THROUGH HUMAN FLESH! !!!")
 
     def attempt_communion_ai(self, agent, game_state):
         """
@@ -140,6 +162,20 @@ class MissionarySystem:
 
             other_room = game_state.station_map.get_room_name(*other.location)
             is_visible = False
+            if other_room == room_name:
+                is_visible = True
+            elif room_name and other_room and "Corridor" in room_name and "Corridor" in other_room:
+                # LOS for Corridors: Check distance
+                dist = ((agent.location[0] - other.location[0])**2 + (agent.location[1] - other.location[1])**2)**0.5
+                if dist <= 5:  # Visibility range in corridors
+                    is_visible = True
+
+            if is_visible:
+                if other.is_infected:
+                    pass
+                    # Simplification: Only non-infected count as "Witnesses" that prevent the act.
+                else:
+                    potential_targets.append(other)
 
             # Visibility Check
             if is_corridor:
@@ -223,23 +259,30 @@ class MissionarySystem:
         """
         Actual mechanics of assimilation.
         """
-        print(f">>> SILENT EVENT: {agent.name} approaches {target.name}...")
+        event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+            "text": f"SILENT EVENT: {agent.name} approaches {target.name}..."
+        }))
         
         # Refill Agent's Mask
         agent.mask_integrity = min(100, agent.mask_integrity + 50)
         
         # SEARCHLIGHT HARVEST: Stealing the host's memory/mannerisms
-        self.searchlight_harvest(agent, target)
+        self.searchlight_harvest(agent, target, game_state)
         
         # Infect Target
         target.is_infected = True
         target.mask_integrity = 100 # Fresh mask
+        
+        # Log to hidden state (or debug)
+        hidden_logger.info(f"{target.name} ASSIMILATED by {agent.name}")
 
-    def searchlight_harvest(self, agent, target):
+    def searchlight_harvest(self, agent, target, game_state=None):
         """
         Transfer nomenclature data from target to agent.
         """
-        print(f">>> SEARCHLIGHT HARVEST: {agent.name} extracts nomenclature from {target.name}.")
+        event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+            "text": f"SEARCHLIGHT HARVEST: {agent.name} extracts nomenclature from {target.name}."
+        }))
         
         # Reduce slip chances for the Agent
         for inv in agent.invariants:
@@ -255,3 +298,62 @@ class MissionarySystem:
                  agent.knowledge_tags.append(role_tag)
              if memory_tag not in agent.knowledge_tags:
                  agent.knowledge_tags.append(memory_tag)
+                 
+        # SEARCHLIGHT HARVEST HOOK
+        # Emit event for Psychology system to pick up "Psychic Tremors"
+        event_bus.emit(GameEvent(EventType.SEARCHLIGHT_HARVEST, {
+            "agent_name": agent.name,
+            "target_name": target.name,
+            "location": agent.location,
+            "game_state": game_state
+        }))
+
+    def attempt_sabotage_ai(self, agent, game_state):
+        """
+        Infected NPCs attempt to sabotage critical equipment when unobserved.
+        Priority: Radio > Helicopter > Blood Bank
+        """
+        # Only sabotage if mask integrity is high (confident)
+        if agent.mask_integrity < 50:
+            return
+            
+        # Check if alone (no human witnesses)
+        if self.has_witnesses_in_room(agent, game_state):
+            return
+            
+        current_room = game_state.station_map.get_room_name(*agent.location)
+        
+        # Radio Room: Destroy radio
+        if "Radio" in current_room and game_state.sabotage.radio_operational:
+            if game_state.rng.random_float() < 0.15:  # 15% chance per turn
+                msg = game_state.sabotage.trigger_radio_smashing(game_state, agent.name)
+                if msg:
+                    print(f">>> OFF-CAMERA: {agent.name} smashes the radio equipment.")
+                    
+        # Hangar: Destroy helicopter
+        elif "Hangar" in current_room and game_state.sabotage.chopper_operational:
+            if game_state.rng.random_float() < 0.10:  # 10% chance per turn
+                msg = game_state.sabotage.trigger_chopper_destruction(game_state, agent.name)
+                if msg:
+                    print(f">>> OFF-CAMERA: {agent.name} sabotages the helicopter.")
+                    
+        # Infirmary: Destroy blood bank
+        elif "Infirmary" in current_room and not game_state.blood_bank_destroyed:
+            if game_state.rng.random_float() < 0.20:  # 20% chance per turn
+                msg = game_state.sabotage.trigger_blood_sabotage(game_state)
+                if msg:
+                    print(f">>> OFF-CAMERA: {agent.name} destroys the blood samples.")
+
+    def has_witnesses_in_room(self, agent, game_state):
+        """Check if there are any human witnesses in the same room."""
+        room_name = game_state.station_map.get_room_name(*agent.location)
+        
+        for other in game_state.crew:
+            if other == agent or not other.is_alive or other.is_infected:
+                continue
+                
+            other_room = game_state.station_map.get_room_name(*other.location)
+            if other_room == room_name:
+                return True
+                
+        return False

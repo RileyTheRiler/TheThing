@@ -5,7 +5,6 @@ Authentic 1982 terminal aesthetics with text crawl, glitches, and scanlines.
 
 import sys
 import time
-import random
 
 # ANSI color codes for terminal effects
 class ANSI:
@@ -33,7 +32,7 @@ class ANSI:
     HC_BLACK_BG = "\033[48;5;16m" # Pure black background
 
     # Effects
-    GLITCH_CHARS = "▓▒░█▄▀■□▪▫"
+    GLITCH_CHARS = "#@%&?!<>*+=~"
     STATIC = ".:;!|+*#@"
 
 
@@ -68,11 +67,13 @@ class CRTOutput:
     Features: text crawl, glitches, scanlines, flicker.
     """
 
-    def __init__(self, palette="amber", crawl_speed=0.02):
+    def __init__(self, palette="amber", crawl_speed=0.02, rng=None):
         self.palette = palette
         self.crawl_speed = crawl_speed  # Seconds per character
         self.enabled = True
         self.glitch_level = 0  # 0-100, increases with paranoia
+        from systems.architect import RandomnessEngine
+        self.rng = rng or RandomnessEngine()
 
         # Set color based on palette
         self.set_palette(palette)
@@ -157,8 +158,8 @@ class CRTOutput:
         """Apply random glitch effects to text."""
         glitched = []
         for char in text:
-            if random.random() < self.glitch_level / 100:
-                glitched.append(random.choice(ANSI.GLITCH_CHARS))
+            if self.rng.random_float() < self.glitch_level / 100:
+                glitched.append(self.rng.choose(ANSI.GLITCH_CHARS))
             else:
                 glitched.append(char)
         print("".join(glitched))
@@ -174,7 +175,7 @@ class CRTOutput:
         while time.time() - start < duration:
             # Generate random static line
             width = 60
-            static_line = "".join(random.choice(ANSI.STATIC) for _ in range(width))
+            static_line = "".join(self.rng.choose(ANSI.STATIC) for _ in range(width))
             sys.stdout.write(f"\r{self.color}{static_line}{ANSI.RESET}")
             sys.stdout.flush()
             time.sleep(0.05)
@@ -215,11 +216,11 @@ class CRTOutput:
         Render a prominent header with box drawing.
         """
         width = len(text) + 4
-        border = "═" * width
+        border = "=" * width
         
-        print(f"{self.color}╔{border}╗{ANSI.RESET}")
-        print(f"{self.color}║  {ANSI.BOLD}{text}{ANSI.RESET}{self.color}  ║{ANSI.RESET}")
-        print(f"{self.color}╚{border}╝{ANSI.RESET}")
+        print(f"{self.color}+{border}+{ANSI.RESET}")
+        print(f"{self.color}|  {ANSI.BOLD}{text}{ANSI.RESET}{self.color}  |{ANSI.RESET}")
+        print(f"{self.color}+{border}+{ANSI.RESET}")
     
     def prompt(self, text="CMD"):
         """

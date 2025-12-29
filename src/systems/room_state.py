@@ -1,6 +1,6 @@
 from enum import Enum, auto
 from core.event_system import event_bus, EventType, GameEvent
-from core.resolution import Attribute, Skill
+from core.resolution import Attribute, Skill, ResolutionModifiers
 
 
 class RoomState(Enum):
@@ -28,10 +28,14 @@ class RoomStateManager:
         # Subscribe to events
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
         event_bus.subscribe(EventType.POWER_FAILURE, self.on_power_failure)
+        event_bus.subscribe(EventType.TEMPERATURE_THRESHOLD_CROSSED, self.on_temperature_threshold)
+        event_bus.subscribe(EventType.ENVIRONMENTAL_STATE_CHANGE, self.on_environmental_change)
 
     def cleanup(self):
         event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
         event_bus.unsubscribe(EventType.POWER_FAILURE, self.on_power_failure)
+        event_bus.unsubscribe(EventType.TEMPERATURE_THRESHOLD_CROSSED, self.on_temperature_threshold)
+        event_bus.unsubscribe(EventType.ENVIRONMENTAL_STATE_CHANGE, self.on_environmental_change)
     
     def _set_initial_states(self):
         if "Kennel" in self.room_states:
@@ -48,6 +52,31 @@ class RoomStateManager:
         for room_name in self.room_states:
             if room_name != "Generator":
                 self.add_state(room_name, RoomState.DARK)
+    
+    def on_temperature_threshold(self, event: GameEvent):
+        """React to temperature threshold crossings."""
+        direction = event.payload.get('direction')
+        
+        if direction == 'falling':
+            # Temperature dropped below freezing threshold - add FROZEN state
+            for room_name in self.room_states:
+                if room_name != "Generator":
+                    self.add_state(room_name, RoomState.FROZEN)
+        elif direction == 'rising':
+            # Temperature rose above freezing threshold - remove FROZEN state
+            for room_name in self.room_states:
+                self.remove_state(room_name, RoomState.FROZEN)
+    
+    def on_environmental_change(self, event: GameEvent):
+        """React to environmental state changes (e.g., power restoration)."""
+        change_type = event.payload.get('change_type')
+        power_on = event.payload.get('power_on')
+        
+        if change_type == 'power_restored' and power_on:
+            # Remove darkness from all non-barricaded rooms
+            for room_name in self.room_states:
+                if not self.has_state(room_name, RoomState.BARRICADED):
+                    self.remove_state(room_name, RoomState.DARK)
 
     def add_state(self, room_name, state):
         if room_name in self.room_states:
@@ -87,6 +116,9 @@ class RoomStateManager:
             for room_name in self.room_states:
                 if room_name != "Generator":
                     self.add_state(room_name, RoomState.FROZEN)
+
+        # Schedule slip detection (Agent hook)
+        self._check_schedule_slips(game_state)
     
     def get_room_description_modifiers(self, room_name):
         states = self.get_states(room_name)
@@ -103,9 +135,13 @@ class RoomStateManager:
         icons = []
         if RoomState.DARK in states: icons.append("[DARK]")
         if RoomState.FROZEN in states: icons.append("[COLD]")
-        if RoomState.BARRICADED in icons: icons.append("[BARR]")
+        if RoomState.BARRICADED in states: icons.append("[BARR]")
         if RoomState.BLOODY in states: icons.append("[BLOOD]")
         return " ".join(icons)
+    
+    def is_frozen(self, room_name):
+        """Convenience check for frozen rooms."""
+        return self.has_state(room_name, RoomState.FROZEN)
     
     def mark_bloody(self, room_name):
         self.add_state(room_name, RoomState.BLOODY)
@@ -114,6 +150,13 @@ class RoomStateManager:
             'text': f"Blood spatters across {room_name}."
         }))
         return f"Blood spatters across {room_name}."
+
+    def get_paranoia_modifier(self, room_name):
+        """Return paranoia modifier based on room states (e.g., BLOODY)."""
+        states = self.get_states(room_name)
+        if RoomState.BLOODY in states:
+            return 2
+        return 0
 
     def barricade_room(self, room_name, actor="You"):
         """Create or reinforce a barricade on a room."""
@@ -225,3 +268,70 @@ class RoomStateManager:
         if self.has_state(room_name, RoomState.BLOODY): modifier += 5
         if self.has_state(room_name, RoomState.DARK): modifier += 2
         return modifier
+
+    def get_resolution_modifiers(self, room_name):
+        """Return modifiers that affect ResolutionSystem calculations."""
+        modifiers = ResolutionModifiers()
+        states = self.get_states(room_name)
+
+        if RoomState.DARK in states:
+            modifiers.attack_pool -= 1
+            modifiers.observation_pool -= 1
+            modifiers.stealth_detection -= 0.15  # Harder to spot someone in the dark
+            # HEAD had more granular modifiers (Firearms -2, Melee -1, Empathy -1)
+            # These are roughly covered by attack_pool -= 1.
+
+        if RoomState.FROZEN in states:
+            modifiers.attack_pool -= 1  # Numb hands, sluggish attacks
+            modifiers.observation_pool -= 1  # Frosted visors, breath mist
+
+        return modifiers
+
+    # === Schedule Slip Detection ===
+    def _get_expected_room(self, member, current_hour):
+        """Return the expected room for a member based on schedule and hour."""
+        for entry in getattr(member, "schedule", []) or []:
+            start = entry.get("start", 0)
+            end = entry.get("end", 24)
+            room = entry.get("room")
+            if not room:
+                continue
+
+            # Handle wrap-around schedules (e.g., 20 -> 08)
+            if start < end:
+                if start <= current_hour < end:
+                    return room
+            else:
+                if current_hour >= start or current_hour < end:
+                    return room
+        return None
+
+    def _check_schedule_slips(self, game_state):
+        """Flag NPCs who are off their expected schedule location."""
+        if not hasattr(game_state, "crew"):
+            return
+
+        current_hour = getattr(game_state.time_system, "hour", getattr(game_state, "current_hour", 0))
+        for member in game_state.crew:
+            previous_flag = getattr(member, "schedule_slip_flag", False)
+            member.schedule_slip_flag = False
+            member.schedule_slip_reason = None
+
+            if not getattr(member, "is_alive", True):
+                continue
+            expected_room = self._get_expected_room(member, current_hour)
+            if not expected_room:
+                continue
+
+            actual_room = game_state.station_map.get_room_name(*member.location)
+            if actual_room != expected_room:
+                member.schedule_slip_flag = True
+                member.schedule_slip_reason = (
+                    f"{member.name} should be in {expected_room} around {current_hour:02d}00, "
+                    f"but is in {actual_room}."
+                )
+                # Emit once when the slip is first detected to avoid spam
+                if not previous_flag:
+                    event_bus.emit(GameEvent(EventType.MESSAGE, {
+                        "text": f"[SLIP] {member.name} is off-schedule (expected: {expected_room})."
+                    }))
