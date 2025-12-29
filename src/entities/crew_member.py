@@ -49,6 +49,11 @@ class CrewMember:
         self.slipped_vapor = False  # Hook: Biological Slip flag
         self.knowledge_tags = []    # Agent 3: Searchlight Harvest
         self.stealth_posture = StealthPosture.STANDING
+        self.investigating = False
+        self.investigation_goal = None
+        self.investigation_priority = 0
+        self.investigation_expires = 0
+        self.investigation_source = None
         self.in_vent = False        # Whether the character is moving through vents
         # Thermal sense/resistance baseline for heat-based detection
         self.attributes.setdefault(Attribute.THERMAL, 1)

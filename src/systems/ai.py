@@ -41,6 +41,11 @@ class AISystem:
         payload = event.payload
         if not payload:
             return
+
+        # Noise/distraction payloads (no player reference, direct coordinates)
+        if payload.get("target_location") and not payload.get("player_ref"):
+            self._handle_investigation_ping(payload)
+            return
         
         # Extract perception data
         game_state = payload.get("game_state")
@@ -99,6 +104,10 @@ class AISystem:
         """NPC reacts to almost detecting the player - investigates location."""
         observer.investigating = True
         observer.last_known_player_location = player.location
+        observer.investigation_goal = player.location
+        observer.investigation_priority = max(getattr(observer, "investigation_priority", 0), 2)
+        observer.investigation_expires = game_state.turn + 3
+        observer.investigation_source = "suspicion"
         self._record_last_seen(observer, player.location, game_state)
         observer.suspicion_level = 5 # Moderate suspicion
         self._apply_suspicion(observer, 2, game_state, reason="near_detection")
@@ -209,6 +218,7 @@ class AISystem:
         """
         if not member.is_alive:
             return
+        self._expire_investigation(member, game_state)
         current_turn = getattr(game_state, "turn", 0)
         if hasattr(member, "decay_suspicion"):
             member.decay_suspicion(current_turn)
@@ -238,10 +248,13 @@ class AISystem:
                 
         # 1. PRIORITY: Investigation (Suspicious/Almost Detected)
         if getattr(member, 'investigating', False) and hasattr(member, 'last_known_player_location'):
-            target_loc = member.last_known_player_location
+            target_loc = getattr(member, "investigation_goal", None) or member.last_known_player_location
             if member.location == target_loc:
                 # Arrived at investigation spot
                 member.investigating = False
+                member.investigation_goal = None
+                member.investigation_priority = 0
+                member.investigation_source = None
                 event_bus.emit(GameEvent(EventType.MESSAGE, {
                     "text": f"{member.name} checks the area but finds nothing."
                 }))
@@ -487,6 +500,50 @@ class AISystem:
         player_loc = self.cache.player_location if self.cache else game_state.player.location
         self._pathfind_step(member, player_loc[0], player_loc[1], game_state)
 
+    def _handle_investigation_ping(self, payload: Dict):
+        """Handle PERCEPTION_EVENT payloads that mark a noisy distraction."""
+        game_state = payload.get("game_state")
+        target_loc = payload.get("target_location")
+        if not game_state or not target_loc:
+            return
+
+        station_map = game_state.station_map
+        target_room = station_map.get_room_name(*target_loc)
+        priority = payload.get("priority_override", 1)
+        duration = max(1, payload.get("linger_turns", 2))
+        source = payload.get("source", "noise")
+        intensity = payload.get("intensity", 1)
+
+        for npc in game_state.crew:
+            if npc == game_state.player or not npc.is_alive:
+                continue
+            npc_room = station_map.get_room_name(*npc.location)
+            if target_room == npc_room or target_room in station_map.get_connections(npc_room):
+                npc.investigating = True
+                npc.investigation_goal = target_loc
+                npc.last_known_player_location = target_loc
+                npc.investigation_priority = max(getattr(npc, "investigation_priority", 0), priority)
+                npc.investigation_expires = game_state.turn + duration
+                npc.investigation_source = source
+
+        event_bus.emit(GameEvent(EventType.DIAGNOSTIC, {
+            "type": "AI_INVESTIGATION_PING",
+            "room": target_room,
+            "source": source,
+            "intensity": intensity,
+            "priority": priority
+        }))
+
+    def _expire_investigation(self, member: 'CrewMember', game_state: 'GameState'):
+        """Clear investigation goals once their timer elapses."""
+        expires = getattr(member, "investigation_expires", 0)
+        if expires and game_state.turn > expires:
+            member.investigating = False
+            member.investigation_goal = None
+            member.investigation_priority = 0
+            member.investigation_source = None
+            member.investigation_expires = 0
+            member.last_known_player_location = None
     def _record_last_seen(self, member: 'CrewMember', location: Tuple[int, int], game_state: 'GameState', room_name: Optional[str] = None) -> str:
         """Store last-seen player data on the NPC for later search behavior."""
         room = room_name or game_state.station_map.get_room_name(*location)

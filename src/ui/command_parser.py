@@ -37,6 +37,7 @@ class CommandParser:
         'pickup': 'GET', 'acquire': 'GET', 'collect': 'GET',
         'drop': 'DROP', 'discard': 'DROP', 'leave': 'DROP',
         'put': 'DROP', 'place': 'DROP',
+        'throw': 'THROW', 'toss': 'THROW', 'lob': 'THROW',
         'inventory': 'INVENTORY', 'inv': 'INVENTORY', 'items': 'INVENTORY',
         'bag': 'INVENTORY', 'stuff': 'INVENTORY',
         'craft': 'CRAFT', 'build': 'CRAFT', 'assemble': 'CRAFT', 'make': 'CRAFT',

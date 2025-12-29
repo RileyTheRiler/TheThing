@@ -83,6 +83,7 @@ class GameState:
         self.crew = []
         self._paranoia_level = 0
         self.design_registry = DesignBriefRegistry()
+        self.action_cooldowns = {}
         
         # 2. Basic Configuration
         self.characters_config_path = characters_path or os.path.join("config", "characters.json")
