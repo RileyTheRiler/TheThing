@@ -29,11 +29,14 @@ class ResponseType(Enum):
 class InterrogationResult:
     """Result of an interrogation attempt."""
 
-    def __init__(self, response_type, dialogue, tells=None, trust_change=0):
+    def __init__(self, response_type, dialogue, tells=None, trust_change=0,
+                 out_of_schedule=False, schedule_message=None):
         self.response_type = response_type
         self.dialogue = dialogue
         self.tells = tells or []  # Behavioral tells that might indicate infection
         self.trust_change = trust_change
+        self.out_of_schedule = out_of_schedule
+        self.schedule_message = schedule_message
 
 
 class AccusationResult:
@@ -48,6 +51,9 @@ class AccusationResult:
 
 class InterrogationSystem:
     """Handles interrogation dialogue and accusations."""
+
+    # Bonus dice when interrogating NPCs who are out of their scheduled location
+    WHEREABOUTS_BONUS = 2
 
     # Response templates for different topics and infection states
     RESPONSES = {
@@ -147,6 +153,16 @@ class InterrogationSystem:
             self.interrogation_count[subject.name] = 0
         self.interrogation_count[subject.name] += 1
 
+        # Check if subject is out of schedule (provides interrogation bonus)
+        out_of_schedule = False
+        schedule_bonus = 0
+        schedule_info = None
+        if hasattr(subject, 'is_out_of_schedule'):
+            out_of_schedule = subject.is_out_of_schedule(game_state)
+            if out_of_schedule:
+                schedule_bonus = self.WHEREABOUTS_BONUS
+                schedule_info = subject.get_schedule_info(game_state)
+
         # Get possible responses based on infection status
         is_infected = subject.is_infected
         responses = self.RESPONSES.get(topic, self.RESPONSES[InterrogationTopic.WHEREABOUTS])
@@ -200,7 +216,11 @@ class InterrogationSystem:
         # Roll EMPATHY check to notice tells
         empathy_pool = (interrogator.attributes.get(Attribute.INFLUENCE, 1) +
                        interrogator.skills.get(Skill.EMPATHY, 0))
-                       
+
+        # Apply schedule disruption bonus (target is out of expected location)
+        if schedule_bonus > 0:
+            empathy_pool += schedule_bonus
+
         # Apply environmental modifiers to empathy check
         if room_modifiers:
              # Use ResolutionSystem to apply the modifier if available or manual fallback
@@ -245,11 +265,23 @@ class InterrogationSystem:
             trust_change -= 5
             dialogue = f"(Annoyed) Again? Fine... {dialogue}"
 
+        # Add schedule disruption message if applicable
+        schedule_message = None
+        if out_of_schedule and schedule_info:
+            expected = schedule_info.get("expected_room", "Unknown")
+            current = schedule_info.get("current_room", "Unknown")
+            schedule_message = f"[!] {subject.name} should be in {expected}, but is in {current}. (+{schedule_bonus} to your check)"
+            # Being out of schedule is inherently suspicious - small extra trust penalty
+            if is_infected:
+                trust_change -= 2
+
         result = InterrogationResult(
             response_type=response_type,
             dialogue=dialogue,
             tells=tells,
-            trust_change=trust_change
+            trust_change=trust_change,
+            out_of_schedule=out_of_schedule,
+            schedule_message=schedule_message
         )
 
         # Emit event for UI/message reporter
@@ -260,7 +292,9 @@ class InterrogationSystem:
             "dialogue": dialogue,
             "response_type": response_type.value,
             "tells": tells,
-            "trust_change": trust_change
+            "trust_change": trust_change,
+            "out_of_schedule": out_of_schedule,
+            "schedule_message": schedule_message
         }))
 
         return result

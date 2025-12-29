@@ -574,6 +574,13 @@ class InterrogateCommand(Command):
         event_bus.emit(GameEvent(EventType.MESSAGE, {
             "text": f"[INTERROGATE: {target.name} - {topic.value.upper()}]"
         }))
+
+        # Show schedule disruption indicator if target is out of expected location
+        if result.out_of_schedule and result.schedule_message:
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": result.schedule_message
+            }))
+
         event_bus.emit(GameEvent(EventType.DIALOGUE, {
             "speaker": target.name,
             "text": result.dialogue

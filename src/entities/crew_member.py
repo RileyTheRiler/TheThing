@@ -380,6 +380,84 @@ class CrewMember:
 
         return max(1, base_noise + weight - stealth_skill + posture_mod + vent_penalty)
 
+    def is_out_of_schedule(self, game_state) -> bool:
+        """
+        Check if this character is not in their expected location based on schedule.
+
+        Returns True if the character is in a location that doesn't match their
+        current schedule entry, making them suspicious and easier to interrogate.
+        """
+        if not hasattr(self, 'schedule') or not self.schedule:
+            return False
+
+        current_hour = game_state.time_system.hour
+        current_room = game_state.station_map.get_room_name(*self.location)
+
+        # Find the scheduled room for the current hour
+        expected_room = None
+        for entry in self.schedule:
+            start = entry.get("start", 0)
+            end = entry.get("end", 24)
+            room = entry.get("room")
+
+            # Handle wrap-around schedules (e.g., 20:00 to 08:00)
+            if start < end:
+                if start <= current_hour < end:
+                    expected_room = room
+                    break
+            else:  # Wrap around midnight
+                if current_hour >= start or current_hour < end:
+                    expected_room = room
+                    break
+
+        if not expected_room:
+            return False  # No schedule entry for this time
+
+        # Check if current room matches expected (allow partial matches for flexibility)
+        # e.g., "Corridor near Lab" should match if expected is "Lab"
+        if expected_room in current_room or current_room in expected_room:
+            return False
+
+        # Corridors are neutral - NPCs can be in corridors without being "out of schedule"
+        if current_room.startswith("Corridor"):
+            return False
+
+        return True
+
+    def get_schedule_info(self, game_state) -> dict:
+        """
+        Get information about the character's schedule status.
+
+        Returns a dict with:
+        - expected_room: Where they should be
+        - current_room: Where they are
+        - out_of_schedule: Boolean
+        """
+        current_room = game_state.station_map.get_room_name(*self.location)
+        current_hour = game_state.time_system.hour
+
+        expected_room = None
+        for entry in self.schedule:
+            start = entry.get("start", 0)
+            end = entry.get("end", 24)
+            room = entry.get("room")
+
+            if start < end:
+                if start <= current_hour < end:
+                    expected_room = room
+                    break
+            else:
+                if current_hour >= start or current_hour < end:
+                    expected_room = room
+                    break
+
+        return {
+            "expected_room": expected_room,
+            "current_room": current_room,
+            "current_hour": current_hour,
+            "out_of_schedule": self.is_out_of_schedule(game_state)
+        }
+
     def get_reaction_dialogue(self, trigger_type: str) -> str:
         """
         Generate reactive dialogue based on behavior type/personality.
