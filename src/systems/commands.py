@@ -48,6 +48,43 @@ def _get_blood_test_sim(game_state):
     raise AttributeError("Game state missing blood test simulator")
 
 
+def _current_hiding_spot(game_state: "GameState"):
+    """Return hiding spot metadata for the player's current position."""
+    station_map = getattr(game_state, "station_map", None)
+    if not station_map or not hasattr(station_map, "get_hiding_spot"):
+        return None
+    return station_map.get_hiding_spot(*game_state.player.location)
+
+
+def _movement_blocked_by_hiding(game_state: "GameState") -> bool:
+    """Check if the player must leave cover before moving."""
+    hiding_spot = _current_hiding_spot(game_state)
+    if hiding_spot and getattr(game_state.player, "stealth_posture", StealthPosture.STANDING) == StealthPosture.HIDING:
+        event_bus.emit(GameEvent(EventType.WARNING, {
+            "text": "You are tucked into cover. Use STAND or UNHIDE before moving."
+        }))
+        return True
+    return False
+
+
+def _handle_hiding_entry(game_state: "GameState"):
+    """Auto-apply posture changes and messaging when stepping into cover tiles."""
+    station_map = getattr(game_state, "station_map", None)
+    if not station_map or not hasattr(station_map, "get_hiding_spot"):
+        return
+
+    hiding_spot = station_map.get_hiding_spot(*game_state.player.location)
+    if hiding_spot:
+        game_state.player.set_posture(StealthPosture.HIDING)
+        cover_bonus = hiding_spot.get("cover_bonus", 0)
+        los_note = " It blocks line-of-sight." if hiding_spot.get("blocks_los") else ""
+        event_bus.emit(GameEvent(EventType.MESSAGE, {
+            "text": f"You slip behind {hiding_spot.get('label', 'cover')} (+{cover_bonus} stealth).{los_note}"
+        }))
+    elif getattr(game_state.player, "stealth_posture", StealthPosture.STANDING) == StealthPosture.HIDING:
+        game_state.player.set_posture(StealthPosture.CROUCHING)
+
+
 class MoveCommand(Command):
     name = "MOVE"
     aliases = ["N", "S", "E", "W", "NORTH", "SOUTH", "EAST", "WEST"]
@@ -78,6 +115,9 @@ class MoveCommand(Command):
                 "text": f"Invalid direction: {direction}"
             }))
             return
+
+        if _movement_blocked_by_hiding(game_state):
+            return
         
         # Reset posture to STANDING on move, unless sneaking
         if hasattr(game_state.player, 'set_posture'):
@@ -90,6 +130,7 @@ class MoveCommand(Command):
                 "direction": direction,
                 "destination": destination
             }))
+            _handle_hiding_entry(game_state)
             game_state.advance_turn()
         else:
             event_bus.emit(GameEvent(EventType.WARNING, {"text": "Blocked."}))
@@ -731,12 +772,30 @@ class HideCommand(Command):
              # For now, always allow trying to hide, effectiveness depends on system
              pass
 
+        hiding_spot = _current_hiding_spot(game_state)
         game_state.player.set_posture(StealthPosture.HIDING)
-        event_bus.emit(GameEvent(EventType.MESSAGE, {
-            "text": f"You slip into the shadows of the {player_room}..."
-        }))
+        if hiding_spot:
+            cover_bonus = hiding_spot.get("cover_bonus", 0)
+            los_note = " Your vision is narrow from here." if hiding_spot.get("blocks_los") else ""
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": f"You slip behind {hiding_spot.get('label', 'cover')} (+{cover_bonus} stealth).{los_note}"
+            }))
+        else:
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": f"You slip into the shadows of the {player_room}..."
+            }))
         # Hiding takes a turn
         game_state.advance_turn()
+
+class UnhideCommand(Command):
+    name = "UNHIDE"
+    aliases = ["EXITCOVER"]
+    description = "Leave your hiding spot and stand up."
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        context.game.player.set_posture(StealthPosture.STANDING)
+        event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "You step out from cover and stand up."}))
+        context.game.advance_turn()
 
 class CrouchCommand(Command):
     name = "CROUCH"
@@ -762,8 +821,10 @@ class StandCommand(Command):
     description = "Stand up normally."
 
     def execute(self, context: GameContext, args: List[str]) -> None:
+        was_hiding = getattr(context.game.player, "stealth_posture", StealthPosture.STANDING) == StealthPosture.HIDING
         context.game.player.set_posture(StealthPosture.STANDING)
-        event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "You stand up."}))
+        text = "You step out from cover and stand up." if was_hiding else "You stand up."
+        event_bus.emit(GameEvent(EventType.MESSAGE, {"text": text}))
 
 class SneakCommand(Command):
     name = "SNEAK"
@@ -790,6 +851,9 @@ class SneakCommand(Command):
              event_bus.emit(GameEvent(EventType.ERROR, {"text": f"Invalid direction: {direction}"}))
              return
 
+        if _movement_blocked_by_hiding(game_state):
+            return
+
         if game_state.player.move(dx, dy, game_state.station_map):
             destination = game_state.station_map.get_room_name(*game_state.player.location)
             event_bus.emit(GameEvent(EventType.MOVEMENT, {
@@ -798,6 +862,7 @@ class SneakCommand(Command):
                 "destination": destination
             }))
             event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "(Sneaking)"}))
+            _handle_hiding_entry(game_state)
             game_state.advance_turn()
         else:
             event_bus.emit(GameEvent(EventType.WARNING, {"text": "Blocked."}))
@@ -1020,6 +1085,7 @@ class CommandDispatcher:
         self.register(TrustCommand())
         self.register(CheckCommand())
         self.register(HideCommand())
+        self.register(UnhideCommand())
         self.register(CrouchCommand())
         self.register(StandCommand())
         self.register(SneakCommand())

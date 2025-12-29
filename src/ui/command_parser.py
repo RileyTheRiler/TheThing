@@ -66,7 +66,7 @@ class CommandParser:
         'crouch': 'CROUCH', 'duck': 'CROUCH', 'low': 'CROUCH',
         'crawl': 'CRAWL', 'prone': 'CRAWL',
         'stand': 'STAND', 'up': 'STAND', 'rise': 'STAND',
-        'hide': 'HIDE', 'stealth': 'HIDE',
+        'hide': 'HIDE', 'stealth': 'HIDE', 'unhide': 'UNHIDE', 'exitcover': 'UNHIDE',
         'sneak': 'SNEAK',
     }
     

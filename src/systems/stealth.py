@@ -23,6 +23,20 @@ class StealthSystem:
     def _detect_candidates(self, crew) -> List:
         """Return infected crew sharing a room with the player."""
         return [m for m in crew if getattr(m, "is_infected", False) and getattr(m, "is_alive", True)]
+
+    def _hiding_spot_modifiers(self, station_map, actor):
+        """Return hiding metadata and stealth modifiers for the actor's tile."""
+        if not station_map or not hasattr(station_map, "get_hiding_spot"):
+            return None, 0, False
+        spot = station_map.get_hiding_spot(*actor.location)
+        if not spot:
+            return None, 0, False
+        is_hiding = getattr(actor, "stealth_posture", StealthPosture.STANDING) == StealthPosture.HIDING
+        if not is_hiding:
+            return spot, 0, spot.get("blocks_los", False)
+        cover_bonus = spot.get("cover_bonus", 0)
+        blocks_los = spot.get("blocks_los", False)
+        return spot, cover_bonus, blocks_los
     
     def can_hide_in_room(self, room_name, room_states):
         """Check if room has hiding spots (darkness or default cover)."""
@@ -93,6 +107,14 @@ class StealthSystem:
         if is_dark:
             subject_pool += 2
             observer_pool = max(1, observer_pool - 2)
+
+        # Tile-based hiding modifiers
+        hiding_spot, cover_bonus, blocks_los = self._hiding_spot_modifiers(station_map, player)
+        if cover_bonus:
+            subject_pool += cover_bonus
+            observer_pool = max(1, observer_pool - cover_bonus)
+        if blocks_los:
+            observer_pool = max(1, observer_pool - 1)
         
         # Enforce minimum pool
         subject_pool = max(1, subject_pool)
@@ -116,7 +138,8 @@ class StealthSystem:
             "player_successes": subject_result['success_count'],
             "opponent_successes": observer_result['success_count'],
             "subject_pool": subject_pool,
-            "observer_pool": observer_pool
+            "observer_pool": observer_pool,
+            "hiding_spot": hiding_spot
         }
         event_bus.emit(GameEvent(EventType.STEALTH_REPORT, payload))
         
@@ -174,8 +197,19 @@ class StealthSystem:
         
         noise_penalty = noise_level // 2
         subject_pool = max(1, subject_pool - noise_penalty)
+
+        # Apply hiding spot modifiers when present
+        hiding_spot, cover_bonus, blocks_los = self._hiding_spot_modifiers(getattr(game_state, "station_map", None), subject)
+        if cover_bonus and getattr(subject, "stealth_posture", StealthPosture.STANDING) == StealthPosture.HIDING:
+            subject_pool += cover_bonus
+            observer_result_penalty = cover_bonus + (1 if blocks_los else 0)
+        else:
+            observer_result_penalty = 0
         
         subject_result = res.roll_check(subject_pool, game_state.rng)
+        
+        if observer_result_penalty:
+            observer_result['success_count'] = max(0, observer_result['success_count'] - observer_result_penalty)
         
         # Detected if observer wins
         return observer_result['success_count'] >= subject_result['success_count']

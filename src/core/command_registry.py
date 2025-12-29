@@ -200,6 +200,14 @@ COMMAND_REGISTRY: List[CommandMetadata] = [
         help_text="Attempt to hide in the current room. Affected by lighting."
     ),
     CommandMetadata(
+        name="UNHIDE",
+        aliases=["EXITCOVER"],
+        description="Leave hiding.",
+        category="STEALTH",
+        usage="UNHIDE",
+        help_text="Step out of cover and stand up, ending the hiding posture."
+    ),
+    CommandMetadata(
         name="SNEAK",
         aliases=[],
         description="Move stealthily.",
