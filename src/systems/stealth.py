@@ -105,6 +105,22 @@ class StealthSystem:
         observer_result = res.roll_check(observer_pool, rng)
         
         player_evaded = subject_result['success_count'] > observer_result['success_count']
+        current_turn = event.payload.get("turn") or getattr(game_state, "turn", None)
+
+        # Suspicion adjustments (toward the player)
+        suspicion_delta = 0
+        if not player_evaded:
+            suspicion_delta = 3
+        elif player_evaded and (subject_result['success_count'] - observer_result['success_count']) < 2:
+            suspicion_delta = 1
+
+        # Biological slip/location hint exposes player to extra scrutiny
+        if getattr(player, "location_hint_active", False):
+            suspicion_delta += 1
+
+        if suspicion_delta and hasattr(opponent, "increase_suspicion"):
+            opponent.increase_suspicion(suspicion_delta, turn=current_turn)
+            opponent.suspicion_state = getattr(opponent, "suspicion_state", "idle")
         
         payload = {
             "room": room,
@@ -116,7 +132,9 @@ class StealthSystem:
             "player_successes": subject_result['success_count'],
             "opponent_successes": observer_result['success_count'],
             "subject_pool": subject_pool,
-            "observer_pool": observer_pool
+            "observer_pool": observer_pool,
+            "suspicion_delta": suspicion_delta,
+            "suspicion_level": getattr(opponent, "suspicion_level", 0)
         }
         event_bus.emit(GameEvent(EventType.STEALTH_REPORT, payload))
         
@@ -153,25 +171,73 @@ class StealthSystem:
         """
         if noise_level is None:
             noise_level = subject.get_noise_level()
-            
+
+        ctx = self._prepare_detection_context(observer, subject, game_state, noise_level)
+
+        res = ResolutionSystem()
+        subject_result = res.roll_check(ctx["subject_pool"], game_state.rng)
+
+        # Visual detection
+        observer_result = res.roll_check(ctx["observer_pool"], game_state.rng)
+        observer_score = observer_result['success_count']
+        if ctx["env_effects"]:
+            observer_score = max(0, observer_score + ctx["env_effects"].stealth_detection_modifier)
+
+        visual_detected = observer_score >= subject_result['success_count']
+
+        # Heat-based detection when power is off and the room is not frozen
+        thermal_detected = False
+        if ctx["env_effects"] and ctx["env_effects"].heat_detection_enabled and not ctx["is_frozen"]:
+            thermal_pool = observer.attributes.get(Attribute.THERMAL, 1) + ctx["env_effects"].thermal_detection_bonus
+            thermal_pool = max(1, thermal_pool)
+            thermal_result = res.roll_check(thermal_pool, game_state.rng)
+            thermal_detected = thermal_result['success_count'] >= subject_result['success_count']
+
+        return visual_detected or thermal_detected
+
+    def _prepare_detection_context(self, observer, subject, game_state, noise_level: int):
+        """Build detection pools and environmental context for repeated calculations."""
+        station_map = getattr(game_state, "station_map", None)
+        room_states = getattr(game_state, "room_states", None)
+        env = getattr(game_state, "environmental_coordinator", None)
+        room_name = None
+        if station_map and hasattr(subject, "location"):
+            room_name = station_map.get_room_name(*subject.location)
+
+        is_dark = room_states.has_state(room_name, RoomState.DARK) if room_states and room_name else False
+        is_frozen = room_states.has_state(room_name, RoomState.FROZEN) if room_states and room_name else False
+
+        # Base visual pools
         logic = observer.attributes.get(Attribute.LOGIC, 1)
         observation = observer.skills.get(Skill.OBSERVATION, 0)
-        pool = logic + observation
-        
-        res = ResolutionSystem()
-        observer_result = res.roll_check(pool, game_state.rng)
-        
+        observer_pool = logic + observation
+
         prowess = subject.attributes.get(Attribute.PROWESS, 1)
         stealth = subject.skills.get(Skill.STEALTH, 0)
         subject_pool = prowess + stealth
         
-        # Noise acts as penalty to subject pool (inverse of stealth)
-        # Higher noise -> Lower effective stealth result? 
-        # Or easier for observer?
-        # Let's say Noise adds directly to Observer successes needed, or reduces subject pool?
-        # Specification was "Link noise levels to AudioManager".
-        # For mechanic: Let's subtract Noise/2 from Subject Pool to make noisy movement harder to hide.
-        
+        posture = getattr(subject, "stealth_posture", StealthPosture.STANDING)
+        if posture == StealthPosture.CROUCHING:
+            subject_pool += 1
+        elif posture == StealthPosture.CRAWLING:
+            subject_pool += 2
+        elif posture == StealthPosture.HIDING or posture == StealthPosture.HIDDEN:
+            subject_pool += 4
+        elif posture == StealthPosture.EXPOSED:
+            subject_pool = max(1, subject_pool - 1)
+
+        # Environmental modifiers sourced from coordinator (power, weather, room states)
+        env_effects = None
+        if env and room_name:
+            env_effects = env.get_current_modifiers(room_name, game_state)
+            observer_pool = ResolutionSystem.adjust_pool(observer_pool, env_effects.observation_pool_modifier)
+
+        # Darkness makes visual spotting harder
+        if is_dark:
+            subject_pool += 2
+            observer_pool = max(1, observer_pool - 2)
+
+        # Noise acts as penalty to subject pool (inverse of stealth) and a boon to observers
         noise_penalty = noise_level // 2
         subject_pool = max(1, subject_pool - noise_penalty)
         
@@ -220,3 +286,32 @@ class StealthSystem:
                 "observer_pool": 0
             }
             event_bus.emit(GameEvent(EventType.STEALTH_REPORT, payload))
+        observer_pool = ResolutionSystem.adjust_pool(observer_pool, noise_penalty)
+
+        return {
+            "observer_pool": observer_pool,
+            "subject_pool": subject_pool,
+            "env_effects": env_effects,
+            "is_frozen": is_frozen,
+            "room_name": room_name,
+        }
+
+    def get_detection_chance(self, observer, subject, game_state, noise_level=0) -> float:
+        """Return an estimated probability of detection for diagnostics/tests."""
+        ctx = self._prepare_detection_context(observer, subject, game_state, noise_level)
+
+        # Simple contested-pool heuristic: chance proportional to pool sizes
+        visual_ratio = ctx["observer_pool"] / (ctx["observer_pool"] + ctx["subject_pool"])
+
+        thermal_ratio = 0.0
+        if ctx["env_effects"] and ctx["env_effects"].heat_detection_enabled and not ctx["is_frozen"]:
+            thermal_pool = observer.attributes.get(Attribute.THERMAL, 1) + ctx["env_effects"].thermal_detection_bonus
+            thermal_ratio = thermal_pool / (thermal_pool + ctx["subject_pool"])
+
+        # Combine independent visual and thermal chances
+        combined = 1 - (1 - visual_ratio) * (1 - thermal_ratio)
+        return max(0.0, min(1.0, combined))
+
+    def set_posture(self, subject, posture: StealthPosture):
+        """Helper to set stealth posture on a member without requiring imports in tests."""
+        subject.stealth_posture = posture
