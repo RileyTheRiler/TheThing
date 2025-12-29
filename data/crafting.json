@@ -1,0 +1,39 @@
+{
+    "summary": "Combining scavenged tools into improvised gear should be data-driven, feed the event bus, and reward planning over raw stats.",
+    "recipes": [
+        {
+            "id": "makeshift_torch",
+            "name": "Makeshift Torch",
+            "description": "A wired lantern bundled for stealth sweeps.",
+            "category": "tool",
+            "ingredients": [
+                "Oil Lantern",
+                "Copper Wire"
+            ],
+            "craft_time": 1
+        },
+        {
+            "id": "improvised_spear",
+            "name": "Improvised Spear",
+            "description": "A sharpened handle wrapped with wire for close-quarters defense.",
+            "category": "weapon",
+            "weapon_skill": "MELEE",
+            "damage": 2,
+            "ingredients": [
+                "Mop Handle",
+                "Copper Wire"
+            ],
+            "craft_time": 2
+        },
+        {
+            "id": "heated_wire",
+            "name": "Heated Wire",
+            "description": "A glowing copper wire, ready for the blood test.",
+            "category": "tool",
+            "ingredients": [
+                "Copper Wire"
+            ],
+            "craft_time": 0
+        }
+    ]
+}
