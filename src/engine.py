@@ -31,6 +31,7 @@ from systems.room_state import RoomState, RoomStateManager
 from systems.sabotage import SabotageManager
 from systems.social import DialogueManager, LynchMobSystem, TrustMatrix, SocialThresholds, bucket_for_thresholds, bucket_label
 from systems.stealth import StealthSystem
+from systems.progression import ProgressionSystem
 from systems.weather import WeatherSystem
 from systems.environmental_coordinator import EnvironmentalCoordinator
 
@@ -129,6 +130,7 @@ class GameState:
         self.stealth_system = self.stealth  # Alias for systems expecting stealth_system attr
         self.alert_system = AlertSystem(self)
         self.security_system = SecuritySystem(self)
+        self.progression = ProgressionSystem(self)
         self.crafting = CraftingSystem()
         self.endgame = EndgameSystem(self.design_registry) # Agent 8
         self.combat = CombatSystem(self.rng, self.room_states)
@@ -346,6 +348,8 @@ class GameState:
             self.alert_system.cleanup()
         if hasattr(self, 'security_system') and self.security_system:
             self.security_system.cleanup()
+        if hasattr(self, 'progression') and self.progression:
+            self.progression.cleanup()
         if hasattr(self, 'audio') and self.audio:
             self.audio.cleanup()
         if hasattr(self, 'reporter') and self.reporter:

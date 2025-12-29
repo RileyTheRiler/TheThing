@@ -84,6 +84,10 @@ class StealthSystem:
         stealth = player.skills.get(Skill.STEALTH, 0) if hasattr(player, "skills") else 0
         subject_pool = prowess + stealth
 
+        # Stealth level progression bonus (levels 2 and 4 add +1 each)
+        if hasattr(player, 'get_stealth_level_pool_bonus'):
+            subject_pool += player.get_stealth_level_pool_bonus()
+
         # 2. Observer Pool (Infected NPC Perception)
         logic = opponent.attributes.get(Attribute.LOGIC, 1)
         observation = opponent.skills.get(Skill.OBSERVATION, 0)
