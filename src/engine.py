@@ -441,6 +441,9 @@ class GameState:
             member.slipped_vapor = False
         
         self.paranoia_level = min(100, self.paranoia_level + 1)
+        
+        # Advance time, environment, and emit TURN_ADVANCE via the TimeSystem
+        self.time_system.advance_turn(self.power_on, game_state=self, rng=self.rng)
         if power_on is not None:
             self.power_on = power_on
 

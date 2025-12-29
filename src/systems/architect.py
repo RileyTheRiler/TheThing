@@ -5,6 +5,9 @@ importable without sys.path tweaks or `src.` prefixes.
 """
 
 import random
+import json
+import pickle
+import base64
 import pickle
 import base64
 from src.core.event_system import event_bus, EventType, GameEvent
@@ -175,6 +178,27 @@ class Verbosity(Enum):
 
 
 class TimeSystem:
+    def __init__(self, start_temp=-40, start_hour=8):
+        self.temperature = start_temp
+        self.points_per_turn = 1
+        self.turn_count = 0
+        self.start_hour = start_hour
+
+    @property
+    def hour(self):
+        """Return the current hour (0-23) derived from turn count."""
+        return (self.start_hour + self.turn_count) % 24
+
+    def advance_turn(self, power_on: bool, game_state=None, rng=None):
+        """Advance one turn, apply environment, and broadcast the change."""
+        self.turn_count += 1
+        self.update_environment(power_on)
+
+        event_bus.emit(GameEvent(EventType.TURN_ADVANCE, {
+            "game_state": game_state,
+            "rng": rng
+        }))
+
     def __init__(self, start_temp=-40, start_hour=19):
         self.temperature = start_temp
         self.points_per_turn = 1
@@ -270,11 +294,20 @@ class TimeSystem:
         return {
             "temperature": self.temperature,
             "turn_count": self.turn_count,
+            "start_hour": self.start_hour,
             "hour": self.hour
         }
 
     @classmethod
     def from_dict(cls, data):
+        turn_count = data.get("turn_count", 0)
+        start_hour = data.get("start_hour")
+        if start_hour is None:
+            # Backward compatibility: derive start hour from saved hour + turn count
+            saved_hour = data.get("hour", 0)
+            start_hour = (saved_hour - turn_count) % 24
+
+        ts = cls(data.get("temperature", -40), start_hour=start_hour)
         temp = data.get("temperature", -40)
         turn_count = data.get("turn_count", 0)
         saved_hour = data.get("hour", 19)
