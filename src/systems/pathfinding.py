@@ -20,6 +20,10 @@ class PathfindingSystem:
     recalculating paths every turn.
     """
 
+    # Pre-allocate neighbor offsets to avoid instantiation in loops
+    ORTHOGONAL_NEIGHBORS = [(-1, 0), (0, -1), (0, 1), (1, 0)]
+    DIAGONAL_NEIGHBORS = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
+
     def __init__(self):
         self._path_cache: Dict[Tuple[Tuple[int, int], Tuple[int, int]], List[Tuple[int, int]]] = {}
         self._cache_turn = -1
@@ -129,6 +133,9 @@ class PathfindingSystem:
         # Track what's in open set for O(1) lookup
         open_set_hash = {start}
 
+        # Cache map dimensions for faster bounds checking
+        map_width = station_map.width
+        map_height = station_map.height
         # Localize globals for speed in loop
         heappush = heapq.heappush
         heappop = heapq.heappop
@@ -144,6 +151,36 @@ class PathfindingSystem:
             if current == goal:
                 return self._reconstruct_path(came_from, current)
 
+            # Process orthogonal neighbors
+            for dx, dy in self.ORTHOGONAL_NEIGHBORS:
+                nx, ny = current[0] + dx, current[1] + dy
+
+                # Inline is_walkable check
+                if not (0 <= nx < map_width and 0 <= ny < map_height):
+                    continue
+
+                neighbor = (nx, ny)
+                tentative_g = g_score[current] + 1.0
+
+                if neighbor not in g_score or tentative_g < g_score[neighbor]:
+                    came_from[neighbor] = current
+                    g_score[neighbor] = tentative_g
+
+                    # Inline heuristic
+                    dx_h = abs(nx - goal[0])
+                    dy_h = abs(ny - goal[1])
+                    # Octile distance: max(dx, dy) + (sqrt(2) - 1) * min(dx, dy)
+                    h_val = max(dx_h, dy_h) + 0.41421356 * min(dx_h, dy_h)
+
+                    f_score[neighbor] = tentative_g + h_val
+                    if neighbor not in open_set_hash:
+                        counter += 1
+                        heapq.heappush(open_set, (f_score[neighbor], counter, neighbor))
+                        open_set_hash.add(neighbor)
+
+            # Process diagonal neighbors
+            for dx, dy in self.DIAGONAL_NEIGHBORS:
+                nx, ny = current[0] + dx, current[1] + dy
             cx, cy = current
             current_g = g_score[current]
 
@@ -151,7 +188,8 @@ class PathfindingSystem:
             for dx, dy, cost in neighbors:
                 nx, ny = cx + dx, cy + dy
 
-                if not station_map.is_walkable(nx, ny):
+                # Inline is_walkable check
+                if not (0 <= nx < map_width and 0 <= ny < map_height):
                     continue
 
                 neighbor = (nx, ny)
