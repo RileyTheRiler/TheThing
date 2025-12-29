@@ -124,6 +124,16 @@
                 "baseline": "hunched over a microscope",
                 "slip_desc": "looking through the microscope but it's not even on",
                 "slip_chance": 0.4
+            },
+            {
+                "type": "location_hint",
+                "expected_room": "Infirmary",
+                "time_range": [
+                    8,
+                    18
+                ],
+                "slip_desc": "Blair is away from his microscope. He's never this idle.",
+                "slip_chance": 0.6
             }
         ]
     },
@@ -308,6 +318,16 @@
                 "baseline": "checking medical inventory",
                 "slip_desc": "staring at the blood bank with a strange hunger",
                 "slip_chance": 0.2
+            },
+            {
+                "type": "location_hint",
+                "expected_room": "Infirmary",
+                "time_range": [
+                    8,
+                    18
+                ],
+                "slip_desc": "Copper should be in the Infirmary. He looks nervous being away.",
+                "slip_chance": 0.5
             }
         ]
     },
@@ -409,6 +429,16 @@
                 "baseline": "petting a dog",
                 "slip_desc": "staring at the dogs with a predatory gaze",
                 "slip_chance": 0.4
+            },
+            {
+                "type": "location_hint",
+                "expected_room": "Kennel",
+                "time_range": [
+                    8,
+                    20
+                ],
+                "slip_desc": "Clark is wandering far from the kennel. The dogs are alone.",
+                "slip_chance": 0.6
             }
         ]
     },

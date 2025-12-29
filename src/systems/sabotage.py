@@ -1,5 +1,5 @@
 from enum import Enum
-from src.core.event_system import event_bus, EventType, GameEvent
+from core.event_system import event_bus, EventType, GameEvent
 
 class SabotageEvent(Enum):
     POWER_OUTAGE = "power_outage"
@@ -13,7 +13,7 @@ class SabotageManager:
     Manages sabotage events. Reacts to TURN_ADVANCE and emits signals.
     """
     
-    def __init__(self):
+    def __init__(self, difficulty_settings=None):
         # Operational status of critical systems
         self.radio_operational = True
         self.chopper_operational = True
@@ -39,9 +39,15 @@ class SabotageManager:
         
         # Subscribe to turn advances
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+
+    def cleanup(self):
+        event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
     
     def on_turn_advance(self, event: GameEvent):
         """Subscriber for TURN_ADVANCE event."""
+        turn_inventory = event.payload.get("turn_inventory", {})
+        if isinstance(turn_inventory, dict):
+            turn_inventory["sabotage"] = turn_inventory.get("sabotage", 0) + 1
         self.tick()
 
     def can_trigger(self, event):
@@ -68,6 +74,10 @@ class SabotageManager:
         
         # Emit event for other systems to react
         event_bus.emit(GameEvent(EventType.POWER_FAILURE, {"duration": duration}))
+        event_bus.emit(GameEvent(EventType.ENVIRONMENTAL_STATE_CHANGE, {
+            "change_type": "power_loss",
+            "power_on": False
+        }))
         
         return "SABOTAGE: POWER OUTAGE. The lights flicker and die."
     
@@ -75,6 +85,13 @@ class SabotageManager:
         if self.power_sabotaged:
             game_state.power_on = True
             self.power_sabotaged = False
+            
+            # Emit environmental state change event
+            event_bus.emit(GameEvent(EventType.ENVIRONMENTAL_STATE_CHANGE, {
+                "change_type": "power_restored",
+                "power_on": True
+            }))
+            
             return "Power restored."
         return None
     
