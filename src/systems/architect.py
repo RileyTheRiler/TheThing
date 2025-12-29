@@ -176,6 +176,12 @@ class TimeSystem:
         self.temperature = start_temp
         self.points_per_turn = 1
         self.turn_count = 0
+
+    @property
+    def hour(self):
+        """Returns the current hour (0-23) based on turn count.
+           Assuming game starts at 08:00 and each turn is 1 hour."""
+        return (8 + self.turn_count) % 24
         self.start_hour = start_hour
         
         # Subscribe to Turn Advance

@@ -440,6 +440,29 @@ class GameState:
         except ValueError:
             game.mode = GameMode.INVESTIGATIVE
 
+# --- Game Loop ---
+def main():
+    """Main game loop - can be called from launcher or run directly"""
+    game = GameState(seed=None)
+    
+    # Agent 5 Boot Sequence
+    game.crt.boot_sequence()
+    game.audio.ambient_loop(Sound.THRUM)
+
+    # PALETTE UX: Situation Report (One-time)
+    game.crt.output("\n--- SITUATION REPORT ---")
+    game.crt.output("MISSION: Survive the winter. Trust no one.")
+    game.crt.output("OBJECTIVE: Identify the infected. Do not let them escape.")
+    game.crt.output("HINT: Type 'HELP' for a list of commands. Start by looking around.")
+    game.crt.output("------------------------\n")
+
+    while True:
+        # Update CRT glitch based on paranoia
+        game.crt.set_glitch_level(game.paranoia_level)
+        
+        player_room = game.station_map.get_room_name(*game.player.location)
+        weather_status = game.weather.get_status()
+        room_icons = game.room_states.get_status_icons(player_room)
         game.helicopter_status = data.get("helicopter_status", "BROKEN")
         game.rescue_signal_active = data.get("rescue_signal_active", False)
         game.rescue_turns_remaining = data.get("rescue_turns_remaining")
@@ -476,6 +499,39 @@ class GameState:
         if trust_data and isinstance(trust_data, dict):
             game.trust_system.matrix.update(trust_data)
         
+        if action == "EXIT":
+            break
+        elif action == "HELP":
+            game.crt.output(game.parser.get_help_text())
+        elif action == "ADVANCE":
+            game.advance_turn()
+        elif action == "SAVE":
+            slot = cmd[1] if len(cmd) > 1 else "auto"
+            game.save_manager.save_game(game, slot)
+        elif action == "LOAD":
+            slot = cmd[1] if len(cmd) > 1 else "auto"
+            data = game.save_manager.load_game(slot)
+            if data:
+                game = GameState.from_dict(data)
+                print("*** GAME LOADED ***")
+        elif action == "STATUS":
+            for m in game.crew:
+                status = "Alive" if m.is_alive else "DEAD"
+                msg = f"{m.name} ({m.role}): Loc {m.location} | HP: {m.health} | {status}"
+                avg_trust = game.trust_system.get_average_trust(m.name)
+                msg += f" | Trust: {avg_trust:.1f}"
+                print(msg)
+        # ... REST OF COMMANDS SAME AS BEFORE ...
+        elif action == "TRUST":
+            if len(cmd) < 2:
+                print("Usage: TRUST <NAME>")
+            else:
+                target_name = cmd[1]
+                print(f"--- TRUST MATRIX FOR {target_name.upper()} ---")
+                for m in game.crew:
+                    if m.name in game.trust_system.matrix:
+                        val = game.trust_system.matrix[m.name].get(target_name.title(), 50)
+                        print(f"{m.name} -> {target_name.title()}: {val}")
         game.renderer.map = game.station_map
         game.parser.set_known_names([m.name for m in game.crew])
         game.room_states = RoomStateManager(list(game.station_map.rooms.keys()))
