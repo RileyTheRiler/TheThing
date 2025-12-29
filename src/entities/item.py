@@ -11,7 +11,7 @@ class Item:
     """
 
     def __init__(self, name, description, is_evidence=False, weapon_skill=None, damage=0,
-                 uses=-1, effect=None, effect_value=0, category="misc"):
+                 uses=-1, effect=None, effect_value=0, category="misc", cooldown=0):
         self.name = name
         self.description = description
         self.is_evidence = is_evidence
@@ -21,6 +21,7 @@ class Item:
         self.effect = effect
         self.effect_value = effect_value
         self.category = category
+        self.cooldown = cooldown
         self.history = []
 
     def add_history(self, turn, location):
@@ -57,6 +58,7 @@ class Item:
             "effect": self.effect,
             "effect_value": self.effect_value,
             "category": self.category,
+            "cooldown": self.cooldown,
             "history": self.history
         }
 
@@ -98,7 +100,41 @@ class Item:
             uses=data.get("uses", -1),
             effect=data.get("effect"),
             effect_value=data.get("effect_value", 0),
-            category=data.get("category", "misc")
+            category=data.get("category", "misc"),
+            cooldown=data.get("cooldown", 0)
         )
         item.history = data.get("history", [])
         return item
+
+
+# Predefined throwable item templates
+THROWABLE_LIBRARY = {
+    "FLARE": {
+        "name": "Flare",
+        "description": "Burns brightly and loudly, drawing attention.",
+        "category": "throwable",
+        "effect": "signal",
+        "effect_value": 3,  # Light/noise strength
+        "uses": 1,
+        "cooldown": 2
+    },
+    "EMPTY CAN": {
+        "name": "Empty Can",
+        "description": "A noisy distraction when tossed.",
+        "category": "throwable",
+        "effect": "noise",
+        "effect_value": 1,
+        "uses": 3,
+        "cooldown": 1
+    }
+}
+
+
+def create_throwable(name):
+    """Factory for predefined throwable items. Returns None if unknown."""
+    if not name:
+        return None
+    data = THROWABLE_LIBRARY.get(name.upper())
+    if not data:
+        return None
+    return Item(**data)

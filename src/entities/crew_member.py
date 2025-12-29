@@ -47,6 +47,11 @@ class CrewMember:
         self.slipped_vapor = False  # Hook: Biological Slip flag
         self.knowledge_tags = []    # Agent 3: Searchlight Harvest
         self.stealth_posture = StealthPosture.STANDING
+        self.investigating = False
+        self.investigation_goal = None
+        self.investigation_priority = 0
+        self.investigation_expires = 0
+        self.investigation_source = None
 
     def add_knowledge_tag(self, tag):
         """Add a knowledge tag/memory log if it doesn't already exist."""
