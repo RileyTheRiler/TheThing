@@ -59,14 +59,14 @@ The game uses an **event-driven, multi-agent architecture** where 8+ independent
 
 ---
 
-## Tier 6: Extended Features - IN PROGRESS
+## Tier 6: Extended Features - COMPLETE
 
 - [x] **6.1** Add in-game settings menu - `src/ui/settings.py` (palette, speed, audio)
 - [x] **6.2** Implement random events system - `src/systems/random_events.py`
-- [ ] **6.3** Add alternative endings (helicopter escape, radio rescue, sole survivor)
+- [x] **6.3** Add alternative endings (helicopter escape, radio rescue, sole survivor) - `src/systems/endgame.py`
 - [x] **6.4** Add game statistics tracking - `src/systems/statistics.py`
-- [ ] **6.5** Implement stealth/hiding mechanics (avoid Thing detection)
-- [ ] **6.6** Add item crafting system (combine items for new tools/weapons)
+- [x] **6.5** Implement stealth/hiding mechanics (avoid Thing detection) - `src/systems/stealth.py`
+- [x] **6.6** Add item crafting system (combine items for new tools/weapons) - `src/systems/crafting.py`
 
 ---
 

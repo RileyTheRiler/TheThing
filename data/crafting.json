@@ -34,6 +34,91 @@
                 "Copper Wire"
             ],
             "craft_time": 0
+        },
+        {
+            "id": "molotov_cocktail",
+            "name": "Molotov Cocktail",
+            "description": "A bottle filled with fuel and a rag fuse. Improvised incendiary weapon.",
+            "category": "weapon",
+            "weapon_skill": "FIREARMS",
+            "damage": 4,
+            "ingredients": [
+                "Empty Bottle",
+                "Oil Lantern",
+                "Rag"
+            ],
+            "craft_time": 1,
+            "uses": 1
+        },
+        {
+            "id": "reinforced_barricade",
+            "name": "Reinforced Barricade Kit",
+            "description": "Planks and rope assembled for stronger door reinforcement.",
+            "category": "tool",
+            "ingredients": [
+                "Wooden Plank",
+                "Rope",
+                "Hammer"
+            ],
+            "craft_time": 2,
+            "effect": "barricade_strength",
+            "effect_value": 2
+        },
+        {
+            "id": "med_kit",
+            "name": "Emergency Med Kit",
+            "description": "Bandages and antiseptic packaged for field treatment.",
+            "category": "medical",
+            "ingredients": [
+                "Bandage",
+                "Antiseptic",
+                "Rag"
+            ],
+            "craft_time": 1,
+            "effect": "heal",
+            "effect_value": 3,
+            "uses": 2
+        },
+        {
+            "id": "grappling_hook",
+            "name": "Grappling Hook",
+            "description": "Copper wire fashioned into a makeshift climbing tool.",
+            "category": "tool",
+            "ingredients": [
+                "Copper Wire",
+                "Rope",
+                "Metal Scrap"
+            ],
+            "craft_time": 3,
+            "effect": "climbing",
+            "uses": 5
+        },
+        {
+            "id": "lockpick_set",
+            "name": "Lockpick Set",
+            "description": "Bent wire tools for bypassing locked doors.",
+            "category": "tool",
+            "ingredients": [
+                "Copper Wire",
+                "Scalpel"
+            ],
+            "craft_time": 1,
+            "effect": "lockpicking",
+            "uses": 3
+        },
+        {
+            "id": "signal_flare",
+            "name": "Signal Flare",
+            "description": "Improvised flare for signaling or illumination.",
+            "category": "tool",
+            "ingredients": [
+                "Oil Lantern",
+                "Rag",
+                "Metal Scrap"
+            ],
+            "craft_time": 2,
+            "effect": "illumination",
+            "uses": 1
         }
     ]
 }

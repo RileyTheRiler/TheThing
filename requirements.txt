@@ -1,0 +1,34 @@
+# The Thing: Antarctic Research Station 31
+# Core Python Requirements
+
+# Testing Framework
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-mock>=3.11.0
+
+# Web Server Dependencies (for browser version)
+Flask==3.0.0
+flask-socketio==5.3.5
+flask-cors==4.0.0
+python-socketio==5.10.0
+Werkzeug==3.0.1
+
+# Cross-platform readline support
+pyreadline3>=3.4.1; platform_system=="Windows"
+
+# Development Tools
+black>=23.7.0
+flake8>=6.1.0
+mypy>=1.5.0
+isort>=5.12.0
+
+# Type checking stubs
+types-Flask>=1.1.6
+
+# Performance profiling
+pytest-benchmark>=4.0.0
+memory-profiler>=0.61.0
+
+# Code quality
+pylint>=2.17.0
+coverage>=7.3.0

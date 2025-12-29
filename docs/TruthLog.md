@@ -289,16 +289,249 @@ Visible when observing infected NPCs with low mask integrity:
 
 ---
 
-## 15. Win/Lose Conditions
+## 15. Alternative Endings (`systems/endgame.py`)
 
-### Victory
-- All infected crew eliminated
-- Player is alive
+The EndgameSystem monitors game events and triggers one of six possible endings based on player actions and world state.
 
-### Defeat
-- Player killed
-- Player infected and revealed
+### Win Conditions
 
-### Escape (Future)
-- Radio operational AND helicopter operational
-- Reach Kennel helipad
+#### ESCAPE - Helicopter Escape
+- **Trigger**: Player successfully repairs helicopter and escapes
+- **Requirements**:
+  - Helicopter status = "FIXED"
+  - Player reaches Kennel helipad
+  - Player pilots helicopter successfully
+- **Event**: `ESCAPE_SUCCESS` → `ENDING_REPORT`
+- **Message**: "You pilot the chopper through the storm, leaving the nightmare of Outpost 31 behind."
+
+#### RESCUE - Radio Rescue
+- **Trigger**: Rescue team arrives after SOS signal
+- **Requirements**:
+  - Player sends SOS signal via radio
+  - Survive 20 turns after signal sent
+  - Player is alive and human when rescue arrives
+- **Events**: `SOS_EMITTED` → countdown → `ENDING_REPORT`
+- **Countdown**: 20 turns (tracked via `rescue_turns_remaining`)
+- **Message**: "Lights cut through the storm. The rescue team has arrived to extract you."
+
+#### EXTERMINATION - Threat Neutralized
+- **Trigger**: All Things eliminated, humans remain
+- **Requirements**:
+  - No living infected crew members
+  - At least one human alive (including player)
+  - Player is alive and human
+- **Event**: Population check → `ENDING_REPORT`
+- **Message**: "All Things have been eliminated. Humanity survives... for now."
+
+#### SOLE_SURVIVOR - Last One Standing
+- **Trigger**: Player is the only survivor
+- **Requirements**:
+  - All crew dead except player
+  - Player is alive and human
+  - No other living entities
+- **Event**: `CREW_DEATH` → population check → `ENDING_REPORT`
+- **Message**: "Silence falls over the station. You are the only one left alive. The threat is gone... you hope."
+
+### Loss Conditions
+
+#### CONSUMPTION - Humanity Lost
+- **Trigger**: Thing victory condition
+- **Scenarios**:
+  - All humans dead or infected
+  - Player infected and revealed (`is_revealed=True`)
+  - No human survivors remain
+- **Event**: Population check → `ENDING_REPORT`
+- **Message**: "There are no humans left. The Thing has won."
+
+#### DEATH - MacReady Deceased
+- **Trigger**: Player character dies
+- **Requirements**: Player health ≤ 0
+- **Event**: `CREW_DEATH` (player) → `ENDING_REPORT`
+- **Message**: "MacReady is dead. The Thing spreads unchecked across the ice."
+
+### Ending System Events
+
+The EndgameSystem subscribes to multiple events:
+- `TURN_ADVANCE`: Checks rescue countdown and population status
+- `CREW_DEATH`: Checks if player died or triggers population check
+- `HELICOPTER_REPAIRED`: Enables escape ending
+- `SOS_EMITTED`: Starts rescue countdown
+- `ESCAPE_SUCCESS`: Triggers helicopter escape ending
+
+Once an ending is resolved, `EndgameSystem.resolved = True` prevents multiple endings from triggering.
+
+---
+
+## 16. Stealth & Hiding Mechanics (`systems/stealth.py`)
+
+The StealthSystem enables players to avoid detection by infected crew members through posture, environmental conditions, and tactical positioning.
+
+### Stealth Postures (`entities/crew_member.py`)
+
+Characters can adopt different stealth postures that affect detection probability:
+
+| Posture | Stealth Bonus | Description |
+|---------|---------------|-------------|
+| `STANDING` | +0 | Normal stance, easily detected |
+| `CROUCHING` | +1 | Reduced profile, slight stealth bonus |
+| `CRAWLING` | +2 | Low profile, moderate stealth bonus |
+| `HIDING` | +4 | Concealed in cover, high stealth bonus |
+| `HIDDEN` | +4 | Successfully hidden, high stealth bonus |
+| `EXPOSED` | -1 | Penalty to stealth, more visible |
+
+### Detection System
+
+Detection uses an **opposed dice pool** contest between observer and subject:
+
+#### Observer Pool (Thing/Infected NPC)
+- Base: `Logic + Observation skill`
+- **Darkness modifier**: -2 dice
+- **Noise bonus**: +1 die per 2 noise levels
+
+#### Subject Pool (Player hiding)
+- Base: `Prowess + Stealth skill`
+- **Posture bonus**: +0 to +4 dice (see table above)
+- **Darkness bonus**: +2 dice
+- **Noise penalty**: -1 die per 2 noise levels
+
+#### Detection Probability
+```
+detection_chance = observer_pool / (observer_pool + subject_pool)
+```
+
+Base detection chance: **35%** (configurable via `design_briefs.json`)
+
+### Environmental Modifiers
+
+#### Darkness (`RoomState.DARK`)
+- **Subject bonus**: +2 dice to stealth pool
+- **Observer penalty**: -2 dice to observation pool
+- **Overall effect**: ~60% reduction in detection chance
+
+#### Room States
+- **Power off**: All rooms dark except Generator
+- **Barricaded rooms**: Stay dark when power off
+- **Lighting**: Some rooms may have local light sources
+
+#### Hiding Spots (`station_map.py`)
+Rooms can define hiding spots with properties:
+- `cover_bonus`: Additional stealth dice
+- `blocks_los`: Whether spot blocks line of sight
+- Accessed via `station_map.get_hiding_spot(x, y)`
+
+### Stealth Commands
+
+| Command | Effect |
+|---------|--------|
+| `HIDE` | Set posture to HIDING, seek cover |
+| `SNEAK <DIR>` | Move while maintaining CROUCHING posture |
+| `CROUCH` | Lower profile without full concealment |
+| `STAND` | Return to normal posture |
+
+### Cooldown System
+After a stealth encounter (detected or evaded):
+- **Cooldown**: 2 turns (configurable)
+- Prevents rapid repeated detection checks
+- Resets after cooldown expires
+
+### Stealth Events
+
+The StealthSystem emits `STEALTH_REPORT` events with outcomes:
+- `evaded`: Player successfully avoided detection
+- `detected`: Player spotted by infected NPC
+- Payload includes: room, opponent, dice pools, outcome
+
+---
+
+## 17. Crafting System (`systems/crafting.py`)
+
+The CraftingSystem enables players to combine items into improvised tools and weapons using JSON-defined recipes.
+
+### Recipe Structure (`data/crafting.json`)
+
+Each recipe defines:
+```json
+{
+  "id": "makeshift_torch",
+  "name": "Makeshift Torch",
+  "description": "A wired lantern bundled for stealth sweeps.",
+  "category": "tool",
+  "ingredients": ["Oil Lantern", "Copper Wire"],
+  "craft_time": 1
+}
+```
+
+### Crafting Time
+
+- **Instant crafting**: `craft_time = 0` (completes immediately)
+- **Queued crafting**: `craft_time ≥ 1` (takes N turns to complete)
+- Crafting jobs progress on `TURN_ADVANCE` events
+- Multiple jobs can be queued simultaneously
+
+### Available Recipes
+
+| Recipe | Ingredients | Time | Category | Effect |
+|--------|-------------|------|----------|--------|
+| **Makeshift Torch** | Oil Lantern + Copper Wire | 1 turn | Tool | Portable light source |
+| **Improvised Spear** | Mop Handle + Copper Wire | 2 turns | Weapon | 2 damage, melee |
+| **Heated Wire** | Copper Wire | 0 turns | Tool | Ready for blood test |
+| **Molotov Cocktail** | Empty Bottle + Oil Lantern + Rag | 1 turn | Weapon | 4 damage, 1 use |
+| **Reinforced Barricade Kit** | Wooden Plank + Rope + Hammer | 2 turns | Tool | +2 barricade strength |
+| **Emergency Med Kit** | Bandage + Antiseptic + Rag | 1 turn | Medical | Heal 3 HP, 2 uses |
+| **Grappling Hook** | Copper Wire + Rope + Metal Scrap | 3 turns | Tool | Climbing, 5 uses |
+| **Lockpick Set** | Copper Wire + Scalpel | 1 turn | Tool | Bypass locks, 3 uses |
+| **Signal Flare** | Oil Lantern + Rag + Metal Scrap | 2 turns | Tool | Illumination, 1 use |
+
+### Crafting Workflow
+
+1. **Validation**: Check crafter has required ingredients in inventory
+2. **Consumption**: Remove ingredients from inventory
+3. **Queue Job**: Add to `active_jobs` list with turn countdown
+4. **Progress**: Each `TURN_ADVANCE` decrements `turns_remaining`
+5. **Completion**: When `turns_remaining = 0`, create item and emit event
+6. **Delivery**: Add crafted item to specified inventory
+
+### Crafting Events
+
+The CraftingSystem emits `CRAFTING_REPORT` events:
+
+| Event Type | When | Payload |
+|------------|------|---------|
+| `queued` | Recipe started | actor, recipe, turns |
+| `completed` | Item finished | actor, recipe, item_name |
+| `error` | Invalid recipe or missing ingredients | message, actor |
+
+### Crafting Command
+
+```
+CRAFT <recipe_id>
+```
+
+Example:
+```
+CRAFT improvised_spear
+> Crafting queued: Improvised Spear (2 turns remaining)
+
+[Turn advances twice...]
+
+> Crafting completed: You finish the Improvised Spear!
+```
+
+### Serialization
+
+Active crafting jobs are saved in game state:
+```json
+{
+  "crafting": {
+    "active_jobs": [
+      {
+        "crafter": "MacReady",
+        "recipe": "improvised_spear",
+        "turns_remaining": 1
+      }
+    ]
+  }
+}
+```
+
+Jobs resume from saved state when game is loaded.

@@ -90,9 +90,6 @@ class Verbosity(Enum):
     STANDARD = 2
     MINIMAL = 3
     NONE = 4
-    STANDARD = "Standard"
-    VERBOSE = "Verbose"
-    MINIMAL = "Minimal"
 
 
 class RandomnessEngine:
