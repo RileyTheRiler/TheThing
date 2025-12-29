@@ -194,8 +194,8 @@ class EnvironmentalCoordinator:
         Returns:
             EnvironmentalEffects with all applicable modifiers
         """
-        if not self.current_snapshot:
-            self.current_snapshot = self._create_snapshot(game_state)
+        # Always rebuild a fresh snapshot so power/weather toggles are reflected immediately
+        self.current_snapshot = self._create_snapshot(game_state)
         
         # Check room-specific states
         in_dark_room = False
