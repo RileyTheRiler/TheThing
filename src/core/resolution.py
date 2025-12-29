@@ -16,6 +16,7 @@ class Attribute(Enum):
     LOGIC = "Logic"
     INFLUENCE = "Influence"
     RESOLVE = "Resolve"
+    THERMAL = "Thermal"
 
 class Skill(Enum):
     MELEE = "Melee"
@@ -32,6 +33,7 @@ class Skill(Enum):
     METEOROLOGY = "Meteorology"
     HANDLING = "Handling"
     COMMS = "Comms"
+    DECEPTION = "Deception"
     STEALTH = "Stealth"
 
     @staticmethod
@@ -54,6 +56,7 @@ class Skill(Enum):
 
             Skill.PERSUASION: Attribute.INFLUENCE,
             Skill.EMPATHY: Attribute.INFLUENCE,  # Social standing/understanding
+            Skill.DECEPTION: Attribute.INFLUENCE,
 
             # Resolve serves as a defense/resistance stat primarily
         }
@@ -145,8 +148,9 @@ class ResolutionSystem:
         # User prompt said: Delta T = -k * (Current_Temp - Ambient_Exterior) where k=0.5 if power off
         # Let's align with that specific instruction if possible, but the user actually gave:
         # Delta T = -k * (Current_Temp - (-60)) if power off. k=0.2 (arbitrary game balance choice)
+        # UPDATE: Tuning to align with user prompt (k=0.5) for rapid freezing mechanic.
         
-        k_val = 0.05 if power_on else 0.2
+        k_val = 0.05 if power_on else 0.5
         ambient_exterior = -60.0
         
         # If power is on, we are heating UP towards 10C, or maintaining 10C.

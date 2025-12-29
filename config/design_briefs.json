@@ -101,5 +101,312 @@
                 "message": "Silence falls over the station. You are the only one left alive. The threat is gone... you hope."
             }
         ]
+    },
+    "random_events": {
+        "event_type": "RANDOM_EVENT",
+        "hook": "random_events",
+        "summary": "Dynamic events that create narrative variety and tactical challenges during gameplay.",
+        "base_chance": 0.15,
+        "paranoia_multiplier": 0.005,
+        "categories": {
+            "WEATHER": "Blizzards, temperature changes, environmental hazards",
+            "EQUIPMENT": "Power failures, malfunctions, breakdowns",
+            "DISCOVERY": "Finding items, clues, evidence",
+            "ATMOSPHERE": "Creepy sounds, paranoia triggers, tension builders",
+            "CREATURE": "Thing-related events, biological signs",
+            "SABOTAGE": "Discovered sabotage, tampered equipment",
+            "NPC": "NPC-triggered events, social dynamics"
+        },
+        "events": [
+            {
+                "id": "complete_blackout",
+                "name": "Complete Power Failure",
+                "description": "The generator fails completely! All lights go out across the station.",
+                "category": "EQUIPMENT",
+                "severity": "CRITICAL",
+                "weight": 3,
+                "min_turn": 10,
+                "cooldown": 20,
+                "requires_power": true,
+                "effects": [
+                    {
+                        "type": "power_off"
+                    },
+                    {
+                        "type": "all_rooms_dark"
+                    },
+                    {
+                        "type": "paranoia",
+                        "amount": 20
+                    }
+                ]
+            },
+            {
+                "id": "partial_blackout",
+                "name": "Partial Power Failure",
+                "description": "Several circuits blow! Parts of the station go dark.",
+                "category": "EQUIPMENT",
+                "severity": "MAJOR",
+                "weight": 5,
+                "min_turn": 8,
+                "cooldown": 15,
+                "requires_power": true,
+                "effects": [
+                    {
+                        "type": "random_rooms_dark",
+                        "count": 3
+                    },
+                    {
+                        "type": "paranoia",
+                        "amount": 12
+                    }
+                ]
+            },
+            {
+                "id": "generator_malfunction",
+                "name": "Generator Malfunction",
+                "description": "The generator sputters and dies. You'll need to repair it.",
+                "category": "EQUIPMENT",
+                "severity": "CRITICAL",
+                "weight": 2,
+                "min_turn": 15,
+                "cooldown": 30,
+                "requires_power": true,
+                "effects": [
+                    {
+                        "type": "power_off"
+                    },
+                    {
+                        "type": "require_repair",
+                        "target": "generator"
+                    }
+                ]
+            },
+            {
+                "id": "radio_destroyed",
+                "name": "Radio Sabotaged",
+                "description": "The radio has been smashed! Someone didn't want us calling for help.",
+                "category": "SABOTAGE",
+                "severity": "MAJOR",
+                "weight": 4,
+                "min_turn": 12,
+                "requires_infected": true,
+                "effects": [
+                    {
+                        "type": "destroy_equipment",
+                        "target": "radio"
+                    },
+                    {
+                        "type": "paranoia",
+                        "amount": 15
+                    },
+                    {
+                        "type": "emit_event",
+                        "event_type": "SABOTAGE_DISCOVERED",
+                        "target": "radio"
+                    }
+                ]
+            },
+            {
+                "id": "fuel_sabotage",
+                "name": "Fuel Tank Leak",
+                "description": "Helicopter fuel is leaking everywhere! The tank has been punctured.",
+                "category": "SABOTAGE",
+                "severity": "MAJOR",
+                "weight": 3,
+                "min_turn": 10,
+                "requires_infected": true,
+                "effects": [
+                    {
+                        "type": "sabotage_helicopter"
+                    },
+                    {
+                        "type": "paranoia",
+                        "amount": 18
+                    }
+                ]
+            },
+            {
+                "id": "supplies_missing",
+                "name": "Missing Supplies",
+                "description": "The food storage has been raided. Someone took most of the rations.",
+                "category": "SABOTAGE",
+                "severity": "MODERATE",
+                "weight": 6,
+                "min_turn": 8,
+                "requires_infected": true,
+                "effects": [
+                    {
+                        "type": "remove_items",
+                        "category": "food",
+                        "count": 2
+                    },
+                    {
+                        "type": "paranoia",
+                        "amount": 10
+                    }
+                ]
+            },
+            {
+                "id": "npc_finds_evidence",
+                "name": "Evidence Discovered",
+                "description": "{{npc_name}} bursts in, holding something. 'I found this... we need to talk.'",
+                "category": "NPC",
+                "severity": "MODERATE",
+                "weight": 5,
+                "min_turn": 10,
+                "requires_infected": true,
+                "effects": [
+                    {
+                        "type": "npc_action",
+                        "action": "find_evidence"
+                    },
+                    {
+                        "type": "trust_change",
+                        "amount": -5
+                    }
+                ]
+            },
+            {
+                "id": "npc_accusation",
+                "name": "Public Accusation",
+                "description": "{{npc_name}} publicly accuses {{target_name}} of being infected!",
+                "category": "NPC",
+                "severity": "MAJOR",
+                "weight": 4,
+                "min_turn": 15,
+                "requires_infected": true,
+                "effects": [
+                    {
+                        "type": "npc_action",
+                        "action": "accuse"
+                    },
+                    {
+                        "type": "paranoia",
+                        "amount": 15
+                    },
+                    {
+                        "type": "trust_change",
+                        "target": "accused",
+                        "amount": -20
+                    }
+                ]
+            },
+            {
+                "id": "npc_disappears",
+                "name": "Crew Member Missing",
+                "description": "{{npc_name}} hasn't been seen in hours. Their room is empty.",
+                "category": "NPC",
+                "severity": "MAJOR",
+                "weight": 3,
+                "min_turn": 20,
+                "requires_infected": true,
+                "effects": [
+                    {
+                        "type": "npc_action",
+                        "action": "go_missing"
+                    },
+                    {
+                        "type": "paranoia",
+                        "amount": 20
+                    }
+                ]
+            },
+            {
+                "id": "extreme_blizzard",
+                "name": "Extreme Blizzard",
+                "description": "A massive storm hits! Wind howls at 100mph. Visibility: zero.",
+                "category": "WEATHER",
+                "severity": "MAJOR",
+                "weight": 6,
+                "min_turn": 5,
+                "cooldown": 12,
+                "effects": [
+                    {
+                        "type": "weather_intensity",
+                        "amount": 3
+                    },
+                    {
+                        "type": "temperature_drop",
+                        "amount": 15
+                    }
+                ]
+            },
+            {
+                "id": "voltage_spike",
+                "name": "Electrical Surge",
+                "description": "A massive voltage spike courses through the station's wiring!",
+                "category": "EQUIPMENT",
+                "severity": "MODERATE",
+                "weight": 7,
+                "min_turn": 10,
+                "requires_power": true,
+                "effects": [
+                    {
+                        "type": "damage_electronics"
+                    },
+                    {
+                        "type": "flicker_lights"
+                    }
+                ]
+            },
+            {
+                "id": "steam_pipe_burst",
+                "name": "Steam Pipe Burst",
+                "description": "A steam pipe bursts nearby! You are forced to scramble to safety.",
+                "category": "EQUIPMENT",
+                "severity": "MODERATE",
+                "weight": 8,
+                "min_turn": 5,
+                "cooldown": 10,
+                "requires_power": true,
+                "effects": [
+                    {
+                        "type": "force_move_player"
+                    },
+                    {
+                        "type": "paranoia",
+                        "amount": 5
+                    }
+                ]
+            },
+            {
+                "id": "supply_cache_discovered",
+                "name": "Supply Cache Found",
+                "description": "You stumble upon a hidden stash of supplies.",
+                "category": "DISCOVERY",
+                "severity": "MODERATE",
+                "weight": 5,
+                "min_turn": 3,
+                "cooldown": 20,
+                "effects": [
+                    {
+                        "type": "spawn_item",
+                        "category": "resource",
+                        "count": 1
+                    },
+                    {
+                        "type": "paranoia",
+                        "amount": -5
+                    }
+                ]
+            },
+            {
+                "id": "weather_clear",
+                "name": "Eye of the Storm",
+                "description": "The winds die down momentarily. Visibility improves.",
+                "category": "WEATHER",
+                "severity": "MODERATE",
+                "weight": 4,
+                "min_turn": 10,
+                "cooldown": 15,
+                "effects": [
+                    {
+                        "type": "weather_clear",
+                        "amount": 2
+                    }
+                ]
+            }
+        ]
     }
 }

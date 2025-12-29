@@ -30,7 +30,16 @@ class TestAIPerformance(unittest.TestCase):
             game.crew.append(new_member)
             
         game.player = game.crew[0]
-        game.time_system.hour = 12 # Ensure active schedule
+        # Calculate turns needed to reach hour 12
+        # current_hour = (start_hour + turn_count) % 24
+        # start_hour default is 19.
+        # 12 = (19 + turn_count) % 24  => turn_count = 17
+        # game.time_system.hour = 12
+        # TimeSystem.hour is read-only.
+        # Default start_hour is 19. hour = (start + turns) % 24
+        # We want hour 12. 12 = (19 + turns) % 24.
+        # 19 + turns = 36 (next day noon) -> turns = 17.
+        game.time_system.turn_count = 17
         return game
 
     def test_baseline_performance_small(self):

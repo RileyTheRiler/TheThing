@@ -66,12 +66,23 @@ class EndgameSystem:
         self._check_population_endings(game_state)
 
     def on_helicopter_repaired(self, event: GameEvent):
-        """Track helicopter status if needed (mainly for future complex logic)."""
-        pass
+        """Track helicopter status."""
+        game_state = event.payload.get("game_state")
+        if game_state:
+            game_state.helicopter_status = "FIXED"
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": "The helicopter engine roars to life! It's ready for takeoff."
+            }))
 
     def on_sos_emitted(self, event: GameEvent):
         """Track SOS activation."""
-        pass
+        game_state = event.payload.get("game_state")
+        if game_state:
+            game_state.rescue_signal_active = True
+            game_state.rescue_turns_remaining = 20 # 20 turns until rescue
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": "SOS signal verified. Rescue team ETA: 20 hours."
+            }))
 
     def on_escape_success(self, event: GameEvent):
         """Triggered when player successfully flies away."""
@@ -79,7 +90,16 @@ class EndgameSystem:
             return
         
         game_state = event.payload.get("game_state")
-        self._resolve_ending("ESCAPE", game_state)
+        if game_state:
+            # Check if player is infected?
+            if game_state.player.is_infected:
+                 # It's a win for the Thing, but technically an "Escape" ending structure
+                 # depending on how we want to flavor it. The config separates them?
+                 # Config has ESCAPE.
+                 pass
+            
+            game_state.helicopter_status = "ESCAPED"
+            self._resolve_ending("ESCAPE", game_state)
 
     def _check_population_endings(self, game_state):
         """Check for Sole Survivor, Extermination, or Consumption."""

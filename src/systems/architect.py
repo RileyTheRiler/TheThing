@@ -5,10 +5,24 @@ importable without sys.path tweaks or `src.` prefixes.
 """
 
 import random
+import json
+import pickle
+import base64
+import pickle
+import base64
+from src.core.event_system import event_bus, EventType, GameEvent
 from enum import Enum
 
 from core.event_system import event_bus, EventType, GameEvent
 from core.resolution import ResolutionSystem
+
+
+class Verbosity(Enum):
+    """Logging verbosity levels."""
+    MINIMAL = 0
+    STANDARD = 1
+    VERBOSE = 2
+    DEBUG = 3
 
 
 class Difficulty(Enum):
@@ -76,20 +90,28 @@ class Verbosity(Enum):
     STANDARD = 2
     MINIMAL = 3
     NONE = 4
+    STANDARD = "Standard"
+    VERBOSE = "Verbose"
+    MINIMAL = "Minimal"
 
 
 class RandomnessEngine:
     def __init__(self, seed=None):
         self.seed = seed
-        if self.seed:
-            random.seed(self.seed)
+        self._random = random.Random(self.seed)
     
     def roll_2d6(self):
         """Standard 2d6 roll."""
-        return random.randint(1, 6) + random.randint(1, 6)
+        return self._random.randint(1, 6) + self._random.randint(1, 6)
     
     def roll_d6(self):
-        return random.randint(1, 6)
+        return self._random.randint(1, 6)
+
+    def randint(self, a, b):
+        return self._random.randint(a, b)
+
+    def sample(self, population, k):
+        return self._random.sample(population, k)
         
     def calculate_success(self, pool_size):
         """
@@ -101,24 +123,25 @@ class RandomnessEngine:
         return {
             "success": successes > 0,
             "success_count": successes,
-            "dice": dice
+            "dice": dice,
+            "dice_count": pool_size
         }
 
     def choose(self, collection):
         if not collection:
             return None
-        return random.choice(collection)
-        
+        return self._random.choice(list(collection))
+
     def random_float(self):
-        return random.random()
+        return self._random.random()
 
     def random(self):
-        return random.random()
+        return self._random.random()
 
     def to_dict(self):
         # Save state as JSON-serializable structure instead of pickle
         # random.getstate() returns (version, internal_state_tuple, gaussian_state)
-        state = random.getstate()
+        state = self._random.getstate()
 
         # Convert tuple to list for JSON serialization
         # internal_state_tuple is a tuple of 624 ints, so it converts cleanly
@@ -145,20 +168,62 @@ class RandomnessEngine:
                     tuple(rng_state[1]),
                     rng_state[2]
                 )
-                random.setstate(state)
+                self._random.setstate(state)
             except (TypeError, ValueError, IndexError) as e:
                 print(f"Warning: Failed to restore RNG state: {e}")
                 if self.seed:
-                    random.seed(self.seed)
+                    self._random.seed(self.seed)
+
+
+class Verbosity(Enum):
+    MINIMAL = "Minimal"
+    STANDARD = "Standard"
+    VERBOSE = "Verbose"
+    DEBUG = "Debug"
+
 
 
 class TimeSystem:
-    def __init__(self, start_temp=-40, start_hour=19):
+    def __init__(self, start_temp=-40, start_hour=8):
         self.temperature = start_temp
         self.points_per_turn = 1
         self.turn_count = 0
         self.start_hour = start_hour
+
+    @property
+    def hour(self):
+        """Return the current hour (0-23) derived from turn count."""
+        return (self.start_hour + self.turn_count) % 24
+
+    def advance_turn(self, power_on: bool, game_state=None, rng=None):
+        """Advance one turn, apply environment, and broadcast the change."""
+        self.turn_count += 1
+        self.update_environment(power_on)
+
+        event_bus.emit(GameEvent(EventType.TURN_ADVANCE, {
+            "game_state": game_state,
+            "rng": rng
+        }))
+
+    def __init__(self, start_temp=-40, start_hour=19):
+        self.temperature = start_temp
+        self.points_per_turn = 1
+        self.turn_count = 0
+
+    @property
+    def hour(self):
+        """Returns the current hour (0-23) based on turn count.
+           Assuming game starts at 08:00 and each turn is 1 hour."""
+        return (8 + self.turn_count) % 24
+        self.start_hour = start_hour
         
+    @property
+    def hour(self):
+        """Calculates current hour based on turn count."""
+        return self.turn_count % 24
+        # Subscribe to turn advances
+        event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+
         # Subscribe to Turn Advance
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
 
@@ -177,15 +242,47 @@ class TimeSystem:
         """Current in-game hour (0-23)."""
         return (self.start_hour + self.turn_count) % 24
 
+    @hour.setter
+    def hour(self, value: int):
+        """
+        Set the current in-game hour by adjusting the start offset.
+
+        The TimeSystem tracks time as an offset from the initial hour plus
+        turn_count. Updating the hour recalculates start_hour so that future
+        ticks continue from the requested time.
+        """
+        # Normalize to 0-23 to keep representation consistent
+        normalized = value % 24
+        self.start_hour = (normalized - self.turn_count) % 24
+
     def tick(self):
         """Advance time by one turn."""
         self.turn_count += 1
 
+    def on_turn_advance(self, event: GameEvent):
+        """Advance time and update environment on turn."""
+        self.tick()
+        game_state = event.payload.get("game_state")
+        if game_state:
+            self.update_environment(game_state.power_on)
+    @property
+    def hour(self):
+        """Returns the current hour of the day (0-23)."""
+        # Assuming 1 turn = 1 hour for now based on usage
+        return self.turn_count % 24
+        
     def update_environment(self, power_on):
         """
         Updates environmental factors based on power state.
         Returns: Tuple (temperature_change, new_temperature)
         """
+        old_temp = self.temperature
+
+        # Delegate to ResolutionSystem for consistent thermal decay physics
+        res = ResolutionSystem()
+        self.temperature = res.calculate_thermal_decay(self.temperature, power_on)
+
+        temp_change = self.temperature - old_temp
         temp_change = 0
         if not power_on:
             # Thermal Decay
@@ -203,11 +300,20 @@ class TimeSystem:
         return {
             "temperature": self.temperature,
             "turn_count": self.turn_count,
+            "start_hour": self.start_hour,
             "hour": self.hour
         }
 
     @classmethod
     def from_dict(cls, data):
+        turn_count = data.get("turn_count", 0)
+        start_hour = data.get("start_hour")
+        if start_hour is None:
+            # Backward compatibility: derive start hour from saved hour + turn count
+            saved_hour = data.get("hour", 0)
+            start_hour = (saved_hour - turn_count) % 24
+
+        ts = cls(data.get("temperature", -40), start_hour=start_hour)
         temp = data.get("temperature", -40)
         turn_count = data.get("turn_count", 0)
         saved_hour = data.get("hour", 19)

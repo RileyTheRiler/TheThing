@@ -46,10 +46,15 @@ class PsychologySystem:
                 
                 # If in same room or adjacent (simple check: same room for now)
                 if member_room == harvest_room:
-                    print(f"[PSYCHOLOGY] {member.name} shudders suddenly. (Psychic Tremor)")
+                    event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+                        "text": f"{member.name} shudders suddenly. (Psychic Tremor)"
+                    }))
                     self.add_stress(member, 2)
                     if member == game_state.player:
-                        print(f"You feel a sudden, hollow ache in your chest. Something is wrong.")
+                        event_bus.emit(GameEvent(EventType.MESSAGE, {
+                            "text": "You feel a sudden, hollow ache in your chest. Something is wrong.",
+                            "crawl": True
+                        }))
 
     def cleanup(self):
         event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)

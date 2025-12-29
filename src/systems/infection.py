@@ -53,6 +53,13 @@ def check_for_communion(game_state):
                 event_bus.emit(GameEvent(EventType.COMMUNION_SUCCESS, {"target": member.name, "location": loc}))
             if not member.is_infected:
                 # Use ResolutionSystem for calculation (Source of Truth)
+                # We need a resolution instance, normally passed or instantiated
+                # Use the instance from GameState
+                res = game_state.resolution
+                
+                # Determine lighting (mocked for now, or derived from power)
+                lighting = "DARK" if not game_state.power_on else "LIGHT"
+                
                 # Determine lighting (mocked for now, or derived from power)
                 lighting = "DARK" if not game_state.power_on else "LIGHT"
                 

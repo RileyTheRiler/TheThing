@@ -1,3 +1,6 @@
+import random
+from src.core.event_system import event_bus, EventType, GameEvent
+from src.core.logger import hidden_logger
 from core.event_system import event_bus, EventType, GameEvent
 
 class MissionarySystem:
@@ -256,7 +259,9 @@ class MissionarySystem:
         """
         Actual mechanics of assimilation.
         """
-        print(f">>> SILENT EVENT: {agent.name} approaches {target.name}...")
+        event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+            "text": f"SILENT EVENT: {agent.name} approaches {target.name}..."
+        }))
         
         # Refill Agent's Mask
         agent.mask_integrity = min(100, agent.mask_integrity + 50)
@@ -267,12 +272,17 @@ class MissionarySystem:
         # Infect Target
         target.is_infected = True
         target.mask_integrity = 100 # Fresh mask
+        
+        # Log to hidden state (or debug)
+        hidden_logger.info(f"{target.name} ASSIMILATED by {agent.name}")
 
     def searchlight_harvest(self, agent, target, game_state=None):
         """
         Transfer nomenclature data from target to agent.
         """
-        print(f">>> SEARCHLIGHT HARVEST: {agent.name} extracts nomenclature from {target.name}.")
+        event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+            "text": f"SEARCHLIGHT HARVEST: {agent.name} extracts nomenclature from {target.name}."
+        }))
         
         # Reduce slip chances for the Agent
         for inv in agent.invariants:
