@@ -132,9 +132,13 @@ class RoomStateManager:
         icons = []
         if RoomState.DARK in states: icons.append("[DARK]")
         if RoomState.FROZEN in states: icons.append("[COLD]")
-        if RoomState.BARRICADED in icons: icons.append("[BARR]")
+        if RoomState.BARRICADED in states: icons.append("[BARR]")
         if RoomState.BLOODY in states: icons.append("[BLOOD]")
         return " ".join(icons)
+    
+    def is_frozen(self, room_name):
+        """Convenience check for frozen rooms."""
+        return self.has_state(room_name, RoomState.FROZEN)
     
     def mark_bloody(self, room_name):
         self.add_state(room_name, RoomState.BLOODY)

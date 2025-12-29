@@ -13,6 +13,8 @@ class StealthPosture(Enum):
     CROUCHING = auto()
     CRAWLING = auto()
     HIDING = auto()
+    EXPOSED = STANDING  # Alias for clarity in tests/UI
+    HIDDEN = HIDING
 
 
 class CrewMember:
@@ -47,6 +49,8 @@ class CrewMember:
         self.slipped_vapor = False  # Hook: Biological Slip flag
         self.knowledge_tags = []    # Agent 3: Searchlight Harvest
         self.stealth_posture = StealthPosture.STANDING
+        # Thermal sense/resistance baseline for heat-based detection
+        self.attributes.setdefault(Attribute.THERMAL, 1)
 
     def add_knowledge_tag(self, tag):
         """Add a knowledge tag/memory log if it doesn't already exist."""
