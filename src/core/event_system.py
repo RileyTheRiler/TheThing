@@ -66,6 +66,7 @@ class EventType(Enum):
     ACCUSATION_RESULT = auto()    # Formal accusation results
     PERCEPTION_EVENT = auto()     # AI perception results (stealth)
     DIAGNOSTIC = auto()           # System diagnostics (performance, budget)
+    INFECTED_COORDINATION = auto()  # Infected NPCs coordinating ambush
 
 @dataclass
 class GameEvent:

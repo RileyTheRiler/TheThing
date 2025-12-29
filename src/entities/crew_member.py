@@ -73,6 +73,13 @@ class CrewMember:
         self.current_search_target = None
         self.search_turns_remaining = 0
 
+        # Infected coordination (pincer movement)
+        self.coordinating_ambush = False
+        self.ambush_target_location = None
+        self.flank_position = None
+        self.coordination_leader = None  # Name of NPC who initiated coordination
+        self.coordination_turns_remaining = 0
+
     def add_knowledge_tag(self, tag):
         """Add a knowledge tag/memory log if it doesn't already exist."""
         if tag not in self.knowledge_tags:
@@ -255,7 +262,13 @@ class CrewMember:
             "detected_player": getattr(self, 'detected_player', False),
             "target_room": getattr(self, 'target_room', None),
             "in_lynch_mob": getattr(self, 'in_lynch_mob', False),
-            "location_hint_active": getattr(self, 'location_hint_active', False)
+            "location_hint_active": getattr(self, 'location_hint_active', False),
+            # Infected coordination state
+            "coordinating_ambush": getattr(self, 'coordinating_ambush', False),
+            "ambush_target_location": getattr(self, 'ambush_target_location', None),
+            "flank_position": getattr(self, 'flank_position', None),
+            "coordination_leader": getattr(self, 'coordination_leader', None),
+            "coordination_turns_remaining": getattr(self, 'coordination_turns_remaining', 0)
         }
 
     @classmethod
@@ -321,7 +334,16 @@ class CrewMember:
         m.suspicion_decay_delay = data.get("suspicion_decay_delay", 3)
         m.suspicion_last_raised = data.get("suspicion_last_raised")
         m.suspicion_state = data.get("suspicion_state", "idle")
-        
+
+        # Infected coordination state
+        m.coordinating_ambush = data.get("coordinating_ambush", False)
+        ambush_loc = data.get("ambush_target_location")
+        m.ambush_target_location = tuple(ambush_loc) if ambush_loc else None
+        flank_pos = data.get("flank_position")
+        m.flank_position = tuple(flank_pos) if flank_pos else None
+        m.coordination_leader = data.get("coordination_leader")
+        m.coordination_turns_remaining = data.get("coordination_turns_remaining", 0)
+
         # Items hydration
         m.inventory = []
         for i_data in data.get("inventory", []):
