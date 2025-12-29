@@ -14,8 +14,8 @@ class AICache:
         self.player_location = game_state.player.location
         self.player_room = game_state.station_map.get_room_name(*self.player_location)
         self.player_noise = 0
-        if hasattr(game_state, 'stealth'):
-             self.player_noise = game_state.stealth.get_noise_level(game_state.player)
+        if hasattr(game_state, 'player'):
+             self.player_noise = game_state.player.get_noise_level()
         
         self.power_on = game_state.power_on
         self.room_modifiers: Dict[str, Any] = {}

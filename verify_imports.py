@@ -34,19 +34,19 @@ def main():
         print(f"❌ Error: {src_dir} does not exist")
         sys.exit(1)
     
-    print(f"🔍 Scanning {src_dir} for 'src.' imports...")
+    print(f"Scanning {src_dir} for 'src.' imports...")
     violations = check_imports(src_dir)
     
     if violations:
-        print(f"\n❌ Found {len(violations)} import violations:\n")
+        print(f"\nFound {len(violations)} import violations:\n")
         for file_path, line_num, line_content in violations:
             rel_path = file_path.relative_to(src_dir.parent)
             print(f"  {rel_path}:{line_num}")
             print(f"    {line_content}")
-        print("\n💡 Use 'from core...', 'from systems...', etc. instead of 'from src.'")
+        print("\nUse 'from core...', 'from systems...', etc. instead of 'from src.'")
         sys.exit(1)
     else:
-        print("✅ No 'src.' imports found. All imports follow the standard pattern.")
+        print("No 'src.' imports found. All imports follow the standard pattern.")
         sys.exit(0)
 
 

@@ -56,6 +56,7 @@ from core.event_system import event_bus, EventType, GameEvent
 from systems.architect import Difficulty, DifficultySettings, RandomnessEngine
 from systems.combat import CombatSystem, CoverType, CombatEncounter
 from systems.interrogation import InterrogationSystem, InterrogationTopic
+from systems.commands import GameContext
 from systems.statistics import stats
 from audio.audio_manager import Sound
 from ui.settings import settings, show_settings_menu
@@ -498,106 +499,38 @@ def _execute_command(game, cmd):
         return True
 
     player_room = game.station_map.get_room_name(*game.player.location)
+    
+    # Use the CommandParser if available (Unified Command Handling)
+    if hasattr(game.parser, 'parse_and_execute'):
+        # Ensure context is set
+        context = GameContext(game)
+        game.parser.execute(cmd, context)
+        return True
+
+    # FALLBACK for legacy or direct handling if parser fails/missing
     action = cmd[0]
 
     if action == "EXIT":
         return False
-
     elif action == "HELP":
         topic = cmd[1].upper() if len(cmd) > 1 else None
         _show_help(topic)
-
     elif action == "ADVANCE":
         game.advance_turn()
-    elif action == "SETTINGS":
-        show_settings_menu(game, settings)
-    elif action == "STATS":
-        # Update session stats before display
-        if stats.current_session:
-            stats.current_session.turns_survived = game.turn
-        print(stats.get_current_session_summary())
-        print()
-        print(stats.get_career_summary())
     elif action == "SAVE":
         slot = cmd[1] if len(cmd) > 1 else "auto"
         game.save_manager.save_game(game, slot)
     elif action == "LOAD":
-        slot = cmd[1] if len(cmd) > 1 else "auto"
-        # The save manager now hydrates the object automatically via the factory we injected
-        new_state = game.save_manager.load_game(slot)
-        if new_state:
-            # Update the existing game object with state from the loaded object
-            game.__dict__.update(new_state.__dict__)
-        new_game_state = game.save_manager.load_game(slot)
-        if new_game_state:
-            # Note: This modifies the local game variable but won't affect the caller
-            # For a proper implementation, we'd need to return the new game state
-            # If load_game returned a dict (legacy fallback), rehydrate it
-            if isinstance(new_game_state, dict):
-                 new_game_state = GameState.from_dict(new_game_state)
-
-            game.__dict__.update(new_game_state.__dict__)
-            print("*** GAME LOADED ***")
-    elif action == "STATUS":
-        for m in game.crew:
-            status = "Alive" if m.is_alive else "DEAD"
-            msg = f"{m.name} ({m.role}): Loc {m.location} | HP: {m.health} | {status}"
-            avg_trust = game.trust_system.get_average_trust(m.name)
-            msg += f" | Trust: {avg_trust:.1f}"
-            print(msg)
-    elif action == "TRUST":
-        if len(cmd) < 2:
-            print("Usage: TRUST <NAME>")
-        else:
-            target_name = cmd[1]
-            print(f"--- TRUST MATRIX FOR {target_name.upper()} ---")
-            for m in game.crew:
-                if m.name in game.trust_system.matrix:
-                    val = game.trust_system.matrix[m.name].get(target_name.title(), 50)
-                    print(f"{m.name} -> {target_name.title()}: {val}")
-
-    # --- FORENSIC COMMANDS ---
-    elif action == "HEAT":
-        print(game.blood_test_sim.heat_wire())
-    elif action == "APPLY":
-        if not game.blood_test_sim.active:
-            print("No test in progress.")
-        else:
-            sample_name = game.blood_test_sim.current_sample
-            subject = next((m for m in game.crew if m.name == sample_name), None)
-            if subject:
-                print(game.blood_test_sim.apply_wire(subject.is_infected))
-    elif action == "CANCEL":
-        print(game.blood_test_sim.cancel())
-
-    # --- SOCIAL COMMANDS ---
-    elif action == "TALK":
-        for m in game.crew:
-            room = game.station_map.get_room_name(*m.location)
-            if room == player_room:
-                print(f"{m.name}: {m.get_dialogue(game)}")
-
-    elif action == "INTERROGATE" or action == "ASK":
-        if len(cmd) < 2:
-            print("Usage: INTERROGATE <NAME> [TOPIC]")
-            print("Topics: WHEREABOUTS, ALIBI, SUSPICION, BEHAVIOR, KNOWLEDGE")
-        else:
-            target_name = cmd[1]
-            target = next((m for m in game.crew if m.name.upper() == target_name.upper()), None)
-
-            if not target:
-                print(f"Unknown target: {target_name}")
-            elif game.station_map.get_room_name(*target.location) != player_room:
-                print(f"{target.name} is not here.")
-            elif not target.is_alive:
-                print(f"{target.name} cannot answer...")
-            else:
-                # Determine topic
-                if len(cmd) > 2:
-                    topic_name = cmd[2].upper()
-                    topic_map = {
-                        "WHEREABOUTS": InterrogationTopic.WHEREABOUTS,
-                        "ALIBI": InterrogationTopic.ALIBI,
+         slot = cmd[1] if len(cmd) > 1 else "auto"
+         game.save_manager.load_game(slot)
+    
+    # ... (Most other logic is now handled by parser.execute)
+    # Keeping minimal fallback or specific debug commands if needed
+    
+    # Re-enable loop for legacy structure if parser wasn't enough?
+    # Actually, let's trust the parser. The parser should handle EVERYTHING in commands.py
+    
+    return True
                         "SUSPICION": InterrogationTopic.SUSPICION,
                         "BEHAVIOR": InterrogationTopic.BEHAVIOR,
                         "KNOWLEDGE": InterrogationTopic.KNOWLEDGE

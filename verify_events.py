@@ -2,12 +2,12 @@ import sys
 import os
 
 # Add root to path so we can import src.x.y
-sys.path.append(os.getcwd())
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-from src.core.event_system import event_bus, EventType, GameEvent
-from src.engine import GameState, CrewMember
-from src.systems.psychology import PsychologySystem
-from src.systems.missionary import MissionarySystem
+from core.event_system import event_bus, EventType, GameEvent
+from engine import GameState, CrewMember
+from systems.psychology import PsychologySystem
+from systems.missionary import MissionarySystem
 
 def test_event_handling():
     print("Testing Event Bus & System Integration...")

@@ -356,7 +356,7 @@ def test_stealth_detection_darkness_penalty(sample_crew, station_map):
     infected.location = (7, 7)
     infected.is_infected = True
 
-    game_state = SimpleNamespace(player=player, crew=[player, infected], station_map=station_map)
+    game_state = SimpleNamespace(player=player, crew=[player, infected], station_map=station_map, power_on=True)
     stealth = StealthSystem(StubRegistry(), manager)
     captured = []
     event_bus.subscribe(EventType.STEALTH_REPORT, captured.append)

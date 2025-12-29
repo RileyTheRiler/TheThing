@@ -270,6 +270,31 @@ def on_evidence_tagged(event: GameEvent):
 # Register listeners
 event_bus.subscribe(EventType.EVIDENCE_TAGGED, on_evidence_tagged)
 
+def on_perception_event(event: GameEvent):
+    payload = event.payload
+    if not payload:
+        return
+        
+    game_state = payload.get("game_state")
+    observer = payload.get("opponent_ref")
+    player = payload.get("player_ref")
+    outcome = payload.get("outcome")
+    
+    if game_state and observer and player and outcome == "detected":
+        # Check if player was sneaking (posture check)
+        from entities.crew_member import StealthPosture
+        is_sneaking = getattr(player, "stealth_posture", StealthPosture.STANDING) != StealthPosture.STANDING
+        
+        if is_sneaking:
+            if hasattr(game_state, 'trust_system'):
+                # 5 point trust penalty for suspicious sneaking
+                game_state.trust_system.update_trust(observer.name, player.name, -5)
+            
+            from ui.message_reporter import emit_message
+            emit_message(f"[SOCIAL] {observer.name} looks at you with distrust. \"Why are you sneaking around?\"")
+
+event_bus.subscribe(EventType.PERCEPTION_EVENT, on_perception_event)
+
 
 class LynchMobSystem:
     def __init__(self, trust_system, thresholds: Optional[SocialThresholds] = None):

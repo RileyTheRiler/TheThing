@@ -1,0 +1,3 @@
+Place Crew_Generic.glb here.
+This model represents NPC crew members.
+Required animations: Idle, Walk, Die.

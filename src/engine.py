@@ -104,7 +104,7 @@ class GameState:
         self.station_map = StationMap()
         self.weather = WeatherSystem()
         self.sabotage = SabotageManager(self.difficulty_settings)
-        self.random_events = RandomEventSystem(self.rng)
+        self.random_events = RandomEventSystem(self.rng, config_registry=self.design_registry)
         self.environmental_coordinator = EnvironmentalCoordinator()
         self.room_states = RoomStateManager(list(self.station_map.rooms.keys()))
         
@@ -393,6 +393,25 @@ class GameState:
         
         # Game continues
         return False, False, None
+
+    def to_dict(self):
+        """Serialize game state to dictionary for saving."""
+        return {
+            "difficulty": self.difficulty.value,
+            "power_on": self.power_on,
+            "paranoia_level": self.paranoia_level,
+            "mode": self.mode.value,
+            "helicopter_status": self.helicopter_status,
+            "rescue_signal_active": self.rescue_signal_active,
+            "rescue_turns_remaining": self.rescue_turns_remaining,
+            "rng": self.rng.to_dict(),
+            "time_system": self.time_system.to_dict(),
+            "station_map": self.station_map.to_dict(),
+            "crew": [m.to_dict() for m in self.crew],
+            "journal": self.journal,
+            "trust": self.trust_system.matrix if hasattr(self, "trust_system") else {},
+            "crafting": self.crafting.to_dict() if hasattr(self.crafting, "to_dict") else {}
+        }
 
     @classmethod
     def from_dict(cls, data):

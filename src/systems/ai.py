@@ -24,14 +24,98 @@ class AISystem:
         self.budget_spent = 0
         self.exhaustion_count = 0  # Track how many times budget was denied
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+        event_bus.subscribe(EventType.PERCEPTION_EVENT, self.on_perception_event)
 
     def cleanup(self):
         event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+        event_bus.unsubscribe(EventType.PERCEPTION_EVENT, self.on_perception_event)
 
     def on_turn_advance(self, event):
         game_state = event.payload.get("game_state")
         if game_state:
             self.update(game_state)
+
+    def on_perception_event(self, event):
+        """React to PERCEPTION_EVENT emissions from StealthSystem."""
+        payload = event.payload
+        if not payload:
+            return
+        
+        # Extract perception data
+        game_state = payload.get("game_state")
+        observer = payload.get("opponent_ref")
+        player = payload.get("player_ref")
+        outcome = payload.get("outcome") # "detected" or "evaded"
+        player_successes = payload.get("player_successes", 0)
+        opponent_successes = payload.get("opponent_successes", 0)
+        
+        # Diagnostics
+        event_bus.emit(GameEvent(EventType.DIAGNOSTIC, {
+            "type": "AI_PERCEPTION_HOOK",
+            "room": payload.get("room"),
+            "observer": observer.name if hasattr(observer, 'name') else "Unknown",
+            "outcome": outcome,
+            "margin": abs(player_successes - opponent_successes)
+        }))
+        
+        # If we have full context, trigger reactions
+        if game_state and observer and player:
+            if outcome == "detected":
+                self._react_to_detection(observer, player, game_state)
+            elif outcome == "evaded":
+                # Check for "Almost Detected" (Margin < 2)
+                margin = player_successes - opponent_successes
+                if margin < 2:
+                    self._react_to_suspicion(observer, player, game_state)
+                else:
+                    self._react_to_evasion(observer, player, game_state)
+    
+    def _react_to_detection(self, observer: 'CrewMember', player: 'CrewMember', game_state: 'GameState'):
+        """NPC reacts to detecting the player."""
+        # Set alert state
+        observer.detected_player = True
+        observer.investigating = False # Already found
+        
+        # Broadcast alert to nearby NPCs
+        self._broadcast_alert(observer, player.location, game_state)
+        
+        # Emit reaction event
+        event_bus.emit(GameEvent(EventType.MESSAGE, {
+            "text": f"{observer.name} is now actively searching for you!"
+        }))
+
+    def _react_to_suspicion(self, observer: 'CrewMember', player: 'CrewMember', game_state: 'GameState'):
+        """NPC reacts to almost detecting the player - investigates location."""
+        observer.investigating = True
+        observer.last_known_player_location = player.location
+        observer.suspicion_level = 5 # Moderate suspicion
+        
+        event_bus.emit(GameEvent(EventType.MESSAGE, {
+            "text": f"{observer.name} pauses, looking suspicious... \"What was that?\""
+        }))
+
+    def _react_to_evasion(self, observer: 'CrewMember', player: 'CrewMember', game_state: 'GameState'):
+        """NPC reacts to player evading detection completely."""
+        # Increase suspicion slightly
+        if not hasattr(observer, 'suspicion_level'):
+            observer.suspicion_level = 0
+        observer.suspicion_level = min(10, observer.suspicion_level + 1)
+        
+    def _broadcast_alert(self, alerter: 'CrewMember', player_location: Tuple[int, int], game_state: 'GameState'):
+        """Broadcast alert to nearby NPCs about player location."""
+        alerter_room = game_state.station_map.get_room_name(*alerter.location)
+        
+        # Find NPCs in same or adjacent rooms
+        for npc in game_state.crew:
+            if npc == alerter or npc == game_state.player or not npc.is_alive:
+                continue
+            
+            npc_room = game_state.station_map.get_room_name(*npc.location)
+            
+            # Alert NPCs in same room
+            if npc_room == alerter_room:
+                npc.alerted_to_player = True
+                npc.last_known_player_location = player_location
 
     def update(self, game_state: 'GameState'):
         """Updates AI for all crew members with per-turn caching and action budget."""
@@ -65,7 +149,7 @@ class AISystem:
     def update_member_ai(self, member: 'CrewMember', game_state: 'GameState'):
         """
         Agent 2/8: NPC AI Logic.
-        Priority: Thing AI > Lynch Mob > Schedule > Wander
+        Priority: Thing AI > Lynch Mob > Investigation > Schedule > Wander
         """
         if not member.is_alive:
             return
@@ -80,17 +164,36 @@ class AISystem:
             if self._perceive_player(member, game_state):
                 self._pursue_player(member, game_state)
                 return
+                
+        # 1. PRIORITY: Investigation (Suspicious/Almost Detected)
+        if getattr(member, 'investigating', False) and hasattr(member, 'last_known_player_location'):
+            target_loc = member.last_known_player_location
+            if member.location == target_loc:
+                # Arrived at investigation spot
+                member.investigating = False
+                event_bus.emit(GameEvent(EventType.MESSAGE, {
+                    "text": f"{member.name} checks the area but finds nothing."
+                }))
+            else:
+                # Move toward investigation spot
+                self._pathfind_step(member, target_loc[0], target_loc[1], game_state)
+                return
 
-        # 0. PRIORITY: Lynch Mob Hunting (Agent 2)
+        # 2. PRIORITY: Lynch Mob Hunting (Agent 2)
         if game_state.lynch_mob.active_mob and game_state.lynch_mob.target:
             target = game_state.lynch_mob.target
             if target != member and target.is_alive:
+                # Mark as part of lynch mob for visual indicator
+                member.in_lynch_mob = True
+                member.target_room = game_state.station_map.get_room_name(*target.location)
                 # Move toward the lynch target
                 tx, ty = target.location
                 self._pathfind_step(member, tx, ty, game_state)
                 return
+        else:
+            member.in_lynch_mob = False
 
-        # 1. Check Schedule
+        # 3. Check Schedule
         # Schedule entries: {"start": 8, "end": 20, "room": "Rec Room"}
         current_hour = game_state.time_system.hour
         destination = None
@@ -117,14 +220,18 @@ class AISystem:
                 self._pathfind_step(member, tx, ty, game_state)
                 return
 
-        # 2. Idling / Wandering
+        # 4. Idling / Wandering
         if game_state.rng.random_float() < 0.3:
             dx = game_state.rng.choose([-1, 0, 1])
             dy = game_state.rng.choose([-1, 0, 1])
             member.move(dx, dy, game_state.station_map)
 
     def _update_thing_ai(self, member: 'CrewMember', game_state: 'GameState'):
-        """AI behavior for revealed Things - actively hunt and attack humans."""
+        """
+        AI behavior for revealed Things.
+        - Actively hunt humans.
+        - Ambush in vents/dark rooms if player is nearby but not visible.
+        """
         rng = game_state.rng
 
         # Find nearest living human
@@ -141,13 +248,38 @@ class AISystem:
         # Find closest human
         closest = min(humans, key=lambda h: abs(h.location[0] - member.location[0]) +
                                             abs(h.location[1] - member.location[1]))
+        dist_to_human = abs(closest.location[0] - member.location[0]) + abs(closest.location[1] - member.location[1])
 
         # Check if in same location - ATTACK!
         if closest.location == member.location:
             self._thing_attack(member, closest, game_state)
             return
 
-        # Move toward closest human
+        # AMBUSH BEHAVIOR
+        # If human is somewhat close (distance < 5) but not adjacent (distance > 1), try to ambush
+        can_see_human = dist_to_human < 3 # Simplified LOS
+        
+        if 1 < dist_to_human < 5 and not can_see_human:
+             # Look for ambush spot (Dark room or Vent)
+             current_room = game_state.station_map.get_room_name(*member.location)
+             is_ambush_spot = False
+             
+             # Check if current room is suitable (Dark or has a Vent)
+             if hasattr(game_state, 'room_states'):
+                  if game_state.room_states.has_state(current_room, "DARK"):
+                      is_ambush_spot = True
+             
+             if not is_ambush_spot and hasattr(game_state.station_map, "is_at_vent"):
+                  if game_state.station_map.is_at_vent(*member.location):
+                      is_ambush_spot = True
+             
+             if is_ambush_spot:
+                 # WAIT/AMBUSH
+                 if rng.random_float() < 0.7:
+                     # 70% chance to hold position and wait for player to come closer
+                     return 
+
+        # Default: Move toward closest human
         tx, ty = closest.location
         self._pathfind_step(member, tx, ty, game_state)
 
@@ -210,7 +342,7 @@ class AISystem:
         if member_room != player_room:
             return False
 
-        noise = self.cache.player_noise if self.cache else stealth.get_noise_level(player)
+        noise = self.cache.player_noise if self.cache else player.get_noise_level()
         # Use cached visibility modifier if available
         vis_mod = self.cache.get_visibility_modifier(player_room, game_state) if self.cache else None
         

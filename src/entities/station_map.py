@@ -1,5 +1,6 @@
 """StationMap entity class for The Thing game."""
 
+from typing import List, Dict
 from entities.item import Item
 
 
@@ -28,6 +29,12 @@ class StationMap:
             "Sleeping Quarters": (0, 6, 4, 10),  # Crew bunks (west)
             "Mess Hall": (5, 0, 9, 4),        # Food and kitchen (north-center)
             "Hangar": (5, 15, 10, 19),        # Helicopter storage (south-center)
+        }
+        # Vent locations (coordinates where a vent exists)
+        self.vents = {
+            (2, 2), (7, 2), (13, 2), (17, 2), # North vents
+            (2, 8), (7, 8), (13, 8), (17, 8), # Central vents
+            (2, 17), (7, 17), (13, 17), (17, 17) # South vents
         }
         self.room_items = {}
         # Precompute room lookup to avoid repeated room-scan on every query.
@@ -78,6 +85,32 @@ class StationMap:
         # Fast O(1) lookup using precomputed grid map (see _build_room_lookup).
         # Falls back gracefully for out-of-bounds coordinates to preserve behavior.
         return self._coord_to_room.get((x, y), f"Corridor (Sector {x},{y})")
+
+    def is_at_vent(self, x, y):
+        """Check if there is a vent at the given coordinates."""
+        return (x, y) in self.vents
+
+    def get_connections(self, room_name: str) -> List[str]:
+        """Get names of rooms connected to the given room."""
+        # Simple adjacency map for the station layout
+        connections = {
+            "Rec Room": ["Mess Hall", "Infirmary", "Radio Room", "Storage", "Sleeping Quarters", "Lab", "Generator", "Hangar", "Kennel"],
+            "Infirmary": ["Rec Room", "Radio Room", "Mess Hall", "Sleeping Quarters"],
+            "Generator": ["Rec Room", "Hangar", "Lab", "Kennel"],
+            "Kennel": ["Rec Room", "Hangar", "Sleeping Quarters", "Generator"],
+            "Radio Room": ["Rec Room", "Mess Hall", "Storage", "Infirmary"],
+            "Storage": ["Rec Room", "Mess Hall", "Radio Room", "Lab"],
+            "Lab": ["Rec Room", "Storage", "Generator", "Hangar"],
+            "Sleeping Quarters": ["Rec Room", "Infirmary", "Kennel", "Mess Hall"],
+            "Mess Hall": ["Rec Room", "Radio Room", "Storage", "Sleeping Quarters", "Infirmary"],
+            "Hangar": ["Rec Room", "Lab", "Generator", "Kennel"]
+        }
+        return connections.get(room_name, [])
+
+    def get_adjacent_rooms(self, x: int, y: int) -> List[str]:
+        """Get names of rooms adjacent to the current position."""
+        current_room = self.get_room_name(x, y)
+        return self.get_connections(current_room)
 
     def render(self, crew):
         """Render the map with crew member positions."""

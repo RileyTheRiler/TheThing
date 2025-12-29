@@ -61,6 +61,13 @@ class CommandParser:
         'fix': 'REPAIR', 'repair': 'REPAIR', 'patch': 'REPAIR',
         'signal': 'SIGNAL', 'call': 'SIGNAL', 'transmit': 'SIGNAL',
         'fly': 'ESCAPE', 'escape': 'ESCAPE', 'takeoff': 'ESCAPE',
+
+        # Stealth
+        'crouch': 'CROUCH', 'duck': 'CROUCH', 'low': 'CROUCH',
+        'crawl': 'CRAWL', 'prone': 'CRAWL',
+        'stand': 'STAND', 'up': 'STAND', 'rise': 'STAND',
+        'hide': 'HIDE', 'stealth': 'HIDE',
+        'sneak': 'SNEAK',
     }
     
     # Direction keywords

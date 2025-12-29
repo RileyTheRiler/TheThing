@@ -5,7 +5,7 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 from systems.architect import TimeSystem, RandomnessEngine
-from core.event_system import event_bus, EventType
+from core.event_system import event_bus, EventType, GameEvent
 
 def test_time_system_determinism():
     print("Testing TimeSystem Determinism...")
@@ -25,13 +25,13 @@ def test_time_system_determinism():
     assert ts.turn_count == 0
     
     # Advance 1 turn
-    ts.advance_turn(gs, rng)
+    event_bus.emit(GameEvent(EventType.TURN_ADVANCE, {"game_state": gs}))
     assert ts.hour == 20
     assert ts.turn_count == 1
     
     # Advance to rollover
     for _ in range(4): # 21, 22, 23, 0
-        ts.advance_turn(gs, rng)
+        event_bus.emit(GameEvent(EventType.TURN_ADVANCE, {"game_state": gs}))
     
     assert ts.hour == 0
     assert ts.turn_count == 5
@@ -49,39 +49,35 @@ def test_thermal_decay():
     gs_power_off = MockGameState(power=False)
     
     # Power OFF: -5 degrees per turn
-    ts.advance_turn(gs_power_off, rng)
+    event_bus.emit(GameEvent(EventType.TURN_ADVANCE, {"game_state": gs_power_off}))
     assert ts.temperature == 15
     
-    ts.advance_turn(gs_power_off, rng)
+    event_bus.emit(GameEvent(EventType.TURN_ADVANCE, {"game_state": gs_power_off}))
     assert ts.temperature == 10
     
     # Power ON: +2 degrees per turn (until 20)
     gs_power_on = MockGameState(power=True)
-    ts.advance_turn(gs_power_on, rng)
+    event_bus.emit(GameEvent(EventType.TURN_ADVANCE, {"game_state": gs_power_on}))
     assert ts.temperature == 12
     
     print("THERMAL decay/recovery passed.")
 
 def test_event_emission():
     print("\nTesting Event Emission...")
+    # Since we are using event driven now, we test that the TimeSystem reacts to the event
+    # instead of checking if it emits it (it was loopback in previous design)
     ts = TimeSystem(start_hour=19)
     rng = RandomnessEngine(seed=42)
     
-    received_event = False
-    def on_turn_advance(event):
-        nonlocal received_event
-        received_event = True
-        
-    event_bus.subscribe(EventType.TURN_ADVANCE, on_turn_advance)
+    initial_turn = ts.turn_count
     
-    class MockGameState:
-        def __init__(self):
-            self.power_on = True
+    event_bus.emit(GameEvent(EventType.TURN_ADVANCE, {
+        "game_state": None, # Should handle None safely
+        "rng": rng
+    }))
     
-    ts.advance_turn(MockGameState(), rng)
-    
-    assert received_event == True
-    print("EVENT emission passed.")
+    assert ts.turn_count == initial_turn + 1
+    print("EVENT reaction passed.")
 
 if __name__ == "__main__":
     try:
