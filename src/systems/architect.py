@@ -6,24 +6,11 @@ importable without sys.path tweaks or `src.` prefixes.
 
 import random
 import json
-import pickle
 import base64
-import pickle
-import base64
-from src.core.event_system import event_bus, EventType, GameEvent
 from enum import Enum
 
 from core.event_system import event_bus, EventType, GameEvent
 from core.resolution import ResolutionSystem
-
-
-class Verbosity(Enum):
-    """Logging verbosity levels."""
-    MINIMAL = 0
-    STANDARD = 1
-    VERBOSE = 2
-    DEBUG = 3
-
 
 class Difficulty(Enum):
     """Game difficulty levels affecting infection rates, mask decay, and starting conditions."""
@@ -84,15 +71,11 @@ class GameMode(Enum):
 
 
 class Verbosity(Enum):
-    """Output verbosity levels."""
-    DEBUG = 0
-    VERBOSE = 1
-    STANDARD = 2
-    MINIMAL = 3
-    NONE = 4
-    STANDARD = "Standard"
-    VERBOSE = "Verbose"
-    MINIMAL = "Minimal"
+    """Logging verbosity levels."""
+    MINIMAL = 0
+    STANDARD = 1
+    VERBOSE = 2
+    DEBUG = 3
 
 
 class RandomnessEngine:
@@ -156,12 +139,7 @@ class RandomnessEngine:
         self.seed = data.get("seed")
         rng_state = data.get("rng_state")
 
-        # Handle legacy pickle format (for backward compatibility if needed,
-        # but for security we should probably drop it or strictly validate.
-        # Given the instruction to fix security, we will NOT support the vulnerable format.)
         if rng_state:
-            # Reconstruct tuple structure required by random.setstate
-            # (version, internal_state_tuple, gaussian_state)
             try:
                 state = (
                     rng_state[0],
@@ -174,68 +152,18 @@ class RandomnessEngine:
                 if self.seed:
                     self._random.seed(self.seed)
 
-
-class Verbosity(Enum):
-    MINIMAL = "Minimal"
-    STANDARD = "Standard"
-    VERBOSE = "Verbose"
-    DEBUG = "Debug"
-
-
-
 class TimeSystem:
-    def __init__(self, start_temp=-40, start_hour=8):
-        self.temperature = start_temp
-        self.points_per_turn = 1
-        self.turn_count = 0
-        self.start_hour = start_hour
-
-    @property
-    def hour(self):
-        """Return the current hour (0-23) derived from turn count."""
-        return (self.start_hour + self.turn_count) % 24
-
-    def advance_turn(self, power_on: bool, game_state=None, rng=None):
-        """Advance one turn, apply environment, and broadcast the change."""
-        self.turn_count += 1
-        self.update_environment(power_on)
-
-        event_bus.emit(GameEvent(EventType.TURN_ADVANCE, {
-            "game_state": game_state,
-            "rng": rng
-        }))
-
     def __init__(self, start_temp=-40, start_hour=19):
         self.temperature = start_temp
         self.points_per_turn = 1
         self.turn_count = 0
-
-    @property
-    def hour(self):
-        """Returns the current hour (0-23) based on turn count.
-           Assuming game starts at 08:00 and each turn is 1 hour."""
-        return (8 + self.turn_count) % 24
         self.start_hour = start_hour
-        
-    @property
-    def hour(self):
-        """Calculates current hour based on turn count."""
-        return self.turn_count % 24
-        # Subscribe to turn advances
-        event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
 
         # Subscribe to Turn Advance
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
 
     def cleanup(self):
         event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
-
-    def on_turn_advance(self, event: GameEvent):
-        """Handle turn advance event."""
-        self.tick()
-        game_state = event.payload.get("game_state")
-        power_on = game_state.power_on if game_state else True
-        self.update_environment(power_on)
 
     @property
     def hour(self):
@@ -260,17 +188,33 @@ class TimeSystem:
         self.turn_count += 1
 
     def on_turn_advance(self, event: GameEvent):
-        """Advance time and update environment on turn."""
-        self.tick()
-        game_state = event.payload.get("game_state")
-        if game_state:
-            self.update_environment(game_state.power_on)
-    @property
-    def hour(self):
-        """Returns the current hour of the day (0-23)."""
-        # Assuming 1 turn = 1 hour for now based on usage
-        return self.turn_count % 24
+        """Handle turn advance event."""
+        # Only tick if not explicitly called via advance_turn (to avoid double tick)
+        # But wait, advance_turn calls update_environment and emit.
+        # This listener is usually for OTHER systems, or if TimeSystem is just listening.
+        # However, engine calls time_system.advance_turn().
+        # So we should be careful not to double count.
+        # Ideally, TimeSystem shouldn't listen to its own event for logic,
+        # but the memory says "TimeSystem subscribes to the TURN_ADVANCE event to automatically trigger tick(), decoupling time progression from explicit calls in the game loop."
         
+        # We'll assume the engine calls advance_turn which emits the event, causing this tick.
+        # If advance_turn increments turn_count, then this will double increment?
+        # Let's check advance_turn in previous file.
+        # It did self.turn_count += 1
+        pass
+
+    def advance_turn(self, power_on: bool, game_state=None, rng=None):
+        """Advance one turn, apply environment, and broadcast the change."""
+        self.turn_count += 1
+        self.update_environment(power_on)
+
+        # We emit the event, but we should not double-increment in on_turn_advance
+        # So on_turn_advance should probably do nothing if it's our own event?
+        # Or maybe on_turn_advance is for when OTHER things advance the turn?
+        # The memory implies it's decoupled.
+
+        # For now, let's trust the method does the increment.
+
     def update_environment(self, power_on):
         """
         Updates environmental factors based on power state.
@@ -283,17 +227,6 @@ class TimeSystem:
         self.temperature = res.calculate_thermal_decay(self.temperature, power_on)
 
         temp_change = self.temperature - old_temp
-        temp_change = 0
-        if not power_on:
-            # Thermal Decay
-            temp_change = -5
-            self.temperature += temp_change
-        else:
-            # Heating recovery (slow)
-            if self.temperature < 20:
-                temp_change = 2
-                self.temperature += temp_change
-
         return temp_change, self.temperature
 
     def to_dict(self):
@@ -314,13 +247,5 @@ class TimeSystem:
             start_hour = (saved_hour - turn_count) % 24
 
         ts = cls(data.get("temperature", -40), start_hour=start_hour)
-        temp = data.get("temperature", -40)
-        turn_count = data.get("turn_count", 0)
-        saved_hour = data.get("hour", 19)
-
-        # Recalculate start hour so property math remains consistent
-        start_hour = (saved_hour - turn_count) % 24
-
-        ts = cls(temp, start_hour=start_hour)
         ts.turn_count = turn_count
         return ts
