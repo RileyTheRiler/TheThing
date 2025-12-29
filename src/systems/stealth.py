@@ -331,17 +331,18 @@ class StealthSystem:
         hiding_spot, cover_bonus, blocks_los = self._hiding_spot_modifiers(getattr(game_state, "station_map", None), subject)
         if cover_bonus and getattr(subject, "stealth_posture", StealthPosture.STANDING) == StealthPosture.HIDING:
             subject_pool += cover_bonus
-            observer_result_penalty = cover_bonus + (1 if blocks_los else 0)
+            # observer_result_penalty = cover_bonus + (1 if blocks_los else 0)
         else:
-            observer_result_penalty = 0
+            # observer_result_penalty = 0
+            pass
         
-        subject_result = res.roll_check(subject_pool, game_state.rng)
-        
-        if observer_result_penalty:
-            observer_result['success_count'] = max(0, observer_result['success_count'] - observer_result_penalty)
-        
-        # Detected if observer wins
-        return observer_result['success_count'] >= subject_result['success_count']
+        return {
+            "observer_pool": observer_pool,
+            "subject_pool": subject_pool,
+            "env_effects": env_effects,
+            "is_frozen": is_frozen,
+            "room_name": room_name,
+        }
 
     def _trigger_explain_away(self, observer, intruder, game_state):
         """Route detection into the Explain Away dialogue node."""
