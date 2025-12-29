@@ -47,6 +47,7 @@ class CrewMember:
         self.slipped_vapor = False  # Hook: Biological Slip flag
         self.knowledge_tags = []    # Agent 3: Searchlight Harvest
         self.stealth_posture = StealthPosture.STANDING
+        self.in_vent = False        # Whether the character is moving through vents
 
     def add_knowledge_tag(self, tag):
         """Add a knowledge tag/memory log if it doesn't already exist."""
@@ -220,6 +221,7 @@ class CrewMember:
             "invariants": self.invariants,
             "knowledge_tags": self.knowledge_tags,
             "stealth_posture": self.stealth_posture.name,
+            "in_vent": self.in_vent,
             # Visual indicator flags for isometric renderer
             "detected_player": getattr(self, 'detected_player', False),
             "target_room": getattr(self, 'target_room', None),
@@ -284,6 +286,7 @@ class CrewMember:
         m.mask_integrity = data.get("mask_integrity", 100.0)
         m.is_revealed = data.get("is_revealed", False)
         m.knowledge_tags = data.get("knowledge_tags", [])
+        m.in_vent = data.get("in_vent", False)
         
         # Items hydration
         m.inventory = []
@@ -314,8 +317,12 @@ class CrewMember:
             posture_mod = -2
         elif self.stealth_posture == StealthPosture.CRAWLING:
             posture_mod = -4
-            
-        return max(1, base_noise + weight - stealth_skill + posture_mod)
+        elif self.stealth_posture == StealthPosture.HIDING:
+            posture_mod = -1
+
+        vent_penalty = 4 if getattr(self, "in_vent", False) else 0
+
+        return max(1, base_noise + weight - stealth_skill + posture_mod + vent_penalty)
 
     def get_reaction_dialogue(self, trigger_type: str) -> str:
         """

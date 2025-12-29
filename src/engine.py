@@ -124,6 +124,7 @@ class GameState:
         self.lynch_mob = LynchMobSystem(self.trust_system)
         self.dialogue = DialogueManager()
         self.stealth = StealthSystem()
+        self.stealth_system = self.stealth  # Alias for systems expecting stealth_system attr
         self.crafting = CraftingSystem()
         self.endgame = EndgameSystem(self.design_registry) # Agent 8
         self.combat = CombatSystem(self.rng, self.room_states)

@@ -41,6 +41,8 @@ class StationMap:
         # Hot paths (rendering, AI movement) call get_room_name thousands of times;
         # this keeps the lookup O(1) instead of iterating every room definition.
         self._coord_to_room = self._build_room_lookup()
+        # Lightweight vent graph for network traversal + entry/exit metadata
+        self.vent_graph = self._build_vent_graph()
 
     def _build_room_lookup(self):
         lookup = {}
@@ -53,6 +55,36 @@ class StationMap:
                         break
                 lookup[(x, y)] = room_name or f"Corridor (Sector {x},{y})"
         return lookup
+
+    def _build_vent_graph(self):
+        """Create vent graph with adjacency and entry/exit classification."""
+        # Manually connect vents in a grid-like lattice to avoid pathfinding costs later.
+        neighbors = {
+            (2, 2): [(7, 2), (2, 8)],
+            (7, 2): [(2, 2), (13, 2), (7, 8)],
+            (13, 2): [(7, 2), (17, 2), (13, 8)],
+            (17, 2): [(13, 2), (17, 8)],
+            (2, 8): [(2, 2), (7, 8), (2, 17)],
+            (7, 8): [(2, 8), (7, 2), (13, 8)],
+            (13, 8): [(7, 8), (13, 2), (17, 8), (13, 17)],
+            (17, 8): [(13, 8), (17, 2), (17, 17)],
+            (2, 17): [(2, 8), (7, 17)],
+            (7, 17): [(2, 17), (13, 17)],
+            (13, 17): [(7, 17), (17, 17), (13, 8)],
+            (17, 17): [(13, 17), (17, 8)]
+        }
+
+        graph = {}
+        for coord, adjacent in neighbors.items():
+            room_name = self.get_room_name(*coord)
+            # Entry/exit nodes are vents that touch a named room rather than raw corridor sectors
+            node_type = "entry_exit" if "Corridor" not in room_name else "junction"
+            graph[coord] = {
+                "neighbors": adjacent,
+                "room": room_name,
+                "type": node_type
+            }
+        return graph
 
     def add_item_to_room(self, item, x, y, turn=0):
         """Add an item to a room at the given coordinates."""
@@ -89,6 +121,39 @@ class StationMap:
     def is_at_vent(self, x, y):
         """Check if there is a vent at the given coordinates."""
         return (x, y) in self.vents
+
+    def is_vent_entry(self, x, y):
+        """Return True when this vent acts as an entry/exit point into the ducts."""
+        node = self.vent_graph.get((x, y))
+        return bool(node and node.get("type") == "entry_exit")
+
+    def get_vent_neighbors(self, x: int, y: int):
+        """Return neighbor vent coordinates reachable from the given vent node."""
+        node = self.vent_graph.get((x, y))
+        if not node:
+            return []
+        return node.get("neighbors", [])
+
+    def get_vent_neighbor_in_direction(self, x: int, y: int, direction: str):
+        """Return a neighbor coordinate that best matches a cardinal direction."""
+        direction = direction.upper()
+        dx_dy = {
+            "N": (0, -1), "NORTH": (0, -1),
+            "S": (0, 1), "SOUTH": (0, 1),
+            "E": (1, 0), "EAST": (1, 0),
+            "W": (-1, 0), "WEST": (-1, 0),
+        }
+        if direction not in dx_dy:
+            return None
+        dx, dy = dx_dy[direction]
+        for nx, ny in self.get_vent_neighbors(x, y):
+            if (nx - x == dx and dy == 0) or (ny - y == dy and dx == 0):
+                return (nx, ny)
+        return None
+
+    def get_vent_entry_nodes(self):
+        """Return a list of vent coordinates that can be used as entry/exit points."""
+        return [coord for coord, data in self.vent_graph.items() if data.get("type") == "entry_exit"]
 
     def get_connections(self, room_name: str) -> List[str]:
         """Get names of rooms connected to the given room."""

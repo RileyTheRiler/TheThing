@@ -338,11 +338,16 @@ class AISystem:
 
         member_room = game_state.station_map.get_room_name(*member.location)
         player_room = self.cache.player_room if self.cache else game_state.station_map.get_room_name(*player.location)
+        in_vent = getattr(player, "in_vent", False)
         
         if member_room != player_room:
-            return False
+            # Vent noise can carry into rooms that share an entry grate
+            if not (in_vent and game_state.station_map.is_vent_entry(*member.location)):
+                return False
 
         noise = self.cache.player_noise if self.cache else player.get_noise_level()
+        if in_vent:
+            noise += 3  # Vents amplify scraping sounds
         # Use cached visibility modifier if available
         vis_mod = self.cache.get_visibility_modifier(player_room, game_state) if self.cache else None
         
