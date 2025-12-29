@@ -184,6 +184,9 @@ class TimeSystem:
         return (8 + self.turn_count) % 24
         self.start_hour = start_hour
         
+        # Subscribe to turn advances
+        event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+
         # Subscribe to Turn Advance
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
 
@@ -219,6 +222,12 @@ class TimeSystem:
         """Advance time by one turn."""
         self.turn_count += 1
 
+    def on_turn_advance(self, event: GameEvent):
+        """Advance time and update environment on turn."""
+        self.tick()
+        game_state = event.payload.get("game_state")
+        if game_state:
+            self.update_environment(game_state.power_on)
     @property
     def hour(self):
         """Returns the current hour of the day (0-23)."""
@@ -230,6 +239,13 @@ class TimeSystem:
         Updates environmental factors based on power state.
         Returns: Tuple (temperature_change, new_temperature)
         """
+        old_temp = self.temperature
+
+        # Delegate to ResolutionSystem for consistent thermal decay physics
+        res = ResolutionSystem()
+        self.temperature = res.calculate_thermal_decay(self.temperature, power_on)
+
+        temp_change = self.temperature - old_temp
         temp_change = 0
         if not power_on:
             # Thermal Decay
