@@ -31,6 +31,7 @@ from systems.social import DialogueManager, LynchMobSystem, TrustMatrix, SocialT
 from systems.stealth import StealthSystem
 from systems.weather import WeatherSystem
 from systems.environmental_coordinator import EnvironmentalCoordinator
+from systems.dialogue import DialogueSystem
 
 from ui.renderer import TerminalRenderer
 from ui.crt_effects import CRTOutput
@@ -83,6 +84,7 @@ class GameState:
         self.crew = []
         self._paranoia_level = 0
         self.design_registry = DesignBriefRegistry()
+        self.action_cooldowns = {}
         
         # 2. Basic Configuration
         self.characters_config_path = characters_path or os.path.join("config", "characters.json")
@@ -123,7 +125,9 @@ class GameState:
         self.trust_system = TrustMatrix(self.crew, thresholds=self.social_thresholds)
         self.lynch_mob = LynchMobSystem(self.trust_system)
         self.dialogue = DialogueManager()
+        self.dialogue_system = DialogueSystem(rng=self.rng)
         self.stealth = StealthSystem()
+        self.stealth_system = self.stealth  # Alias for systems expecting stealth_system attr
         self.crafting = CraftingSystem()
         self.endgame = EndgameSystem(self.design_registry) # Agent 8
         self.combat = CombatSystem(self.rng, self.room_states)
