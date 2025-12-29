@@ -410,7 +410,11 @@ def _render_game_state(game):
     weather_status = game.weather.get_status()
     room_icons = game.room_states.get_status_icons(player_room)
 
-    game.crt.output(f"\n[TURN {game.turn}] MODE: {game.mode.value} | TIME: {game.time_system.hour:02}:00 | TEMP: {game.temperature:.1f}C | POWER: {'ON' if game.power_on else 'OFF'}")
+    mode_label = game.mode.value
+    if getattr(game.player, "in_vent", False):
+        mode_label += " (VENT)"
+
+    game.crt.output(f"\n[TURN {game.turn}] MODE: {mode_label} | TIME: {game.time_system.hour:02}:00 | TEMP: {game.temperature:.1f}C | POWER: {'ON' if game.power_on else 'OFF'}")
     game.crt.output(f"[LOC: {player_room}] {room_icons}")
     game.crt.output(f"[{weather_status}]")
 

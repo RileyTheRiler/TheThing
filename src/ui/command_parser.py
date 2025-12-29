@@ -68,6 +68,7 @@ class CommandParser:
         'stand': 'STAND', 'up': 'STAND', 'rise': 'STAND',
         'hide': 'HIDE', 'stealth': 'HIDE', 'unhide': 'UNHIDE', 'exitcover': 'UNHIDE',
         'sneak': 'SNEAK',
+        'vent': 'VENT', 'duct': 'VENT', 'vents': 'VENT',
     }
     
     # Direction keywords

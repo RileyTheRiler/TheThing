@@ -13,6 +13,8 @@ class StealthPosture(Enum):
     CROUCHING = auto()
     CRAWLING = auto()
     HIDING = auto()
+    EXPOSED = STANDING  # Alias for clarity in tests/UI
+    HIDDEN = HIDING
 
 
 class CrewMember:
@@ -47,6 +49,29 @@ class CrewMember:
         self.slipped_vapor = False  # Hook: Biological Slip flag
         self.knowledge_tags = []    # Agent 3: Searchlight Harvest
         self.stealth_posture = StealthPosture.STANDING
+        self.in_vent = False        # Whether the character is moving through vents
+        # Thermal sense/resistance baseline for heat-based detection
+        self.attributes.setdefault(Attribute.THERMAL, 1)
+        # Suspicion tracking toward the player
+        self.suspicion_level = 0
+        self.suspicion_thresholds = {"question": 4, "follow": 8}
+        self.suspicion_decay_delay = 3  # turns before suspicion decays
+        self.suspicion_last_raised = None
+        self.suspicion_state = "idle"
+        # Suspicion tracking toward the player
+        self.suspicion_level = 0
+        self.suspicion_thresholds = {"question": 4, "follow": 8}
+        self.suspicion_decay_delay = 3  # turns before suspicion decays
+        self.suspicion_last_raised = None
+        self.suspicion_state = "idle"
+
+        # Player tracking / search memory
+        self.last_seen_player_location = None
+        self.last_seen_player_room = None
+        self.last_seen_player_turn = None
+        self.search_targets = []
+        self.current_search_target = None
+        self.search_turns_remaining = 0
 
     def add_knowledge_tag(self, tag):
         """Add a knowledge tag/memory log if it doesn't already exist."""
@@ -220,6 +245,12 @@ class CrewMember:
             "invariants": self.invariants,
             "knowledge_tags": self.knowledge_tags,
             "stealth_posture": self.stealth_posture.name,
+            "in_vent": self.in_vent,
+            "suspicion_level": getattr(self, 'suspicion_level', 0),
+            "suspicion_thresholds": getattr(self, 'suspicion_thresholds', {"question": 4, "follow": 8}),
+            "suspicion_decay_delay": getattr(self, 'suspicion_decay_delay', 3),
+            "suspicion_last_raised": getattr(self, 'suspicion_last_raised', None),
+            "suspicion_state": getattr(self, 'suspicion_state', "idle"),
             # Visual indicator flags for isometric renderer
             "detected_player": getattr(self, 'detected_player', False),
             "target_room": getattr(self, 'target_room', None),
@@ -284,6 +315,12 @@ class CrewMember:
         m.mask_integrity = data.get("mask_integrity", 100.0)
         m.is_revealed = data.get("is_revealed", False)
         m.knowledge_tags = data.get("knowledge_tags", [])
+        m.in_vent = data.get("in_vent", False)
+        m.suspicion_level = data.get("suspicion_level", 0)
+        m.suspicion_thresholds = data.get("suspicion_thresholds", {"question": 4, "follow": 8})
+        m.suspicion_decay_delay = data.get("suspicion_decay_delay", 3)
+        m.suspicion_last_raised = data.get("suspicion_last_raised")
+        m.suspicion_state = data.get("suspicion_state", "idle")
         
         # Items hydration
         m.inventory = []
@@ -314,8 +351,12 @@ class CrewMember:
             posture_mod = -2
         elif self.stealth_posture == StealthPosture.CRAWLING:
             posture_mod = -4
-            
-        return max(1, base_noise + weight - stealth_skill + posture_mod)
+        elif self.stealth_posture == StealthPosture.HIDING:
+            posture_mod = -1
+
+        vent_penalty = 4 if getattr(self, "in_vent", False) else 0
+
+        return max(1, base_noise + weight - stealth_skill + posture_mod + vent_penalty)
 
     def get_reaction_dialogue(self, trigger_type: str) -> str:
         """
@@ -341,3 +382,37 @@ class CrewMember:
         # and simple consistent variation is fine)
         idx = len(self.name) % len(lines)
         return lines[idx]
+
+    # === Suspicion helpers ===
+    def increase_suspicion(self, amount: int, turn: int = None):
+        """Increase suspicion toward the player and track last raise turn."""
+        self.suspicion_level = min(100, max(0, getattr(self, "suspicion_level", 0) + amount))
+        self.suspicion_last_raised = turn
+
+    def decay_suspicion(self, current_turn: int):
+        """
+        Reduce suspicion if enough turns have passed since the last raise.
+        Returns True if decay occurred.
+        """
+        decay_delay = getattr(self, "suspicion_decay_delay", 3)
+        if self.suspicion_level <= 0:
+            self.suspicion_state = "idle"
+            return False
+
+        last_raise = getattr(self, "suspicion_last_raised", None)
+        if last_raise is None:
+            # No record? Decay slowly to avoid being stuck.
+            last_raise = current_turn - decay_delay
+
+        if current_turn - last_raise >= decay_delay:
+            self.suspicion_level = max(0, self.suspicion_level - 1)
+            if self.suspicion_level == 0:
+                self.suspicion_state = "idle"
+            return True
+        return False
+
+    def clear_suspicion(self):
+        """Immediately clear suspicion state."""
+        self.suspicion_level = 0
+        self.suspicion_state = "idle"
+        self.suspicion_last_raised = None

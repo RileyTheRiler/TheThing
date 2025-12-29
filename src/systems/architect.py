@@ -182,6 +182,19 @@ class TimeSystem:
         """Current in-game hour (0-23)."""
         return (self.start_hour + self.turn_count) % 24
 
+    @hour.setter
+    def hour(self, value: int):
+        """
+        Set the current in-game hour by adjusting the start offset.
+
+        The TimeSystem tracks time as an offset from the initial hour plus
+        turn_count. Updating the hour recalculates start_hour so that future
+        ticks continue from the requested time.
+        """
+        # Normalize to 0-23 to keep representation consistent
+        normalized = value % 24
+        self.start_hour = (normalized - self.turn_count) % 24
+
     def tick(self):
         """Advance time by one turn."""
         self.turn_count += 1

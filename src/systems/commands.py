@@ -100,6 +100,12 @@ class MoveCommand(Command):
             }))
             return
 
+        if getattr(game_state.player, "in_vent", False):
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": "You are inside the vents. Use VENT EXIT to climb out."
+            }))
+            return
+
         direction = direction.upper()
         dx, dy = 0, 0
         if direction in ["NORTH", "N"]:
@@ -806,6 +812,81 @@ class CrouchCommand(Command):
         context.game.player.set_posture(StealthPosture.CROUCHING)
         event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "You crouch down low."}))
 
+class VentCommand(Command):
+    name = "VENT"
+    aliases = ["DUCT"]
+    description = "Enter or crawl through the ventilation network."
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+        player = game_state.player
+        station_map = game_state.station_map
+
+        if not args:
+            event_bus.emit(GameEvent(EventType.ERROR, {"text": "Usage: VENT ENTER|EXIT|<DIRECTION>"}))
+            return
+
+        if not station_map.is_at_vent(*player.location):
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": "You don't see a vent access here."}))
+            return
+
+        action = args[0].upper()
+
+        if action in ["ENTER", "IN"]:
+            if not station_map.is_vent_entry(*player.location):
+                event_bus.emit(GameEvent(EventType.WARNING, {"text": "This grate is too narrow to enter."}))
+                return
+            player.in_vent = True
+            player.set_posture(StealthPosture.CRAWLING)
+            event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "You slip into the ventilation duct."}))
+            game_state.advance_turn()
+            return
+
+        if action in ["EXIT", "OUT"]:
+            if not player.in_vent:
+                event_bus.emit(GameEvent(EventType.WARNING, {"text": "You are not inside a vent."}))
+                return
+            if not station_map.is_vent_entry(*player.location):
+                event_bus.emit(GameEvent(EventType.WARNING, {"text": "You need an entry grate to drop out."}))
+                return
+            player.in_vent = False
+            player.set_posture(StealthPosture.CROUCHING)
+            event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "You drop out of the vent, brushing off dust."}))
+            game_state.advance_turn()
+            return
+
+        # Movement inside ducts
+        direction = action
+        if not player.in_vent:
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": "Enter a vent first (VENT ENTER)."}))
+            return
+
+        target = station_map.get_vent_neighbor_in_direction(*player.location, direction)
+        if not target:
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": "The duct doesn't run that way."}))
+            return
+
+        player.location = target
+        player.set_posture(StealthPosture.CRAWLING)
+        destination_room = station_map.get_room_name(*target)
+
+        movement_payload = {
+            "actor": getattr(player, "name", "You"),
+            "direction": direction,
+            "destination": destination_room,
+            "vent": True,
+            "mode": "vent",
+            "noise": player.get_noise_level()
+        }
+        event_bus.emit(GameEvent(EventType.MOVEMENT, movement_payload))
+        event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "Metal scrapes under you as you crawl through the vent."}))
+
+        stealth_sys = getattr(game_state, "stealth", None) or getattr(game_state, "stealth_system", None)
+        if stealth_sys and hasattr(stealth_sys, "handle_vent_movement"):
+            stealth_sys.handle_vent_movement(game_state, player, target)
+
+        game_state.advance_turn()
+
 class CrawlCommand(Command):
     name = "CRAWL"
     aliases = []
@@ -835,6 +916,9 @@ class SneakCommand(Command):
         game_state = context.game
         if not args:
             event_bus.emit(GameEvent(EventType.ERROR, {"text": "Sneak where? Usage: SNEAK <direction>"}))
+            return
+        if getattr(game_state.player, "in_vent", False):
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": "You are inside the vents. Use VENT EXIT first."}))
             return
             
         direction = args[0].upper()
@@ -1086,6 +1170,7 @@ class CommandDispatcher:
         self.register(CheckCommand())
         self.register(HideCommand())
         self.register(UnhideCommand())
+        self.register(VentCommand())
         self.register(CrouchCommand())
         self.register(StandCommand())
         self.register(SneakCommand())
