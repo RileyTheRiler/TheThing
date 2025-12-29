@@ -1,12 +1,22 @@
-import random
 import math
+from dataclasses import dataclass
 from enum import Enum
+
+
+@dataclass
+class ResolutionModifiers:
+    """Environmental modifiers that adjust roll math."""
+
+    attack_pool: int = 0
+    observation_pool: int = 0
+    stealth_detection: float = 0.0
 
 class Attribute(Enum):
     PROWESS = "Prowess"
     LOGIC = "Logic"
     INFLUENCE = "Influence"
     RESOLVE = "Resolve"
+    THERMAL = "Thermal"
 
 class Skill(Enum):
     MELEE = "Melee"
@@ -23,6 +33,8 @@ class Skill(Enum):
     METEOROLOGY = "Meteorology"
     HANDLING = "Handling"
     COMMS = "Comms"
+    DECEPTION = "Deception"
+    STEALTH = "Stealth"
 
     @staticmethod
     def get_attribute(skill):
@@ -33,6 +45,7 @@ class Skill(Enum):
             Skill.REPAIR: Attribute.PROWESS,     # "Mechanical skill"
             Skill.MECHANICS: Attribute.PROWESS,
             Skill.HANDLING: Attribute.PROWESS,   
+            Skill.STEALTH: Attribute.PROWESS,
             
             Skill.MEDICINE: Attribute.LOGIC,
             Skill.OBSERVATION: Attribute.LOGIC,  
@@ -43,6 +56,7 @@ class Skill(Enum):
 
             Skill.PERSUASION: Attribute.INFLUENCE,
             Skill.EMPATHY: Attribute.INFLUENCE,  # Social standing/understanding
+            Skill.DECEPTION: Attribute.INFLUENCE,
 
             # Resolve serves as a defense/resistance stat primarily
         }
@@ -50,13 +64,58 @@ class Skill(Enum):
 
 class ResolutionSystem:
     @staticmethod
+    def adjust_pool(base_pool: int, modifier: int) -> int:
+        """
+        Safely adjust a dice pool by an integer modifier without going negative.
+        """
+        return max(0, base_pool + modifier)
+
+    @staticmethod
     def roll_check(pool_size, rng):
         """
-        Executes a dice pool check.
-        Uses the provided RandomnessEngine.
+        Executes a dice pool check using the provided RandomnessEngine.
+        
+        This method requires an explicit RandomnessEngine to ensure deterministic 
+        behavior across game sessions and save/load cycles.
+        
         Success = 6s.
         """
-        return rng.calculate_success(pool_size)
+        pool_size = max(1, pool_size)
+        
+        if rng and hasattr(rng, "calculate_success"):
+            return rng.calculate_success(pool_size)
+
+        raise ValueError("RandomnessEngine (rng) must be provided for roll_check to ensure determinism.")
+
+    @staticmethod
+    def resolve_pool(base_pool, skills_attributes, modifiers):
+        """
+        Calculates final pool size by applying modifiers.
+        
+        Args:
+            base_pool (int): Starting pool size.
+            skills_attributes (list): Skills/Attributes involved in the roll.
+            modifiers (dict): Active environmental modifiers.
+            
+        Returns:
+            int: Modified pool size (minimum 1).
+        """
+        if not modifiers:
+            return max(1, base_pool)
+            
+        final_pool = base_pool
+        for sa in skills_attributes:
+            if sa in modifiers:
+                final_pool += modifiers[sa]
+                
+        return max(1, final_pool)
+
+    @staticmethod
+    def success_probability(pool_size: int) -> float:
+        """Probability of at least one success (6) in the pool."""
+        if pool_size <= 0:
+            return 0.0
+        return 1 - math.pow(5 / 6, pool_size)
 
     def calculate_infection_risk(self, lighting_condition: str, mask_integrity: float, paranoia_level: int) -> float:
         """
@@ -96,9 +155,9 @@ class ResolutionSystem:
         
         # If power is on, we are heating UP towards 10C, or maintaining 10C.
         if power_on:
-             # Heating logic: Moves towards 15C
-             target = 15.0
-             delta = k_val * (target - current_temp)
+            # Heating logic: Moves towards 15C
+            target = 15.0
+            delta = k_val * (target - current_temp)
         else:
             # Cooling logic: Moves towards -60C
             delta = -k_val * (current_temp - ambient_exterior)

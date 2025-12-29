@@ -1,39 +1,18 @@
-import random
-from src.core.event_system import event_bus, EventType, GameEvent
+from core.event_system import event_bus, EventType, GameEvent
 
 class MissionarySystem:
     def __init__(self):
-        self.communion_range = 1 # Same room/adjacent
+        self.communion_range = 1 # Adjacent for corridors
         self.base_decay = 2.0     # Mask decay per turn
         self.stress_multiplier = 1.5 # Multiplier if in high-stress environment
         
-        # Subscribe to turn advance
+        # Register for turn advance
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
-        
-        # Agent 3: Role Habits (Standard Habits)
-        self.role_habits = {
-            "Pilot": ["Rec Room", "Corridor"], # MacReady moves around
-            "Mechanic": ["Rec Room", "Generator"],
-            "Biologist": ["Infirmary", "Rec Room"],
-            "Commander": ["Rec Room", "Corridor"],
-            "Cook": ["Rec Room"],
-            "Radio Op": ["Rec Room", "Corridor"], 
-            "Doctor": ["Infirmary", "Rec Room"],
-            "Geologist": ["Rec Room", "Corridor"],
-            "Meteorologist": ["Rec Room", "Corridor"],
-            "Dog Handler": ["Kennel", "Rec Room"],
-            "Assistant Mechanic": ["Rec Room", "Generator"]
-        }
         # Register for turn advance
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
 
-    def on_turn_advance(self, event):
-        """
-        Triggered by the event bus.
-        """
-        game_state = event.payload.get("game_state")
-        if game_state:
-            self.update(game_state)
+    def cleanup(self):
+        event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
 
     def on_turn_advance(self, event: GameEvent):
         """
@@ -41,15 +20,14 @@ class MissionarySystem:
         """
         game_state = event.payload.get("game_state")
         if game_state:
+            # Reset per-turn flags
+            for member in game_state.crew:
+                member.slipped_vapor = False
             self.update(game_state)
 
     def update(self, game_state):
         """
         Main loop for the Missionary system.
-        1. Process Mask Decay for all infected.
-        2. Check for Role-based Habit Dissonance.
-        3. Check for Violent Reveal triggers.
-        4. Simple AI: Attempt Communion if conditions match.
         """
         for member in game_state.crew:
             if not member.is_alive:
@@ -62,22 +40,43 @@ class MissionarySystem:
                 
                 # Simple AI: Try to infect others
                 self.attempt_communion_ai(member, game_state)
+                
+                # Sabotage AI: Try to destroy equipment when alone
+                self.attempt_sabotage_ai(member, game_state)
 
     def process_habit_checks(self, member, game_state):
         """
         Calculates dissonance if NPC is away from their 'Standard' habitat.
+        Preferred rooms are derived from the member's schedule.
         """
         current_room = game_state.station_map.get_room_name(*member.location)
-        preferred = self.role_habits.get(member.role, ["Rec Room"])
+        preferred = self._extract_preferred_rooms(member)
         
         # If the room name contains any of the preferred room strings
         at_station = any(p in current_room for p in preferred)
         
         if not at_station:
-            # DIREC DISSONANCE: Being in the wrong place is taxing for the organism
+            # DIRECT DISSONANCE: Being in the wrong place is taxing for the organism
             dissonance_penalty = 5.0
             member.mask_integrity -= dissonance_penalty
-            # print(f"[DEBUG] {member.name} (Role: {member.role}) is in {current_room} - NOT AT STATION (Penalty: {dissonance_penalty})")
+
+    def _extract_preferred_rooms(self, member):
+        """
+        Extract preferred rooms from a member's schedule.
+        Returns a list of room names where the member spends time.
+        """
+        if not hasattr(member, 'schedule') or not member.schedule:
+            # Fallback: if no schedule, current location is "preferred"
+            return ["Corridor"]
+        
+        # Extract unique room names from schedule entries
+        rooms = set()
+        for entry in member.schedule:
+            room = entry.get("room")
+            if room:
+                rooms.add(room)
+        
+        return list(rooms) if rooms else ["Corridor"]
 
     def process_decay(self, member, game_state):
         """
@@ -91,7 +90,6 @@ class MissionarySystem:
             decay *= 1.5
             
         # 2. Social Friction: If trusting no one / low trust, harder to maintain facade
-        # (Simplified: if Paranoid, decay faster)
         if game_state.paranoia_level > 70:
             decay *= self.stress_multiplier
 
@@ -101,10 +99,8 @@ class MissionarySystem:
             
         # BIOLOGICAL SLIP HOOK
         if game_state.temperature < 0:
-            # P(Slip) = (1.0 - integrity/100.0) * BaseChance
-            # If integrity is 100, slip is 0. If 0, it's 50%.
             slip_chance = (1.0 - (member.mask_integrity / 100.0)) * 0.5
-            if random.random() < slip_chance:
+            if game_state.rng.random_float() < slip_chance:
                 event_bus.emit(GameEvent(EventType.BIOLOGICAL_SLIP, {
                     "character_name": member.name,
                     "type": "VAPOR"
@@ -120,7 +116,6 @@ class MissionarySystem:
             return
 
         # Trigger 2: Mortal Danger (Low Health)
-        # If health meets 1 (critical), self-preservation kicks in
         if member.health <= 1:
             self.trigger_reveal(member, "Critical Injury")
             return
@@ -129,90 +124,230 @@ class MissionarySystem:
         """
         Transforms the character into a monster.
         """
+        revealed_name = f"The-Thing-That-Was-{member.name}"
+        member.revealed_name = revealed_name
+
         print(f"!!! ALERT !!! {member.name} is convulsing... ({reason})")
         member.is_revealed = True
         member.role = "THING-BEAST"
-        member.name = f"The-Thing-That-Was-{member.name}"
-        member.health = 10 # hp buffer boost
-        # Attributes buff
-        # (In a full system, we'd swap stats properly)
-        print(f"!!! {member.name} TEARS THROUGH HUMAN FLESH! !!!")
+        member.health = 10
+        print(f"!!! {revealed_name} TEARS THROUGH HUMAN FLESH! !!!")
+        # Preserve the character's name to keep references stable for AI/tests;
+        # use a themed alias only for messaging to avoid breaking lookups.
+        thing_alias = f"The-Thing-That-Was-{member.name}"
+        member.health = 10
+        print(f"!!! {thing_alias} TEARS THROUGH HUMAN FLESH! !!!")
 
     def attempt_communion_ai(self, agent, game_state):
         """
-        Agent attempts to infect another person in the same room.
+        Agent attempts to infect another person.
         Conditions:
-        - Must be alone with target (no witnesses).
+        - Must be alone with target (no human witnesses).
         - Target not already infected.
         """
-        # 1. Find targets in same room
         room_name = game_state.station_map.get_room_name(*agent.location)
-        potential_targets = []
-        witnesses = []
+        is_corridor = "Corridor" in room_name
 
+        CORRIDOR_VISUAL_RANGE = 5 # As per memory/test expectations
+
+        potential_targets = []
+
+        # Identify valid targets and witnesses
         for other in game_state.crew:
             if other == agent or not other.is_alive:
                 continue
-            
+
             other_room = game_state.station_map.get_room_name(*other.location)
+            is_visible = False
             if other_room == room_name:
+                is_visible = True
+            elif room_name and other_room and "Corridor" in room_name and "Corridor" in other_room:
+                # LOS for Corridors: Check distance
+                dist = ((agent.location[0] - other.location[0])**2 + (agent.location[1] - other.location[1])**2)**0.5
+                if dist <= 5:  # Visibility range in corridors
+                    is_visible = True
+
+            if is_visible:
                 if other.is_infected:
-                    witnesses.append(other) # Other things don't count as witnesses against you, strictly speaking, but for now let's say they complicate the ritual? No, actually they help.
+                    pass
                     # Simplification: Only non-infected count as "Witnesses" that prevent the act.
                 else:
                     potential_targets.append(other)
-            else:
-                # Someone near? (Not implementing complex LOS yet)
-                pass
 
-        # If there are witnesses (non-infected people other than target), we can't do it cleanly
-        # Actually, if there is EXACTLY ONE target and NO ONE ELSE, we can do it.
-        # If there are 2+ targets, we can't retain secrecy easily.
+            # Visibility Check
+            if is_corridor:
+                if "Corridor" in other_room:
+                     # Euclidean distance for visibility in corridors
+                     dist = ((agent.location[0] - other.location[0])**2 + (agent.location[1] - other.location[1])**2)**0.5
+                     if dist <= CORRIDOR_VISUAL_RANGE:
+                         is_visible = True
+            else:
+                # Named Room: Visible if in same room
+                if other_room == room_name:
+                    is_visible = True
+
+            if is_visible:
+                # If ANY human can see us, we cannot commune (unless they are the target and we are alone with them)
+                # We collect potential targets first
+                if not other.is_infected:
+                    # Check distance for communion
+                    is_in_range = False
+                    if is_corridor:
+                         # Manhattan distance for adjacency check
+                         dist = abs(agent.location[0] - other.location[0]) + abs(agent.location[1] - other.location[1])
+                         if dist <= self.communion_range:
+                             is_in_range = True
+                    else:
+                        # In named rooms, being in the room is sufficient
+                        is_in_range = True
+
+                    if is_in_range:
+                        potential_targets.append(other)
+
+        # We can proceed ONLY if:
+        # 1. We have at least one valid target.
+        # 2. There are no witnesses OTHER than the target.
         
         if len(potential_targets) == 1:
             target = potential_targets[0]
-            # Check for other human witnesses in the room?
-            # potential_targets list implies these are humans. 
-            # If len > 1, then there are witnesses.
-            # So len == 1 means target is alone with Agent (and maybe other Things).
-            
-            self.perform_communion(agent, target, game_state)
+            if not self.has_witnesses(agent, target, game_state):
+                self.perform_communion(agent, target, game_state)
+
+    def has_witnesses(self, agent, target, game_state):
+        """
+        Checks for any uninfected crew members who can see the agent.
+        """
+        CORRIDOR_VISUAL_RANGE = 5
+
+        for other in game_state.crew:
+            if other == agent or other == target or not other.is_alive:
+                continue
+
+            # Infected don't count as witnesses
+            if other.is_infected:
+                continue
+
+            if self.is_visible(agent.location, other.location, game_state.station_map):
+                return True
+        return False
+
+    def is_visible(self, loc1, loc2, station_map):
+        """
+        Determines if loc2 is visible from loc1.
+        """
+        room1 = station_map.get_room_name(*loc1)
+        room2 = station_map.get_room_name(*loc2)
+
+        in_named_room1 = room1 in station_map.rooms
+        in_named_room2 = room2 in station_map.rooms
+
+        if in_named_room1:
+            return room1 == room2
+        elif in_named_room2:
+            return False
+        else:
+            # Both corridors
+            x1, y1 = loc1
+            x2, y2 = loc2
+            dist_sq = (x1 - x2)**2 + (y1 - y2)**2
+            return dist_sq <= 25 # 5^2
 
     def perform_communion(self, agent, target, game_state):
         """
         Actual mechanics of assimilation.
         """
-        # Chance to succeed? 
-        # For now, deterministic if alone.
-        
-        print(f">>> SILENT EVENT: {agent.name} approaches {target.name}...")
+        event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+            "text": f"SILENT EVENT: {agent.name} approaches {target.name}..."
+        }))
         
         # Refill Agent's Mask
         agent.mask_integrity = min(100, agent.mask_integrity + 50)
         
         # SEARCHLIGHT HARVEST: Stealing the host's memory/mannerisms
-        self.searchlight_harvest(agent, target)
+        self.searchlight_harvest(agent, target, game_state)
         
         # Infect Target
         target.is_infected = True
         target.mask_integrity = 100 # Fresh mask
-        
-        # Log to hidden state (or debug)
-        # print(f"[DEBUG] {target.name} ASSIMILATED by {agent.name}")
 
-    def searchlight_harvest(self, agent, target):
+    def searchlight_harvest(self, agent, target, game_state=None):
         """
         Transfer nomenclature data from target to agent.
-        Reduces the agent's slip chance by learning the host's logic.
         """
-        print(f">>> SEARCHLIGHT HARVEST: {agent.name} extracts nomenclature from {target.name}.")
+        event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+            "text": f"SEARCHLIGHT HARVEST: {agent.name} extracts nomenclature from {target.name}."
+        }))
         
-        # Reduce slip chances for the Agent (mimicry becomes more precise)
-        # In this simplistic model, the agent just gets 'better' at being the host.
+        # Reduce slip chances for the Agent
         for inv in agent.invariants:
             if 'slip_chance' in inv:
-                # 50% reduction in detection chance
                 inv['slip_chance'] *= 0.5
         
-        # Note: In a deeper game, this would also grant 'Knowledge Tags' or 'Memory Logs'
-        # that the NPC can use in dialogue to prove they are 'human'.
+        # Generate Knowledge Tags
+        role_tag = f"Protocol: {target.role}"
+        memory_tag = f"Memory: {target.name} interaction"
+
+        if hasattr(agent, 'knowledge_tags'):
+             if role_tag not in agent.knowledge_tags:
+                 agent.knowledge_tags.append(role_tag)
+             if memory_tag not in agent.knowledge_tags:
+                 agent.knowledge_tags.append(memory_tag)
+                 
+        # SEARCHLIGHT HARVEST HOOK
+        # Emit event for Psychology system to pick up "Psychic Tremors"
+        event_bus.emit(GameEvent(EventType.SEARCHLIGHT_HARVEST, {
+            "agent_name": agent.name,
+            "target_name": target.name,
+            "location": agent.location,
+            "game_state": game_state
+        }))
+
+    def attempt_sabotage_ai(self, agent, game_state):
+        """
+        Infected NPCs attempt to sabotage critical equipment when unobserved.
+        Priority: Radio > Helicopter > Blood Bank
+        """
+        # Only sabotage if mask integrity is high (confident)
+        if agent.mask_integrity < 50:
+            return
+            
+        # Check if alone (no human witnesses)
+        if self.has_witnesses_in_room(agent, game_state):
+            return
+            
+        current_room = game_state.station_map.get_room_name(*agent.location)
+        
+        # Radio Room: Destroy radio
+        if "Radio" in current_room and game_state.sabotage.radio_operational:
+            if game_state.rng.random_float() < 0.15:  # 15% chance per turn
+                msg = game_state.sabotage.trigger_radio_smashing(game_state, agent.name)
+                if msg:
+                    print(f">>> OFF-CAMERA: {agent.name} smashes the radio equipment.")
+                    
+        # Hangar: Destroy helicopter
+        elif "Hangar" in current_room and game_state.sabotage.chopper_operational:
+            if game_state.rng.random_float() < 0.10:  # 10% chance per turn
+                msg = game_state.sabotage.trigger_chopper_destruction(game_state, agent.name)
+                if msg:
+                    print(f">>> OFF-CAMERA: {agent.name} sabotages the helicopter.")
+                    
+        # Infirmary: Destroy blood bank
+        elif "Infirmary" in current_room and not game_state.blood_bank_destroyed:
+            if game_state.rng.random_float() < 0.20:  # 20% chance per turn
+                msg = game_state.sabotage.trigger_blood_sabotage(game_state)
+                if msg:
+                    print(f">>> OFF-CAMERA: {agent.name} destroys the blood samples.")
+
+    def has_witnesses_in_room(self, agent, game_state):
+        """Check if there are any human witnesses in the same room."""
+        room_name = game_state.station_map.get_room_name(*agent.location)
+        
+        for other in game_state.crew:
+            if other == agent or not other.is_alive or other.is_infected:
+                continue
+                
+            other_room = game_state.station_map.get_room_name(*other.location)
+            if other_room == room_name:
+                return True
+                
+        return False

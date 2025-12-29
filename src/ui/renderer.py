@@ -92,7 +92,7 @@ class TerminalRenderer:
         display.append("+" + "-" * (self.camera.viewport_width * 2 - 1) + "+")
         
         # Legend
-        display.append(self._render_legend(game_state))
+        display.append(self._render_legend(game_state, player))
         
         return "\n".join(display)
     
@@ -166,18 +166,74 @@ class TerminalRenderer:
         
         return self.CHAR_FLOOR
     
-    def _render_legend(self, game_state):
-        """Render the character legend."""
-        # Show NPCs in current viewport
+    def _render_legend(self, game_state, player=None):
+        """Render the character legend with context-aware hints."""
+        legend_items = []
+
+        # Priority 0: Player Context (Room & Action Hints)
+        if player:
+            px, py = player.location
+            room_name = self.map.get_room_name(px, py)
+
+            # Action Hint: Items at location?
+            # Items are abstractly in the room, accessible if player is in the room.
+            # But visually we put them at top-left.
+            # Let's check if there are items in this room.
+            items_here = self.map.room_items.get(room_name, [])
+            if items_here:
+                count = len(items_here)
+                hint = f"{count} item{'s' if count > 1 else ''} here"
+                legend_items.append(f"[{room_name}: {hint} - GET?]")
+            elif not room_name.startswith("Corridor"):
+                legend_items.append(f"[{room_name}]")
+
+            # Action Hint: Dead Body?
+            corpse_here = next((m for m in game_state.crew if m.location == (px, py) and not m.is_alive), None)
+            if corpse_here:
+                legend_items.append(f"[ Corpse: {corpse_here.name} - TEST/SEARCH? ]")
+
+        # Priority 1: NPCs in current viewport
         visible_npcs = []
         for member in game_state.crew:
-            if self.camera.is_visible(*member.location):
+            if self.camera.is_visible(*member.location) and member != player:
                 status = "" if member.is_alive else " (DEAD)"
-                visible_npcs.append(f"{member.name[0]}={member.name}{status}")
+                # Use % for corpse in legend if dead to match map
+                symbol = "%" if not member.is_alive else member.name[0]
+                visible_npcs.append(f"{symbol}={member.name}{status}")
         
         if visible_npcs:
-            return f"[@=You] [{'] ['.join(visible_npcs[:4])}]"
-        return "[@=You] [.=Floor] [#=Wall] [+=Door]"
+            legend_items.append(f"[{'] ['.join(visible_npcs[:3])}]")
+
+        # Priority 2: Items in current viewport (if not already covered by local context)
+        visible_items = []
+        for room_name, items in self.map.room_items.items():
+            if not items: continue
+            room_bounds = self.map.rooms.get(room_name)
+            if not room_bounds: continue
+
+            # Check if * marker is visible
+            origin_x, origin_y = room_bounds[0], room_bounds[1]
+            if self.camera.is_visible(origin_x, origin_y):
+                 # List items only if we are NOT in that room (otherwise covered by context)
+                 if player and self.map.get_room_name(*player.location) != room_name:
+                    for item in items:
+                        if item.name not in visible_items:
+                            visible_items.append(item.name)
+
+        if visible_items:
+            # Truncate if too many
+            if len(visible_items) > 2:
+                item_str = f"{visible_items[0]}, {visible_items[1]}, ..."
+            else:
+                item_str = ", ".join(visible_items)
+            legend_items.append(f"[*={item_str}]")
+
+        base_legend = "[@=You]"
+        if not legend_items:
+            return f"{base_legend} [.=Floor] [#=Wall] [+=Door]"
+
+        return f"{base_legend} {' '.join(legend_items)}"
+
     
     def render_minimap(self, game_state, player):
         """Render a small 5x5 local area minimap."""

@@ -1,0 +1,10 @@
+{
+    "lynch_mob": {
+        "gathering_location": "Rec Room",
+        "trust_threshold": 20
+    },
+    "schedule_validation": {
+        "enforce_room_existence": true,
+        "enforce_hour_range": true
+    }
+}
