@@ -16,6 +16,7 @@ class Attribute(Enum):
     LOGIC = "Logic"
     INFLUENCE = "Influence"
     RESOLVE = "Resolve"
+    THERMAL = "Thermal"
 
 class Skill(Enum):
     MELEE = "Melee"

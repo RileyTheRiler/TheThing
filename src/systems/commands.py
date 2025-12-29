@@ -48,6 +48,43 @@ def _get_blood_test_sim(game_state):
     raise AttributeError("Game state missing blood test simulator")
 
 
+def _current_hiding_spot(game_state: "GameState"):
+    """Return hiding spot metadata for the player's current position."""
+    station_map = getattr(game_state, "station_map", None)
+    if not station_map or not hasattr(station_map, "get_hiding_spot"):
+        return None
+    return station_map.get_hiding_spot(*game_state.player.location)
+
+
+def _movement_blocked_by_hiding(game_state: "GameState") -> bool:
+    """Check if the player must leave cover before moving."""
+    hiding_spot = _current_hiding_spot(game_state)
+    if hiding_spot and getattr(game_state.player, "stealth_posture", StealthPosture.STANDING) == StealthPosture.HIDING:
+        event_bus.emit(GameEvent(EventType.WARNING, {
+            "text": "You are tucked into cover. Use STAND or UNHIDE before moving."
+        }))
+        return True
+    return False
+
+
+def _handle_hiding_entry(game_state: "GameState"):
+    """Auto-apply posture changes and messaging when stepping into cover tiles."""
+    station_map = getattr(game_state, "station_map", None)
+    if not station_map or not hasattr(station_map, "get_hiding_spot"):
+        return
+
+    hiding_spot = station_map.get_hiding_spot(*game_state.player.location)
+    if hiding_spot:
+        game_state.player.set_posture(StealthPosture.HIDING)
+        cover_bonus = hiding_spot.get("cover_bonus", 0)
+        los_note = " It blocks line-of-sight." if hiding_spot.get("blocks_los") else ""
+        event_bus.emit(GameEvent(EventType.MESSAGE, {
+            "text": f"You slip behind {hiding_spot.get('label', 'cover')} (+{cover_bonus} stealth).{los_note}"
+        }))
+    elif getattr(game_state.player, "stealth_posture", StealthPosture.STANDING) == StealthPosture.HIDING:
+        game_state.player.set_posture(StealthPosture.CROUCHING)
+
+
 class MoveCommand(Command):
     name = "MOVE"
     aliases = ["N", "S", "E", "W", "NORTH", "SOUTH", "EAST", "WEST"]
@@ -60,6 +97,12 @@ class MoveCommand(Command):
         if not direction:
             event_bus.emit(GameEvent(EventType.ERROR, {
                 "text": "Usage: MOVE <NORTH/SOUTH/EAST/WEST>"
+            }))
+            return
+
+        if getattr(game_state.player, "in_vent", False):
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": "You are inside the vents. Use VENT EXIT to climb out."
             }))
             return
 
@@ -78,6 +121,9 @@ class MoveCommand(Command):
                 "text": f"Invalid direction: {direction}"
             }))
             return
+
+        if _movement_blocked_by_hiding(game_state):
+            return
         
         # Reset posture to STANDING on move, unless sneaking
         if hasattr(game_state.player, 'set_posture'):
@@ -90,6 +136,7 @@ class MoveCommand(Command):
                 "direction": direction,
                 "destination": destination
             }))
+            _handle_hiding_entry(game_state)
             game_state.advance_turn()
         else:
             event_bus.emit(GameEvent(EventType.WARNING, {"text": "Blocked."}))
@@ -219,6 +266,93 @@ class DropCommand(Command):
             event_bus.emit(GameEvent(EventType.WARNING, {
                 "text": f"You don't have '{item_name}'."
             }))
+
+class ThrowCommand(Command):
+    name = "THROW"
+    aliases = ["TOSS"]
+    description = "Throw a throwable item toward coordinates. Usage: THROW <ITEM NAME> <X> <Y>"
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+        if len(args) < 3:
+            event_bus.emit(GameEvent(EventType.ERROR, {"text": "Usage: THROW <ITEM NAME> <X> <Y>"}))
+            return
+
+        try:
+            target_x = int(args[-2])
+            target_y = int(args[-1])
+        except ValueError:
+            event_bus.emit(GameEvent(EventType.ERROR, {"text": "Target coordinates must be numbers."}))
+            return
+
+        item_name = " ".join(args[:-2])
+        if not game_state.station_map.is_walkable(target_x, target_y):
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": "That throw target is outside the station."}))
+            return
+
+        if not hasattr(game_state, "action_cooldowns"):
+            game_state.action_cooldowns = {}
+        ready_turn = game_state.action_cooldowns.get(self.name, 0)
+        if ready_turn and game_state.turn < ready_turn:
+            remaining = ready_turn - game_state.turn
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": f"Throw is on cooldown for {remaining} more turn(s)."
+            }))
+            event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+                "text": "Throw cooldown active.",
+                "cooldown": remaining
+            }))
+            return
+
+        throwable = next((i for i in game_state.player.inventory if i.name.upper() == item_name.upper()), None)
+        if not throwable:
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": f"You don't have '{item_name}'."}))
+            return
+        if getattr(throwable, "category", "").lower() != "throwable":
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": f"{throwable.name} can't be thrown as a distraction."}))
+            return
+        if getattr(throwable, "uses", -1) == 0:
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": f"{throwable.name} has no charges left."}))
+            event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {"text": "No ammo remaining.", "ammo": 0}))
+            return
+
+        thrown_item = game_state.player.remove_item(throwable.name)
+        spent = False
+        if thrown_item.is_consumable():
+            thrown_item.consume()
+            spent = thrown_item.uses <= 0
+
+        target_room = game_state.station_map.get_room_name(target_x, target_y)
+        thrown_item.add_history(game_state.turn, f"Thrown toward {target_room}")
+        if not spent:
+            game_state.station_map.add_item_to_room(thrown_item, target_x, target_y, game_state.turn)
+
+        event_bus.emit(GameEvent(EventType.MESSAGE, {
+            "text": f"You throw {thrown_item.name} toward {target_room} ({target_x},{target_y})."
+        }))
+
+        cooldown_turns = getattr(thrown_item, "cooldown", 0) or 1
+        game_state.action_cooldowns[self.name] = game_state.turn + cooldown_turns
+        ammo_remaining = thrown_item.uses if thrown_item.is_consumable() else None
+        event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+            "text": f"{thrown_item.name} lands with a sharp clatter.",
+            "ammo": ammo_remaining,
+            "cooldown": cooldown_turns
+        }))
+
+        payload = {
+            "game_state": game_state,
+            "room": target_room,
+            "target_location": (target_x, target_y),
+            "source": thrown_item.name,
+            "type": getattr(thrown_item, "effect", "noise"),
+            "intensity": getattr(thrown_item, "effect_value", 1),
+            "priority_override": 2 if getattr(thrown_item, "effect", "") == "signal" else 1,
+            "linger_turns": 3 if getattr(thrown_item, "effect", "") == "signal" else 1
+        }
+        event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, payload))
+
+        game_state.advance_turn()
 
 class AttackCommand(Command):
     name = "ATTACK"
@@ -731,12 +865,30 @@ class HideCommand(Command):
              # For now, always allow trying to hide, effectiveness depends on system
              pass
 
+        hiding_spot = _current_hiding_spot(game_state)
         game_state.player.set_posture(StealthPosture.HIDING)
-        event_bus.emit(GameEvent(EventType.MESSAGE, {
-            "text": f"You slip into the shadows of the {player_room}..."
-        }))
+        if hiding_spot:
+            cover_bonus = hiding_spot.get("cover_bonus", 0)
+            los_note = " Your vision is narrow from here." if hiding_spot.get("blocks_los") else ""
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": f"You slip behind {hiding_spot.get('label', 'cover')} (+{cover_bonus} stealth).{los_note}"
+            }))
+        else:
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": f"You slip into the shadows of the {player_room}..."
+            }))
         # Hiding takes a turn
         game_state.advance_turn()
+
+class UnhideCommand(Command):
+    name = "UNHIDE"
+    aliases = ["EXITCOVER"]
+    description = "Leave your hiding spot and stand up."
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        context.game.player.set_posture(StealthPosture.STANDING)
+        event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "You step out from cover and stand up."}))
+        context.game.advance_turn()
 
 class CrouchCommand(Command):
     name = "CROUCH"
@@ -746,6 +898,81 @@ class CrouchCommand(Command):
     def execute(self, context: GameContext, args: List[str]) -> None:
         context.game.player.set_posture(StealthPosture.CROUCHING)
         event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "You crouch down low."}))
+
+class VentCommand(Command):
+    name = "VENT"
+    aliases = ["DUCT"]
+    description = "Enter or crawl through the ventilation network."
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+        player = game_state.player
+        station_map = game_state.station_map
+
+        if not args:
+            event_bus.emit(GameEvent(EventType.ERROR, {"text": "Usage: VENT ENTER|EXIT|<DIRECTION>"}))
+            return
+
+        if not station_map.is_at_vent(*player.location):
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": "You don't see a vent access here."}))
+            return
+
+        action = args[0].upper()
+
+        if action in ["ENTER", "IN"]:
+            if not station_map.is_vent_entry(*player.location):
+                event_bus.emit(GameEvent(EventType.WARNING, {"text": "This grate is too narrow to enter."}))
+                return
+            player.in_vent = True
+            player.set_posture(StealthPosture.CRAWLING)
+            event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "You slip into the ventilation duct."}))
+            game_state.advance_turn()
+            return
+
+        if action in ["EXIT", "OUT"]:
+            if not player.in_vent:
+                event_bus.emit(GameEvent(EventType.WARNING, {"text": "You are not inside a vent."}))
+                return
+            if not station_map.is_vent_entry(*player.location):
+                event_bus.emit(GameEvent(EventType.WARNING, {"text": "You need an entry grate to drop out."}))
+                return
+            player.in_vent = False
+            player.set_posture(StealthPosture.CROUCHING)
+            event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "You drop out of the vent, brushing off dust."}))
+            game_state.advance_turn()
+            return
+
+        # Movement inside ducts
+        direction = action
+        if not player.in_vent:
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": "Enter a vent first (VENT ENTER)."}))
+            return
+
+        target = station_map.get_vent_neighbor_in_direction(*player.location, direction)
+        if not target:
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": "The duct doesn't run that way."}))
+            return
+
+        player.location = target
+        player.set_posture(StealthPosture.CRAWLING)
+        destination_room = station_map.get_room_name(*target)
+
+        movement_payload = {
+            "actor": getattr(player, "name", "You"),
+            "direction": direction,
+            "destination": destination_room,
+            "vent": True,
+            "mode": "vent",
+            "noise": player.get_noise_level()
+        }
+        event_bus.emit(GameEvent(EventType.MOVEMENT, movement_payload))
+        event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "Metal scrapes under you as you crawl through the vent."}))
+
+        stealth_sys = getattr(game_state, "stealth", None) or getattr(game_state, "stealth_system", None)
+        if stealth_sys and hasattr(stealth_sys, "handle_vent_movement"):
+            stealth_sys.handle_vent_movement(game_state, player, target)
+
+        game_state.advance_turn()
 
 class CrawlCommand(Command):
     name = "CRAWL"
@@ -762,8 +989,10 @@ class StandCommand(Command):
     description = "Stand up normally."
 
     def execute(self, context: GameContext, args: List[str]) -> None:
+        was_hiding = getattr(context.game.player, "stealth_posture", StealthPosture.STANDING) == StealthPosture.HIDING
         context.game.player.set_posture(StealthPosture.STANDING)
-        event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "You stand up."}))
+        text = "You step out from cover and stand up." if was_hiding else "You stand up."
+        event_bus.emit(GameEvent(EventType.MESSAGE, {"text": text}))
 
 class SneakCommand(Command):
     name = "SNEAK"
@@ -774,6 +1003,9 @@ class SneakCommand(Command):
         game_state = context.game
         if not args:
             event_bus.emit(GameEvent(EventType.ERROR, {"text": "Sneak where? Usage: SNEAK <direction>"}))
+            return
+        if getattr(game_state.player, "in_vent", False):
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": "You are inside the vents. Use VENT EXIT first."}))
             return
             
         direction = args[0].upper()
@@ -790,6 +1022,9 @@ class SneakCommand(Command):
              event_bus.emit(GameEvent(EventType.ERROR, {"text": f"Invalid direction: {direction}"}))
              return
 
+        if _movement_blocked_by_hiding(game_state):
+            return
+
         if game_state.player.move(dx, dy, game_state.station_map):
             destination = game_state.station_map.get_room_name(*game_state.player.location)
             event_bus.emit(GameEvent(EventType.MOVEMENT, {
@@ -798,6 +1033,7 @@ class SneakCommand(Command):
                 "destination": destination
             }))
             event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "(Sneaking)"}))
+            _handle_hiding_entry(game_state)
             game_state.advance_turn()
         else:
             event_bus.emit(GameEvent(EventType.WARNING, {"text": "Blocked."}))
@@ -1000,6 +1236,7 @@ class CommandDispatcher:
         self.register(CraftCommand())
         self.register(GetCommand())
         self.register(DropCommand())
+        self.register(ThrowCommand())
         self.register(AttackCommand())
         self.register(TagCommand())
         self.register(LogCommand())
@@ -1020,6 +1257,8 @@ class CommandDispatcher:
         self.register(TrustCommand())
         self.register(CheckCommand())
         self.register(HideCommand())
+        self.register(UnhideCommand())
+        self.register(VentCommand())
         self.register(CrouchCommand())
         self.register(StandCommand())
         self.register(SneakCommand())

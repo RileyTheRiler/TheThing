@@ -37,6 +37,7 @@ class CommandParser:
         'pickup': 'GET', 'acquire': 'GET', 'collect': 'GET',
         'drop': 'DROP', 'discard': 'DROP', 'leave': 'DROP',
         'put': 'DROP', 'place': 'DROP',
+        'throw': 'THROW', 'toss': 'THROW', 'lob': 'THROW',
         'inventory': 'INVENTORY', 'inv': 'INVENTORY', 'items': 'INVENTORY',
         'bag': 'INVENTORY', 'stuff': 'INVENTORY',
         'craft': 'CRAFT', 'build': 'CRAFT', 'assemble': 'CRAFT', 'make': 'CRAFT',
@@ -66,8 +67,9 @@ class CommandParser:
         'crouch': 'CROUCH', 'duck': 'CROUCH', 'low': 'CROUCH',
         'crawl': 'CRAWL', 'prone': 'CRAWL',
         'stand': 'STAND', 'up': 'STAND', 'rise': 'STAND',
-        'hide': 'HIDE', 'stealth': 'HIDE',
+        'hide': 'HIDE', 'stealth': 'HIDE', 'unhide': 'UNHIDE', 'exitcover': 'UNHIDE',
         'sneak': 'SNEAK',
+        'vent': 'VENT', 'duct': 'VENT', 'vents': 'VENT',
     }
     
     # Direction keywords

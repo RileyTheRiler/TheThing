@@ -84,6 +84,7 @@ class GameState:
         self.crew = []
         self._paranoia_level = 0
         self.design_registry = DesignBriefRegistry()
+        self.action_cooldowns = {}
         
         # 2. Basic Configuration
         self.characters_config_path = characters_path or os.path.join("config", "characters.json")
@@ -126,6 +127,7 @@ class GameState:
         self.dialogue = DialogueManager()
         self.dialogue_system = DialogueSystem(rng=self.rng)
         self.stealth = StealthSystem()
+        self.stealth_system = self.stealth  # Alias for systems expecting stealth_system attr
         self.crafting = CraftingSystem()
         self.endgame = EndgameSystem(self.design_registry) # Agent 8
         self.combat = CombatSystem(self.rng, self.room_states)

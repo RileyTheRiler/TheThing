@@ -141,6 +141,10 @@ class EnvironmentalEffects:
     # Social modifiers
     paranoia_modifier: int = 0
     communion_chance_modifier: float = 0.0
+
+    # Thermal/Perception
+    thermal_detection_bonus: int = 0
+    heat_detection_enabled: bool = False
     
     # Movement
     movement_restricted: bool = False
@@ -200,6 +204,10 @@ class EnvironmentalEffects:
         # Apply power/darkness effects
         if not snapshot.power_on or in_dark_room:
             effects.apply_power_failure()
+            # Power loss enables heat scanning unless the room is frozen solid
+            if not in_frozen_room:
+                effects.heat_detection_enabled = True
+                effects.thermal_detection_bonus = 1
         
         # Apply temperature effects
         temp_level = snapshot.get_temperature_level(thresholds)
