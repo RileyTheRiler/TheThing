@@ -41,6 +41,9 @@ class StationMap:
         # Hot paths (rendering, AI movement) call get_room_name thousands of times;
         # this keeps the lookup O(1) instead of iterating every room definition.
         self._coord_to_room = self._build_room_lookup()
+        # Designated hiding spots with metadata for stealth/combat interactions.
+        # Each entry: (x, y): {"room": name, "cover_bonus": int, "blocks_los": bool, "label": str}
+        self.hiding_spots = self._build_hiding_spots()
         # Lightweight vent graph for network traversal + entry/exit metadata
         self.vent_graph = self._build_vent_graph()
 
@@ -225,3 +228,30 @@ class StationMap:
                 if item:
                     sm.room_items[room].append(item)
         return sm
+
+    def _build_hiding_spots(self) -> Dict[tuple, Dict]:
+        """Define static hiding spots across the station grid.
+
+        These locations provide defensive bonuses and sometimes block line-of-sight.
+        Coordinates are chosen within the existing room rectangles to align with furniture.
+        """
+        return {
+            (6, 6): {"room": "Rec Room", "cover_bonus": 2, "blocks_los": True, "label": "the rec room booths"},
+            (1, 1): {"room": "Infirmary", "cover_bonus": 1, "blocks_los": False, "label": "a medicine cabinet"},
+            (16, 18): {"room": "Generator", "cover_bonus": 3, "blocks_los": True, "label": "a bank of fuel drums"},
+            (1, 17): {"room": "Kennel", "cover_bonus": 2, "blocks_los": False, "label": "the kennel cages"},
+            (11, 1): {"room": "Radio Room", "cover_bonus": 1, "blocks_los": True, "label": "under the console"},
+            (17, 1): {"room": "Storage", "cover_bonus": 3, "blocks_los": True, "label": "stacked crates"},
+            (12, 12): {"room": "Lab", "cover_bonus": 2, "blocks_los": False, "label": "a row of lab benches"},
+            (2, 7): {"room": "Sleeping Quarters", "cover_bonus": 1, "blocks_los": False, "label": "between bunks"},
+            (6, 1): {"room": "Mess Hall", "cover_bonus": 1, "blocks_los": False, "label": "the galley counter"},
+            (7, 17): {"room": "Hangar", "cover_bonus": 2, "blocks_los": True, "label": "behind tool racks"},
+        }
+
+    def is_hiding_spot(self, x: int, y: int) -> bool:
+        """Return True if the coordinate is a designated hiding tile."""
+        return (x, y) in self.hiding_spots
+
+    def get_hiding_spot(self, x: int, y: int) -> Dict:
+        """Return hiding spot metadata for the coordinate or None."""
+        return self.hiding_spots.get((x, y))

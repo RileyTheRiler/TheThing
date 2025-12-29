@@ -51,6 +51,40 @@ def _save_history():
         pass  # Can't write history file
 
 
+def _current_hiding_spot(game):
+    """Return hiding spot metadata for the player's current tile if available."""
+    station_map = getattr(game, "station_map", None)
+    if not station_map or not hasattr(station_map, "get_hiding_spot"):
+        return None
+    return station_map.get_hiding_spot(*game.player.location)
+
+
+def _movement_blocked_by_hiding(game):
+    """Prevent movement while the player is actively hiding in a cover tile."""
+    hiding_spot = _current_hiding_spot(game)
+    if hiding_spot and getattr(game.player, "stealth_posture", StealthPosture.STANDING) == StealthPosture.HIDING:
+        game.crt.warning("You are tucked into cover. Use UNHIDE or STAND before moving.")
+        return True
+    return False
+
+
+def _handle_hiding_entry(game, new_location):
+    """Auto-adjust posture when stepping into or out of a hiding tile."""
+    station_map = getattr(game, "station_map", None)
+    if not station_map or not hasattr(station_map, "get_hiding_spot"):
+        return
+
+    hiding_spot = station_map.get_hiding_spot(*new_location)
+    if hiding_spot:
+        game.player.set_posture(StealthPosture.HIDING)
+        cover_bonus = hiding_spot.get("cover_bonus", 0)
+        desc = hiding_spot.get("label", "cover")
+        los_note = " Line of sight is narrow here." if hiding_spot.get("blocks_los") else ""
+        game.crt.output(f"You melt into {desc} (+{cover_bonus} stealth).{los_note}")
+    elif getattr(game.player, "stealth_posture", StealthPosture.STANDING) == StealthPosture.HIDING:
+        game.player.set_posture(StealthPosture.CROUCHING)
+
+
 from core.resolution import Attribute, Skill
 from core.event_system import event_bus, EventType, GameEvent
 from systems.architect import Difficulty, DifficultySettings, RandomnessEngine
@@ -58,6 +92,7 @@ from systems.combat import CombatSystem, CoverType, CombatEncounter
 from systems.interrogation import InterrogationSystem, InterrogationTopic
 from systems.commands import GameContext
 from systems.statistics import stats
+from entities.crew_member import StealthPosture
 from audio.audio_manager import Sound
 from ui.settings import settings, show_settings_menu
 from ui.crt_effects import CRTOutput
@@ -392,6 +427,12 @@ def _render_game_state(game):
     if room_desc:
         game.crt.output(f">>> {room_desc}", crawl=True)
 
+    hiding_spot = _current_hiding_spot(game)
+    if hiding_spot and getattr(game.player, "stealth_posture", StealthPosture.STANDING) == StealthPosture.HIDING:
+        cover = hiding_spot.get("cover_bonus", 0)
+        los_text = "Vision is restricted from this angle." if hiding_spot.get("blocks_los") else "You stay concealed but keep your view."
+        game.crt.output(f"[HIDING] +{cover} cover from {hiding_spot.get('label', 'cover')}. {los_text}")
+
     room_items = game.station_map.get_items_in_room(*game.player.location)
     if room_items:
         item_list = ", ".join([str(i) for i in room_items])
@@ -531,41 +572,6 @@ def _execute_command(game, cmd):
     # ... (Most other logic is now handled by parser.execute)
     # Keeping minimal fallback or specific debug commands if needed
     
-    # Re-enable loop for legacy structure if parser wasn't enough?
-    # Actually, let's trust the parser. The parser should handle EVERYTHING in commands.py
-    
-    return True
-                        "SUSPICION": InterrogationTopic.SUSPICION,
-                        "BEHAVIOR": InterrogationTopic.BEHAVIOR,
-                        "KNOWLEDGE": InterrogationTopic.KNOWLEDGE
-                    }
-                    topic = topic_map.get(topic_name, InterrogationTopic.WHEREABOUTS)
-                else:
-                    topic = InterrogationTopic.WHEREABOUTS
-
-                # Initialize interrogation system if needed
-                if not hasattr(game, 'interrogation_system'):
-                    game.interrogation_system = InterrogationSystem(game.rng, game.room_states)
-
-                result = game.interrogation_system.interrogate(
-                    game.player, target, topic, game
-                )
-
-                print(f"\n[INTERROGATION: {target.name} - {topic.value.upper()}]")
-                print(f"\"{result.dialogue}\"")
-                print(f"[Response: {result.response_type.value}]")
-
-                if result.tells:
-                    print("\n[OBSERVATION]")
-                    for tell in result.tells:
-                        print(f"  - {tell}")
-
-                # Apply trust change
-                game.trust_system.modify_trust(target.name, game.player.name, result.trust_change)
-                if result.trust_change != 0:
-                    change_str = f"+{result.trust_change}" if result.trust_change > 0 else str(result.trust_change)
-                    print(f"[Trust: {change_str}]")
-
     elif action == "ACCUSE":
         if len(cmd) < 2:
             print("Usage: ACCUSE <NAME>")
@@ -826,6 +832,7 @@ def _execute_command(game, cmd):
                 dx, dy = dx_map[exit_dir]
                 game.player.move(dx, dy, game.station_map)
                 print(f"You flee {exit_dir}!")
+                _handle_hiding_entry(game, game.player.location)
                 # Clear cover
                 if game.player.name in game.combat_cover:
                     del game.combat_cover[game.player.name]
@@ -846,6 +853,8 @@ def _execute_command(game, cmd):
         if len(cmd) < 2:
             print("Usage: MOVE <NORTH/SOUTH/EAST/WEST>")
         else:
+            if _movement_blocked_by_hiding(game):
+                return True
             direction = cmd[1]
             dx, dy = 0, 0
             if direction in ["NORTH", "N"]:
@@ -872,9 +881,15 @@ def _execute_command(game, cmd):
                 else:
                     game.player.location = (new_x, new_y)
                     print(f"You moved {direction}.")
+                    _handle_hiding_entry(game, game.player.location)
                     game.advance_turn()
             else:
                 print("Blocked.")
+
+    elif action in ["UNHIDE", "EXITCOVER"]:
+        game.player.set_posture(StealthPosture.STANDING)
+        print("You step out from cover and stand up.")
+        game.advance_turn()
 
     elif action == "BREAK":
         if len(cmd) < 2:
@@ -914,6 +929,7 @@ def _execute_command(game, cmd):
                         # Barricade broken - enter the room
                         game.player.location = (new_x, new_y)
                         print(f"You burst into the {target_room}!")
+                        _handle_hiding_entry(game, game.player.location)
 
                     game.advance_turn()
             else:
