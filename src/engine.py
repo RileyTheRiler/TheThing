@@ -39,6 +39,127 @@ from ui.command_parser import CommandParser
 from ui.message_reporter import MessageReporter
 from audio.audio_manager import AudioManager, Sound
 
+    @classmethod
+    def from_dict(cls, data):
+        skill = None
+        if data.get("weapon_skill"):
+             try:
+                 skill = Skill[data["weapon_skill"]]
+             except KeyError:
+                 skill = None
+                 
+        item = cls(
+            name=data["name"],
+            description=data["description"],
+            is_evidence=data["is_evidence"],
+            weapon_skill=skill,
+            damage=data["damage"],
+            uses=data.get("uses", -1),
+            effect=data.get("effect"),
+            effect_value=data.get("effect_value", 0),
+            category=data.get("category", "misc")
+        )
+        item.history = data.get("history", [])
+        return item
+
+class CrewMember:
+    def __init__(self, name, role, behavior_type, attributes=None, skills=None, schedule=None, invariants=None):
+        self.name = name
+        self.role = role
+        self.behavior_type = behavior_type
+        self.is_infected = False  # The "Truth" hidden from the player
+        self.trust_score = 50      # 0 to 100
+        self.location = (0, 0)
+        self.is_alive = True
+        
+        # Stats
+        self.attributes = attributes if attributes else {}
+        self.skills = skills if skills else {}
+        self.schedule = schedule if schedule else []
+        self.invariants = invariants if invariants else []
+        self.forbidden_rooms = [] # Hydrated from JSON
+        self.stress = 0
+        self.inventory = []
+        self.health = 3 # Base health
+        self.mask_integrity = 100.0 # Agent 3: Mask Tracking
+        self.is_revealed = False    # Agent 3: Violent Reveal
+        self.slipped_vapor = False  # Hook: Biological Slip flag
+
+    def take_damage(self, amount):
+        self.health -= amount
+        if self.health <= 0:
+            self.health = 0
+            self.is_alive = False
+            return True # Died
+        return False
+
+    def add_item(self, item, turn=0):
+        self.inventory.append(item)
+        item.add_history(turn, f"Picked up by {self.name}")
+    
+    def remove_item(self, item_name):
+        for i, item in enumerate(self.inventory):
+            if item.name.upper() == item_name.upper():
+                return self.inventory.pop(i)
+        return None
+
+    def roll_check(self, attribute, skill=None, rng=None, resolution_system=None):
+        attr_val = self.attributes.get(attribute, 1) 
+        skill_val = self.skills.get(skill, 0)
+        pool_size = attr_val + skill_val
+        
+        # Use provided ResolutionSystem or fallback to static class method
+        if resolution_system:
+            return resolution_system.roll_check(pool_size, rng)
+        return ResolutionSystem.roll_check(pool_size, rng)
+
+    def move(self, dx, dy, station_map):
+        new_x = self.location[0] + dx
+        new_y = self.location[1] + dy
+        if station_map.is_walkable(new_x, new_y):
+            self.location = (new_x, new_y)
+            return True
+        return False
+
+    def get_description(self, game_state):
+        rng = game_state.rng
+        desc = [f"This is {self.name}, the {self.role}."]
+        
+        # 1. Spatial Slip Check
+        current_room = game_state.station_map.get_room_name(*self.location)
+        if hasattr(self, 'forbidden_rooms') and current_room in self.forbidden_rooms:
+            desc.append(f"Something is wrong. {self.name} shouldn't be in the {current_room}. They look out of place, almost defensive.")
+
+        # 2. Invariant Visual Slips (Base Behavioral Patterns)
+        for inv in [i for i in self.invariants if i.get('type') == 'visual']:
+            if self.is_infected and rng.random_float() < inv.get('slip_chance', 0.5):
+                desc.append(inv['slip_desc'])
+            else:
+                desc.append(inv['baseline'])
+
+        # 3. Agent 3/4 biological slips and sensory tells
+        if self.is_infected and not self.is_revealed:
+            # Chance to show a sensory tell increases as mask integrity drops
+            if self.mask_integrity < 80:
+                slip_chance = (80 - self.mask_integrity) / 80.0
+                if rng.random_float() < slip_chance:
+                    slip = BiologicalSlipGenerator.get_visual_slip(rng)
+                    desc.append(f"You notice they are {slip}.")
+            
+            # Specific hint for infected NPCs
+            if self.mask_integrity < 50 and rng.random_float() < 0.3:
+                 desc.append("Their eyes seem strange... almost like lusterless black spheres.")
+        
+        # 4. State based on stress and environment
+        state = "shivering in the cold"
+        if self.stress > 3:
+            state = "visibly shaking and hyperventilating"
+        elif self.is_infected and self.mask_integrity < 40:
+             state = "unnaturally still, staring through you"
+             
+        desc.append(f"State: {state.capitalize()}.")
+        
+        return " ".join(desc)
 
 class GameState:
     @property
@@ -54,6 +175,80 @@ class GameState:
         if not hasattr(self, "social_thresholds"):
             return
 
+        # 0. PRIORITY: Lynch Mob Hunting (Agent 2)
+        if game_state.lynch_mob.active_mob and game_state.lynch_mob.target:
+            target = game_state.lynch_mob.target
+            if target != self and target.is_alive:
+                # Move toward the lynch target
+                tx, ty = target.location
+                self._pathfind_step(tx, ty, game_state.station_map)
+                return
+
+        # 1. Check Schedule
+        # Schedule entries: {"start": 8, "end": 20, "room": "Rec Room"}
+        # Fix: TimeSystem lacks 'hour' property, calculate manually (Start 08:00)
+        current_hour = (game_state.time_system.turn_count + 8) % 24
+        destination = None
+        for entry in self.schedule:
+            start = entry.get("start", 0)
+            end = entry.get("end", 24)
+            room = entry.get("room")
+            
+            # Handle wrap-around schedules (e.g., 20:00 to 08:00)
+            if start < end:
+                if start <= current_hour < end:
+                    destination = room
+                    break
+            else: # Wrap around midnight
+                if current_hour >= start or current_hour < end:
+                    destination = room
+                    break
+        
+        if destination:
+            # Move towards destination room
+            target_pos = game_state.station_map.rooms.get(destination)
+            if target_pos:
+                tx, ty, _, _ = target_pos
+                self._pathfind_step(tx, ty, game_state.station_map)
+                return
+
+        # 2. Idling / Wandering
+        if game_state.rng.random_float() < 0.3:
+            dx = game_state.rng.choose([-1, 0, 1])
+            dy = game_state.rng.choose([-1, 0, 1])
+            self.move(dx, dy, game_state.station_map)
+
+    def _pathfind_step(self, target_x, target_y, station_map):
+        """Simple greedy step towards target."""
+        dx = 1 if target_x > self.location[0] else -1 if target_x < self.location[0] else 0
+        dy = 1 if target_y > self.location[1] else -1 if target_y < self.location[1] else 0
+        self.move(dx, dy, station_map)
+
+    def get_dialogue(self, game_state):
+        rng = game_state.rng
+        
+        # Dialogue Invariants
+        dialogue_invariants = [i for i in self.invariants if i.get('type') == 'dialogue']
+        if dialogue_invariants:
+            inv = rng.choose(dialogue_invariants) if hasattr(rng, 'choose') else random.choice(dialogue_invariants)
+            if self.is_infected and rng.random_float() < inv.get('slip_chance', 0.5):
+                base_dialogue = f"Speaking {inv['slip_desc']}."
+            else:
+                base_dialogue = f"Wait, {inv['baseline']}." # Simple flavor
+        else:
+            base_dialogue = f"I'm {self.behavior_type}."
+        
+        if game_state.time_system.temperature < 0:
+            show_vapor = True
+            # BIOLOGICAL SLIP HOOK
+            if self.is_infected and self.slipped_vapor:
+                show_vapor = False
+            
+            if show_vapor:
+                base_dialogue += " [VAPOR]"
+            else:
+                base_dialogue += " [NO VAPOR]"
+        return base_dialogue
         if previous_value is None:
             self._paranoia_bucket = bucket_for_thresholds(clamped, self.social_thresholds.paranoia_thresholds)
             return
@@ -470,6 +665,11 @@ def main():
         if "rng" in data:
             game.rng.from_dict(data["rng"])
         
+        # Fix: TimeSystem lacks 'hour' property, calculate manually (Start 08:00)
+        current_hour = (game.time_system.turn_count + 8) % 24
+        game.crt.output(f"\n[TURN {game.turn}] MODE: {game.mode.value} | TIME: {current_hour:02}:00 | TEMP: {game.temperature:.1f}C | POWER: {'ON' if game.power_on else 'OFF'}")
+        game.crt.output(f"[LOC: {player_room}] {room_icons}")
+        game.crt.output(f"[{weather_status}]")
         if "time_system" in data:
             game.time_system = TimeSystem.from_dict(data["time_system"])
         else:
@@ -565,4 +765,264 @@ def main():
         game.room_states = RoomStateManager(list(game.station_map.rooms.keys()))
         game.crafting = CraftingSystem.from_dict(data.get("crafting"), game)
         
+        # --- FORENSIC COMMANDS ---
+        elif action == "HEAT":
+            print(game.forensics.blood_test.heat_wire())
+            
+        elif action == "TEST":
+            if len(cmd) < 2:
+                print("Usage: TEST <NAME>")
+            else:
+                target_name = cmd[1]
+                # Check if we have wire? For now assume yes or check inventory later
+                target = next((m for m in game.crew if m.name.upper() == target_name.upper()), None)
+                if target:
+                    if game.station_map.get_room_name(*target.location) == player_room:
+                        print(game.forensics.blood_test.start_test(target.name))
+                    else:
+                        print(f"{target.name} is not here.")
+                else:
+                    print(f"Unknown target: {target_name}")
+
+        elif action == "APPLY":
+            if not game.forensics.blood_test.active:
+                print("No test in progress.")
+            else:
+                # Find the sample owner to check infection status
+                sample_name = game.forensics.blood_test.current_sample
+                subject = next((m for m in game.crew if m.name == sample_name), None)
+                if subject:
+                    print(game.forensics.blood_test.apply_wire(subject.is_infected))
+                    
+        elif action == "CANCEL":
+             print(game.forensics.blood_test.cancel())
+             
+        elif action == "TAG":
+            if len(cmd) < 3:
+                print("Usage: TAG <NAME> <CATEGORY> <NOTE...>")
+            else:
+                target_name = cmd[1]
+                category = cmd[2]
+                note = " ".join(cmd[3:])
+                target = next((m for m in game.crew if m.name.upper() == target_name.upper()), None)
+                if target:
+                    game.forensic_db.add_tag(target.name, category, note, game.turn)
+                    print(f"Logged forensic tag for {target.name}.")
+                else:
+                    print(f"Unknown target: {target_name}")
+                    
+        elif action == "LOG":
+            if len(cmd) < 2:
+                print("Usage: LOG <ITEM NAME>")
+            else:
+                item_name = " ".join(cmd[1:])
+                print(game.evidence_log.get_history(item_name))
+
+        elif action == "DOSSIER":
+            if len(cmd) < 2:
+                print("Usage: DOSSIER <NAME>")
+            else:
+                target_name = cmd[1]
+                print(game.forensic_db.get_report(target_name))
+        # -------------------------
+
+        elif action == "TALK":
+             for m in game.crew:
+                room = game.station_map.get_room_name(*m.location)
+                if room == player_room: # Only talk to people in the same room
+                    print(f"{m.name}: {m.get_dialogue(game)}")
+        elif action == "LOOK":
+            if len(cmd) < 2:
+                print("Usage: LOOK <NAME>")
+            else:
+                target_name = cmd[1]
+                target = next((m for m in game.crew if m.name.upper() == target_name), None)
+                if target:
+                    if game.station_map.get_room_name(*target.location) == player_room:
+                        print(target.get_description(game))
+                    else:
+                        print(f"There is no {target_name} here.")
+                else:
+                    print(f"Unknown crew member: {target_name}")
+        elif action == "TAG":
+            if len(cmd) < 3:
+                print("Usage: TAG <NAME> <CATEGORY> <NOTE...>")
+                print("Categories: IDENTITY, TRUST, SUSPICION, BEHAVIOR")
+            else:
+                target_name = cmd[1]
+                category = cmd[2]
+                note = " ".join(cmd[3:])
+                target = next((m for m in game.crew if m.name.upper() == target_name.upper()), None)
+                if target:
+                    game.forensic_db.add_tag(target.name, category, note, game.turn)
+                    # Emit Event for Social System to lower trust
+                    event_bus.emit(GameEvent(EventType.EVIDENCE_TAGGED, {"target": target.name, "game_state": game}))
+                    print(f"Logged forensic tag for {target.name} [{category}].")
+                else:
+                    print(f"Unknown target: {target_name}")
+
+        elif action == "LOG":
+            if len(cmd) < 2:
+                print("Usage: LOG <ITEM NAME>")
+            else:
+                item_name = " ".join(cmd[1:])
+                print(game.evidence_log.get_history(item_name))
+
+        elif action == "DOSSIER":
+            if len(cmd) < 2:
+                print("Usage: DOSSIER <NAME>")
+            else:
+                target_name = cmd[1]
+                print(game.forensic_db.get_report(target_name))
+
+        elif action == "JOURNAL":
+            print("\n--- MACREADY'S JOURNAL ---")
+            if not game.journal:
+                print("(No direct diary entries - use DOSSIER for tags)")
+            for entry in game.journal:
+                print(entry)
+            print("--------------------------")
+        elif action == "CHECK":
+            if len(cmd) < 2:
+                print("Usage: CHECK <SKILL> (e.g., CHECK MELEE)")
+            else:
+                skill_name = cmd[1].title()
+                try:
+                    skill_enum = next((s for s in Skill if s.value.upper() == skill_name.upper()), None)
+                    if skill_enum:
+                        assoc_attr = Skill.get_attribute(skill_enum)
+                        result = game.player.roll_check(assoc_attr, skill_enum, game.rng, game.resolution)
+                        outcome = "SUCCESS" if result['success'] else "FAILURE"
+                        print(f"Checking {skill_name} ({assoc_attr.value} + Skill)...")
+                        print(f"Pool: {len(result['dice'])} dice -> {result['dice']}")
+                        print(f"[{outcome}] ({result['success_count']} successes)")
+                    else:
+                        print(f"Unknown skill: {skill_name}")
+                        print("Available: " + ", ".join([s.value for s in Skill]))
+                except Exception as e:
+                    print(f"Error resolving check: {e}")
+        elif action == "INVENTORY" or action == "INV":
+            print(f"\n--- {game.player.name}'s INVENTORY ---")
+            if not game.player.inventory:
+                print("(Empty)")
+            for item in game.player.inventory:
+                print(f"- {item.name}: {item.description}")
+        elif action == "GET":
+            if len(cmd) < 2:
+                print("Usage: GET <ITEM NAME>")
+            else:
+                item_name = " ".join(cmd[1:])
+                found_item = game.station_map.remove_item_from_room(item_name, *game.player.location)
+                if found_item:
+                    game.player.add_item(found_item, game.turn)
+                    game.evidence_log.record_event(found_item.name, "GET", game.player.name, player_room, game.turn)
+                    print(f"You picked up {found_item.name}.")
+                else:
+                    print(f"You don't see '{item_name}' here.")
+        elif action == "DROP":
+            if len(cmd) < 2:
+                print("Usage: DROP <ITEM NAME>")
+            else:
+                item_name = " ".join(cmd[1:])
+                dropped_item = game.player.remove_item(item_name)
+                if dropped_item:
+                    game.station_map.add_item_to_room(dropped_item, *game.player.location, game.turn)
+                    game.evidence_log.record_event(dropped_item.name, "DROP", game.player.name, player_room, game.turn)
+                    print(f"You dropped {dropped_item.name}.")
+                else:
+                    print(f"You don't have '{item_name}'.")
+        elif action == "ATTACK":
+            if len(cmd) < 2:
+                print("Usage: ATTACK <NAME>")
+            else:
+                target_name = cmd[1]
+                target = next((m for m in game.crew if m.name.upper() == target_name.upper()), None)
+                if not target:
+                    print(f"Unknown target: {target_name}")
+                elif game.station_map.get_room_name(*target.location) != player_room:
+                    print(f"{target.name} is not here.")
+                elif not target.is_alive:
+                    print(f"{target.name} is already dead.")
+                else:
+                    weapon = next((i for i in game.player.inventory if i.damage > 0), None)
+                    w_name = weapon.name if weapon else "Fists"
+                    w_skill = weapon.weapon_skill if weapon else Skill.MELEE
+                    w_dmg = weapon.damage if weapon else 0
+                    
+                    print(f"Attacking {target.name} with {w_name}...")
+                    att_attr = Skill.get_attribute(w_skill)
+                    att_res = game.player.roll_check(att_attr, w_skill, game.rng, game.resolution)
+                    
+                    def_skill = Skill.MELEE
+                    def_attr = Attribute.PROWESS 
+
+                    def_res = target.roll_check(def_attr, def_skill, game.rng, game.resolution)
+                    
+                    print(f"Attack: {att_res['success_count']} vs Defense: {def_res['success_count']}")
+                    
+                    if att_res['success_count'] > def_res['success_count']:
+                        net_hits = att_res['success_count'] - def_res['success_count']
+                        total_dmg = w_dmg + net_hits
+                        died = target.take_damage(total_dmg)
+                        print(f"HIT! Dealt {total_dmg} damage.")
+                        if died:
+                            print(f"*** {target.name} HAS DIED ***")
+                    else:
+                        print("MISS/BLOCKED!")
+        elif action == "MOVE":
+            if len(cmd) < 2:
+                print("Usage: MOVE <NORTH/SOUTH/EAST/WEST>")
+            else:
+                direction = cmd[1]
+                dx, dy = 0, 0
+                if direction in ["NORTH", "N"]: dy = -1
+                elif direction in ["SOUTH", "S"]: dy = 1
+                elif direction in ["EAST", "E"]: dx = 1
+                elif direction in ["WEST", "W"]: dx = -1
+                
+                if game.player.move(dx, dy, game.station_map):
+                    print(f"You moved {direction}.")
+                    game.advance_turn() 
+                else:
+                    print("Blocked.")
+        elif action == "BARRICADE":
+            result = game.room_states.barricade_room(player_room)
+            print(result)
+        elif action == "TEST":
+            # Simplified Heated Wire Test flow
+            if len(cmd) < 2:
+                print("Usage: TEST <NAME>")
+            else:
+                target_name = cmd[1]
+                target = next((m for m in game.crew if m.name.upper() == target_name.upper()), None)
+                if not target:
+                    print(f"Unknown target: {target_name}")
+                elif game.station_map.get_room_name(*target.location) != player_room:
+                    print(f"{target.name} is not here.")
+                else:
+                    # Check for required items
+                    scalpel = next((i for i in game.player.inventory if "SCALPEL" in i.name.upper()), None)
+                    wire = next((i for i in game.player.inventory if "WIRE" in i.name.upper()), None)
+                    
+                    if not scalpel:
+                        print("You need a SCALPEL to draw a blood sample.")
+                    elif not wire:
+                        print("You need COPPER WIRE for the test.")
+                    else:
+                        print(f"Drawing blood from {target.name}...")
+                        print(game.blood_test_sim.start_test(target.name))
+                        # Rapid heating and application
+                        print(game.blood_test_sim.heat_wire())
+                        print(game.blood_test_sim.heat_wire())
+                        print(game.blood_test_sim.heat_wire())
+                        print(game.blood_test_sim.heat_wire())
+                        
+                        result = game.blood_test_sim.apply_wire(target.is_infected)
+                        print(result)
+                        
+                        if target.is_infected:
+                            # Reveal infection!
+                            game.missionary_system.trigger_reveal(target, "Blood Test Exposure")
+        else:
+            print("Unknown command. Try: MOVE, LOOK, GET, DROP, USE, INV, TAG, TEST, HEAT, APPLY, ATTACK, STATUS, SAVE, LOAD, EXIT")
         return game

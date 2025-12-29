@@ -5,6 +5,9 @@ importable without sys.path tweaks or `src.` prefixes.
 """
 
 import random
+import pickle
+import base64
+from src.core.event_system import event_bus, EventType, GameEvent
 from enum import Enum
 
 from core.event_system import event_bus, EventType, GameEvent
