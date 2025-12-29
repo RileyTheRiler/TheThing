@@ -1,5 +1,7 @@
 from enum import Enum, auto
-from src.core.event_system import event_bus, EventType, GameEvent
+from core.event_system import event_bus, EventType, GameEvent
+from core.resolution import Attribute, Skill, ResolutionModifiers
+
 
 class RoomState(Enum):
     DARK = auto()       # No light - increased communion chance
@@ -12,15 +14,28 @@ class RoomStateManager:
     """
     Manages environmental states for each room. Reacts to GameEvents.
     """
-    
+
+    # Barricade strength levels
+    BARRICADE_MAX_STRENGTH = 3  # Requires 3 successful break attempts
+
     def __init__(self, room_names):
         # room_name -> set of RoomState
         self.room_states = {name: set() for name in room_names}
+        # room_name -> barricade strength (0 = broken)
+        self.barricade_strength = {}
         self._set_initial_states()
-        
+
         # Subscribe to events
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
         event_bus.subscribe(EventType.POWER_FAILURE, self.on_power_failure)
+        event_bus.subscribe(EventType.TEMPERATURE_THRESHOLD_CROSSED, self.on_temperature_threshold)
+        event_bus.subscribe(EventType.ENVIRONMENTAL_STATE_CHANGE, self.on_environmental_change)
+
+    def cleanup(self):
+        event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+        event_bus.unsubscribe(EventType.POWER_FAILURE, self.on_power_failure)
+        event_bus.unsubscribe(EventType.TEMPERATURE_THRESHOLD_CROSSED, self.on_temperature_threshold)
+        event_bus.unsubscribe(EventType.ENVIRONMENTAL_STATE_CHANGE, self.on_environmental_change)
     
     def _set_initial_states(self):
         if "Kennel" in self.room_states:
@@ -37,6 +52,31 @@ class RoomStateManager:
         for room_name in self.room_states:
             if room_name != "Generator":
                 self.add_state(room_name, RoomState.DARK)
+    
+    def on_temperature_threshold(self, event: GameEvent):
+        """React to temperature threshold crossings."""
+        direction = event.payload.get('direction')
+        
+        if direction == 'falling':
+            # Temperature dropped below freezing threshold - add FROZEN state
+            for room_name in self.room_states:
+                if room_name != "Generator":
+                    self.add_state(room_name, RoomState.FROZEN)
+        elif direction == 'rising':
+            # Temperature rose above freezing threshold - remove FROZEN state
+            for room_name in self.room_states:
+                self.remove_state(room_name, RoomState.FROZEN)
+    
+    def on_environmental_change(self, event: GameEvent):
+        """React to environmental state changes (e.g., power restoration)."""
+        change_type = event.payload.get('change_type')
+        power_on = event.payload.get('power_on')
+        
+        if change_type == 'power_restored' and power_on:
+            # Remove darkness from all non-barricaded rooms
+            for room_name in self.room_states:
+                if not self.has_state(room_name, RoomState.BARRICADED):
+                    self.remove_state(room_name, RoomState.DARK)
 
     def add_state(self, room_name, state):
         if room_name in self.room_states:
@@ -76,6 +116,9 @@ class RoomStateManager:
             for room_name in self.room_states:
                 if room_name != "Generator":
                     self.add_state(room_name, RoomState.FROZEN)
+
+        # Schedule slip detection (Agent hook)
+        self._check_schedule_slips(game_state)
     
     def get_room_description_modifiers(self, room_name):
         states = self.get_states(room_name)
@@ -92,20 +135,130 @@ class RoomStateManager:
         icons = []
         if RoomState.DARK in states: icons.append("[DARK]")
         if RoomState.FROZEN in states: icons.append("[COLD]")
-        if RoomState.BARRICADED in icons: icons.append("[BARR]")
+        if RoomState.BARRICADED in states: icons.append("[BARR]")
         if RoomState.BLOODY in states: icons.append("[BLOOD]")
         return " ".join(icons)
     
+    def is_frozen(self, room_name):
+        """Convenience check for frozen rooms."""
+        return self.has_state(room_name, RoomState.FROZEN)
+    
     def mark_bloody(self, room_name):
         self.add_state(room_name, RoomState.BLOODY)
+        # Emit event instead of returning string (Tier 2.6)
+        event_bus.emit(GameEvent(EventType.MESSAGE, {
+            'text': f"Blood spatters across {room_name}."
+        }))
         return f"Blood spatters across {room_name}."
-    
-    def barricade_room(self, room_name):
+
+    def get_paranoia_modifier(self, room_name):
+        """Return paranoia modifier based on room states (e.g., BLOODY)."""
+        states = self.get_states(room_name)
+        if RoomState.BLOODY in states:
+            return 2
+        return 0
+
+    def barricade_room(self, room_name, actor="You"):
+        """Create or reinforce a barricade on a room."""
         self.add_state(room_name, RoomState.BARRICADED)
         self.add_state(room_name, RoomState.DARK)
-    
+        # Set barricade strength if new, or reinforce if already barricaded
+        current = self.barricade_strength.get(room_name, 0)
+        self.barricade_strength[room_name] = min(
+            current + 1,
+            self.BARRICADE_MAX_STRENGTH
+        )
+        action = 'reinforced' if current > 0 else 'built'
+        strength = self.barricade_strength[room_name]
+
+        # Emit event (Tier 2.6 Reporting Pattern)
+        event_bus.emit(GameEvent(EventType.BARRICADE_ACTION, {
+            'action': action,
+            'room': room_name,
+            'strength': strength,
+            'actor': actor
+        }))
+
+        return f"Barricade {'reinforced' if current > 0 else 'erected'}. Strength: {strength}/{self.BARRICADE_MAX_STRENGTH}"
+
+    def get_barricade_strength(self, room_name):
+        """Get the current barricade strength for a room."""
+        if not self.has_state(room_name, RoomState.BARRICADED):
+            return 0
+        return self.barricade_strength.get(room_name, 0)
+
+    def attempt_break_barricade(self, room_name, breaker, rng, is_thing=False):
+        """Attempt to break through a barricade.
+
+        Args:
+            room_name: The room with the barricade
+            breaker: The creature/person trying to break through
+            rng: Random number generator
+            is_thing: If True, the breaker is a revealed Thing (bonus strength)
+
+        Returns:
+            (success, message, remaining_strength)
+        """
+        if not self.has_state(room_name, RoomState.BARRICADED):
+            return True, "There is no barricade here.", 0
+
+        current_strength = self.barricade_strength.get(room_name, 1)
+        breaker_name = getattr(breaker, 'name', 'Something')
+
+        # Roll PROWESS + MELEE to break
+        prowess = breaker.attributes.get(Attribute.PROWESS, 1)
+        melee = breaker.skills.get(Skill.MELEE, 0)
+        pool = prowess + melee
+
+        # Things get bonus dice (alien strength)
+        if is_thing:
+            pool += 3
+
+        result = rng.calculate_success(pool)
+
+        if result['success']:
+            # Damage the barricade
+            damage = 1 + result['success_count']  # More successes = more damage
+            self.barricade_strength[room_name] = max(0, current_strength - damage)
+
+            if self.barricade_strength[room_name] <= 0:
+                # Barricade destroyed
+                self.remove_state(room_name, RoomState.BARRICADED)
+                del self.barricade_strength[room_name]
+
+                # Emit event (Tier 2.6)
+                event_bus.emit(GameEvent(EventType.BARRICADE_ACTION, {
+                    'action': 'broken',
+                    'room': room_name,
+                    'strength': 0,
+                    'actor': breaker_name
+                }))
+
+                return True, "*** The barricade SHATTERS! ***", 0
+            else:
+                remaining = self.barricade_strength[room_name]
+
+                # Emit event (Tier 2.6)
+                event_bus.emit(GameEvent(EventType.BARRICADE_ACTION, {
+                    'action': 'damaged',
+                    'room': room_name,
+                    'strength': remaining,
+                    'actor': breaker_name
+                }))
+
+                return False, f"The barricade cracks and splinters! (Strength: {remaining}/{self.BARRICADE_MAX_STRENGTH})", remaining
+        else:
+            return False, "You slam against the barricade but it holds firm.", current_strength
+
     def break_barricade(self, room_name):
+        """Instantly destroy a barricade (for scripted events)."""
         self.remove_state(room_name, RoomState.BARRICADED)
+        if room_name in self.barricade_strength:
+            del self.barricade_strength[room_name]
+
+    def is_entry_blocked(self, room_name):
+        """Check if entry to a room is blocked by a barricade."""
+        return self.has_state(room_name, RoomState.BARRICADED)
     
     def get_communion_modifier(self, room_name):
         return 0.4 if self.has_state(room_name, RoomState.DARK) else 0.0
@@ -115,3 +268,70 @@ class RoomStateManager:
         if self.has_state(room_name, RoomState.BLOODY): modifier += 5
         if self.has_state(room_name, RoomState.DARK): modifier += 2
         return modifier
+
+    def get_resolution_modifiers(self, room_name):
+        """Return modifiers that affect ResolutionSystem calculations."""
+        modifiers = ResolutionModifiers()
+        states = self.get_states(room_name)
+
+        if RoomState.DARK in states:
+            modifiers.attack_pool -= 1
+            modifiers.observation_pool -= 1
+            modifiers.stealth_detection -= 0.15  # Harder to spot someone in the dark
+            # HEAD had more granular modifiers (Firearms -2, Melee -1, Empathy -1)
+            # These are roughly covered by attack_pool -= 1.
+
+        if RoomState.FROZEN in states:
+            modifiers.attack_pool -= 1  # Numb hands, sluggish attacks
+            modifiers.observation_pool -= 1  # Frosted visors, breath mist
+
+        return modifiers
+
+    # === Schedule Slip Detection ===
+    def _get_expected_room(self, member, current_hour):
+        """Return the expected room for a member based on schedule and hour."""
+        for entry in getattr(member, "schedule", []) or []:
+            start = entry.get("start", 0)
+            end = entry.get("end", 24)
+            room = entry.get("room")
+            if not room:
+                continue
+
+            # Handle wrap-around schedules (e.g., 20 -> 08)
+            if start < end:
+                if start <= current_hour < end:
+                    return room
+            else:
+                if current_hour >= start or current_hour < end:
+                    return room
+        return None
+
+    def _check_schedule_slips(self, game_state):
+        """Flag NPCs who are off their expected schedule location."""
+        if not hasattr(game_state, "crew"):
+            return
+
+        current_hour = getattr(game_state.time_system, "hour", getattr(game_state, "current_hour", 0))
+        for member in game_state.crew:
+            previous_flag = getattr(member, "schedule_slip_flag", False)
+            member.schedule_slip_flag = False
+            member.schedule_slip_reason = None
+
+            if not getattr(member, "is_alive", True):
+                continue
+            expected_room = self._get_expected_room(member, current_hour)
+            if not expected_room:
+                continue
+
+            actual_room = game_state.station_map.get_room_name(*member.location)
+            if actual_room != expected_room:
+                member.schedule_slip_flag = True
+                member.schedule_slip_reason = (
+                    f"{member.name} should be in {expected_room} around {current_hour:02d}00, "
+                    f"but is in {actual_room}."
+                )
+                # Emit once when the slip is first detected to avoid spam
+                if not previous_flag:
+                    event_bus.emit(GameEvent(EventType.MESSAGE, {
+                        "text": f"[SLIP] {member.name} is off-schedule (expected: {expected_room})."
+                    }))

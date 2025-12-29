@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Thing: Antarctic Research Station 31</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+    <div class="container">
+
+        <!-- Start Screen -->
+        <div id="start-screen" class="screen active">
+            <div class="menu">
+                <div class="logo-container">
+                    <img src="{{ url_for('static', filename='images/logo.png') }}" alt="THE THING"
+                        class="main-logo-img">
+                    <div class="logo-subtitle">
+                        *CRACKLE* ...anybody read me? Come in, anybody... *STATIC*<br>
+                        (HUMAN LIFE NOT GUARANTEED)
+                    </div>
+                </div>
+
+                <div class="menu-options">
+                    <button class="menu-btn" onclick="showDifficultySelect()">[ BEGIN SIMULATION ]</button>
+                    <button class="menu-btn" disabled>[ ACCESS RECORDS ]</button>
+                    <button class="menu-btn" disabled>[ SYSTEM CONFIG ]</button>
+                    <button class="menu-btn" disabled>[ TERMINATE ]</button>
+                </div>
+            </div>
+
+            <div class="menu-footer">
+                <div class="footer-alert">SYSTEM ALERT: BIOLOGICAL CONTAMINANT DETECTED IN SECTOR 4.</div>
+                <div class="footer-status">TRUST STATUS: UNKNOWN. WATCHING: MACREADY, CHILDS, GARRY... [SCANNING]</div>
+            </div>
+
+            <!-- CRT Scanline Overlay -->
+            <div class="monitor-overlay"></div>
+
+            <!-- Difficulty Selection -->
+            <div id="difficulty-select" class="difficulty-select hidden">
+                <h3>SELECT DIFFICULTY</h3>
+                <div class="difficulty-options">
+                    <button class="difficulty-btn" onclick="startGame('EASY')">
+                        <span class="diff-name">[ EASY ]</span>
+                        <span class="diff-desc">More time, fewer Things</span>
+                    </button>
+                    <button class="difficulty-btn" onclick="startGame('NORMAL')">
+                        <span class="diff-name">[ NORMAL ]</span>
+                        <span class="diff-desc">Standard survival horror</span>
+                    </button>
+                    <button class="difficulty-btn" onclick="startGame('HARD')">
+                        <span class="diff-name">[ HARD ]</span>
+                        <span class="diff-desc">Paranoia intensifies</span>
+                    </button>
+                </div>
+                <button class="back-btn" onclick="hideDifficultySelect()">[ BACK ]</button>
+            </div>
+        </div>
+
+        <!-- Game Screen -->
+        <div id="game-screen" class="screen">
+            <!-- Header -->
+            <div class="header">
+                <h1 class="title">THE THING: ANTARCTIC RESEARCH STATION 31</h1>
+                <div class="subtitle">U.S. OUTPOST 31 - TERMINAL ACCESS</div>
+            </div>
+
+            <!-- Game Status Bar -->
+            <div class="status-bar">
+                <div class="status-item" title="Current game turn - each action advances the turn counter">
+                    <span class="label">TURN:</span>
+                    <span id="turn-counter" class="value">0</span>
+                </div>
+                <div class="status-item" title="In-game time of day - affects crew schedules and visibility">
+                    <span class="label">TIME:</span>
+                    <span id="game-time" class="value">00:00</span>
+                </div>
+                <div class="status-item" title="Outside temperature - extreme cold is dangerous without proper gear">
+                    <span class="label">TEMP:</span>
+                    <span id="temperature" class="value">0.0°C</span>
+                </div>
+                <div class="status-item" title="Wind speed - high winds make outdoor travel hazardous">
+                    <span class="label">WIND:</span>
+                    <span id="wind-speed" class="value">0 mph</span>
+                </div>
+                <div class="status-item" title="Station power status - power outages affect lighting and equipment">
+                    <span class="label">POWER:</span>
+                    <span id="power-status" class="value">ON</span>
+                </div>
+                <div class="status-item" title="Your current movement posture">
+                    <span class="label">POSTURE:</span>
+                    <span id="stealth-posture" class="value">STANDING</span>
+                </div>
+                <div class="status-item" title="Risk of being detected by enemies">
+                    <span class="label">DETECTION:</span>
+                    <div class="fuel-bar-container"> <!-- Reuse container style or simple div -->
+                        <div id="detection-fill" class="detection-fill"
+                            style="width: 0%; height: 10px; background-color: #ff3333;"></div>
+                    </div>
+                </div>
+                <div class="status-item" title="Generator fuel level - if fuel runs out, power fails">
+                    <span class="label">FUEL:</span>
+                    <span id="fuel-bar" class="fuel-bar">████████</span>
+                </div>
+                <div class="status-item" title="Your current location in the station">
+                    <span class="label">LOCATION:</span>
+                    <span id="location" class="value">Unknown</span>
+                </div>
+                <div class="status-item" title="Your current stealth posture - affects detection chance">
+                    <span class="label">POSTURE:</span>
+                    <span id="stealth-posture" class="value">STANDING</span>
+                </div>
+                <div class="status-item" title="Detection risk level based on your stealth vs nearby threats">
+                    <span class="label">DETECTION:</span>
+                    <span id="detection-meter" class="detection-meter">
+                        <span id="detection-fill" class="detection-fill"></span>
+                    </span>
+                </div>
+            </div>
+
+            <!-- Main Game Area -->
+            <div class="game-area">
+                <!-- Left Panel: Map and Status -->
+                <div class="left-panel">
+                    <div class="map-container">
+                        <h3>STATION MAP <span class="map-hint">(Click adjacent rooms to move)</span></h3>
+                        <div id="game-map" class="map-display interactive-map hidden">Loading...</div>
+                        <div id="game-canvas" class="map-display interactive-map-3d"></div>
+                        <div id="map-legend" class="map-legend"></div>
+                        <div class="nav-controls">
+                            <button class="nav-btn" data-dir="north" title="Go North (Arrow Up)">▲</button>
+                            <div class="nav-row">
+                                <button class="nav-btn" data-dir="west" title="Go West (Arrow Left)">◄</button>
+                                <button class="nav-btn nav-center" disabled>●</button>
+                                <button class="nav-btn" data-dir="east" title="Go East (Arrow Right)">►</button>
+                            </div>
+                            <button class="nav-btn" data-dir="south" title="Go South (Arrow Down)">▼</button>
+                        </div>
+                    </div>
+
+                    <div class="room-info">
+                        <h3>ROOM STATUS</h3>
+                        <div id="room-description" class="info-text"></div>
+                        <div id="room-flavor" class="room-flavor"></div>
+                        <div id="room-icons" class="info-text"></div>
+                    </div>
+
+                    <div class="items-container">
+                        <h3>VISIBLE ITEMS</h3>
+                        <div id="room-items" class="items-list">None</div>
+                    </div>
+                </div>
+
+                <!-- Right Panel: Output and Input -->
+                <div class="right-panel">
+                    <div class="output-container" id="output-container">
+                        <div id="event-banner" class="event-banner hidden"></div>
+                        <div id="game-output" class="output-text"></div>
+                    </div>
+
+                    <div class="command-container">
+                        <div class="command-prompt">
+                            <span class="prompt-symbol">CMD&gt;</span>
+                            <div class="input-wrapper">
+                                <input type="text" id="command-input" class="command-input"
+                                    placeholder="Enter command..." autocomplete="off">
+                                <span id="autocomplete-hint" class="autocomplete-hint"></span>
+                            </div>
+                        </div>
+                        <div class="quick-commands" id="context-actions">
+                            <!-- Context-aware actions will be dynamically inserted here -->
+                            <button class="quick-btn" onclick="sendQuickCommand('STATUS')">STATUS</button>
+                            <button class="quick-btn" onclick="sendQuickCommand('INV')">INVENTORY</button>
+                            <button class="quick-btn" onclick="sendQuickCommand('HELP')">HELP</button>
+                        </div>
+                    </div>
+
+                    <!-- Crew Status -->
+                    <div class="crew-container">
+                        <div class="crew-header">
+                            <h3>CREW STATUS</h3>
+                            <div class="crew-filters">
+                                <button class="filter-btn active" data-filter="nearby"
+                                    title="Show crew in your location">NEARBY</button>
+                                <button class="filter-btn" data-filter="alive"
+                                    title="Show all living crew">ALIVE</button>
+                                <button class="filter-btn" data-filter="all"
+                                    title="Show all crew including dead">ALL</button>
+                            </div>
+                        </div>
+                        <div id="crew-status" class="crew-list"></div>
+                    </div>
+
+                    <!-- Player Inventory -->
+                    <div class="inventory-container">
+                        <h3>INVENTORY</h3>
+                        <div id="player-inventory" class="inventory-list">Empty</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Game Over Screen -->
+        <div id="gameover-screen" class="screen">
+            <div class="gameover-content">
+                <h2 id="gameover-title">GAME OVER</h2>
+                <div id="gameover-message" class="gameover-message"></div>
+                <button class="menu-btn" onclick="location.reload()">RETURN TO MENU</button>
+            </div>
+        </div>
+
+        <!-- Blood Test Mini-Game Panel -->
+        <div id="blood-test-panel" class="minigame-panel hidden">
+            <div class="minigame-header">
+                <h3>⚠ BLOOD TEST PROCEDURE ⚠</h3>
+                <span id="blood-test-subject" class="minigame-subject"></span>
+            </div>
+            <div class="minigame-content">
+                <div class="thermometer-container">
+                    <div class="thermometer">
+                        <div id="thermometer-fill" class="thermometer-fill"></div>
+                        <div class="thermometer-threshold"></div>
+                    </div>
+                    <div class="thermometer-labels">
+                        <span>COLD</span>
+                        <span class="threshold-label">ACTIVATION</span>
+                        <span>HOT</span>
+                    </div>
+                </div>
+                <div class="blood-test-status">
+                    <div>Wire Temperature: <span id="wire-temp">0</span>%</div>
+                    <div>Sample Status: <span id="sample-status">Ready</span></div>
+                </div>
+                <div class="blood-test-actions">
+                    <button class="minigame-btn heat-btn" onclick="sendQuickCommand('HEAT')">
+                        <span class="btn-icon">🔥</span> HEAT WIRE
+                    </button>
+                    <button class="minigame-btn apply-btn" onclick="sendQuickCommand('APPLY')">
+                        <span class="btn-icon">💉</span> APPLY TO SAMPLE
+                    </button>
+                    <button class="minigame-btn cancel-btn" onclick="sendQuickCommand('CANCEL')">
+                        ✕ CANCEL TEST
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Interrogation Panel -->
+        <div id="interrogation-panel" class="minigame-panel hidden">
+            <div class="minigame-header">
+                <h3>◉ INTERROGATION MODE ◉</h3>
+                <span id="interrogation-subject" class="minigame-subject"></span>
+            </div>
+            <div class="minigame-content">
+                <div class="interrogation-topics">
+                    <button class="topic-btn" onclick="sendQuickCommand('ASK WHEREABOUTS')"
+                        title="Ask where they've been recently">
+                        <span class="topic-icon">📍</span>
+                        <span class="topic-name">WHEREABOUTS</span>
+                        <span class="topic-desc">Where have you been?</span>
+                    </button>
+                    <button class="topic-btn" onclick="sendQuickCommand('ASK ALIBI')" title="Verify their story">
+                        <span class="topic-icon">📋</span>
+                        <span class="topic-name">ALIBI</span>
+                        <span class="topic-desc">Can anyone confirm that?</span>
+                    </button>
+                    <button class="topic-btn" onclick="sendQuickCommand('ASK SUSPICION')" title="Ask who they suspect">
+                        <span class="topic-icon">🔍</span>
+                        <span class="topic-name">SUSPICIONS</span>
+                        <span class="topic-desc">Who do you suspect?</span>
+                    </button>
+                    <button class="topic-btn" onclick="sendQuickCommand('ASK BEHAVIOR')"
+                        title="Ask about strange behavior">
+                        <span class="topic-icon">👁</span>
+                        <span class="topic-name">BEHAVIOR</span>
+                        <span class="topic-desc">Notice anything strange?</span>
+                    </button>
+                    <button class="topic-btn" onclick="sendQuickCommand('ASK KNOWLEDGE')" title="Test their knowledge">
+                        <span class="topic-icon">🧠</span>
+                        <span class="topic-name">KNOWLEDGE</span>
+                        <span class="topic-desc">What do you know?</span>
+                    </button>
+                </div>
+                <div class="interrogation-actions">
+                    <button class="minigame-btn accuse-btn" onclick="sendQuickCommand('ACCUSE')">
+                        <span class="btn-icon">⚠</span> ACCUSE
+                    </button>
+                    <button class="minigame-btn cancel-btn" onclick="sendQuickCommand('DONE')">
+                        ✕ END INTERROGATION
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Command Browser Modal -->
+        <div id="command-modal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>COMMAND REFERENCE</h3>
+                    <button class="modal-close" onclick="closeCommandModal()">✕</button>
+                </div>
+                <div class="modal-search">
+                    <input type="text" id="command-search" placeholder="Search commands..." oninput="filterCommands()">
+                </div>
+                <div class="command-categories">
+                    <button class="category-btn active" data-category="all">ALL</button>
+                    <button class="category-btn" data-category="movement">MOVEMENT</button>
+                    <button class="category-btn" data-category="investigation">INVESTIGATION</button>
+                    <button class="category-btn" data-category="social">SOCIAL</button>
+                    <button class="category-btn" data-category="combat">COMBAT</button>
+                    <button class="category-btn" data-category="items">ITEMS</button>
+                    <button class="category-btn" data-category="system">SYSTEM</button>
+                </div>
+                <div id="command-list" class="command-list">
+                    <!-- Commands will be populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Toast Notification Container -->
+        <div id="toast-container" class="toast-container"></div>
+
+        <!-- Statistics Modal -->
+        <div id="stats-modal" class="modal hidden">
+            <div class="modal-content stats-modal-content">
+                <div class="modal-header">
+                    <h3>📊 GAME STATISTICS</h3>
+                    <button class="modal-close" onclick="closeStatsModal()">✕</button>
+                </div>
+                <div class="stats-content">
+                    <div class="stats-section">
+                        <h4>SURVIVAL</h4>
+                        <div class="stats-grid">
+                            <div class="stat-item">
+                                <span class="stat-label">Turns Survived</span>
+                                <span id="stat-turns" class="stat-value">0</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Time Elapsed</span>
+                                <span id="stat-time" class="stat-value">00:00</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Rooms Visited</span>
+                                <span id="stat-rooms" class="stat-value">0</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="stats-section">
+                        <h4>CREW STATUS</h4>
+                        <div class="stats-grid">
+                            <div class="stat-item">
+                                <span class="stat-label">Crew Alive</span>
+                                <span id="stat-crew-alive" class="stat-value stat-good">0</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Crew Dead</span>
+                                <span id="stat-crew-dead" class="stat-value stat-bad">0</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Infected Found</span>
+                                <span id="stat-infected" class="stat-value stat-warning">0</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="stats-section">
+                        <h4>INVESTIGATION</h4>
+                        <div class="stats-grid">
+                            <div class="stat-item">
+                                <span class="stat-label">Blood Tests</span>
+                                <span id="stat-tests" class="stat-value">0</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Interrogations</span>
+                                <span id="stat-interrogations" class="stat-value">0</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Items Found</span>
+                                <span id="stat-items" class="stat-value">0</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="stats-section">
+                        <h4>COMBAT</h4>
+                        <div class="stats-grid">
+                            <div class="stat-item">
+                                <span class="stat-label">Encounters</span>
+                                <span id="stat-encounters" class="stat-value">0</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Things Killed</span>
+                                <span id="stat-kills" class="stat-value stat-good">0</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Damage Taken</span>
+                                <span id="stat-damage" class="stat-value stat-bad">0</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Journal Modal -->
+        <div id="journal-modal" class="modal hidden">
+            <div class="modal-content journal-modal-content">
+                <div class="modal-header">
+                    <h3>📓 INVESTIGATION JOURNAL</h3>
+                    <button class="modal-close" onclick="closeJournalModal()">✕</button>
+                </div>
+                <div class="journal-filters">
+                    <button class="journal-filter-btn active" data-filter="all">ALL</button>
+                    <button class="journal-filter-btn" data-filter="discovery">DISCOVERIES</button>
+                    <button class="journal-filter-btn" data-filter="test">TEST RESULTS</button>
+                    <button class="journal-filter-btn" data-filter="death">DEATHS</button>
+                    <button class="journal-filter-btn" data-filter="event">EVENTS</button>
+                </div>
+                <div id="journal-entries" class="journal-entries">
+                    <div class="journal-empty">No entries yet. Start investigating!</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="{{ url_for('static', filename='js/renderer3d.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/game.js') }}"></script>
+</body>
+
+</html>

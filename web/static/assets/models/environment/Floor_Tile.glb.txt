@@ -1,0 +1,2 @@
+Place Floor_Tile.glb here.
+Standard floor tile.

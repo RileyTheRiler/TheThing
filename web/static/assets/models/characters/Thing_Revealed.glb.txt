@@ -1,0 +1,3 @@
+Place Thing_Revealed.glb here.
+This model represents the alien entity.
+Required animations: Idle, Attack, Roar.
