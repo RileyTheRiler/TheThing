@@ -13,6 +13,8 @@ class StealthPosture(Enum):
     CROUCHING = auto()
     CRAWLING = auto()
     HIDING = auto()
+    # Aliases for external callers/tests
+    EXPOSED = STANDING
     EXPOSED = STANDING  # Alias for clarity in tests/UI
     HIDDEN = HIDING
 
@@ -365,23 +367,15 @@ class CrewMember:
 
     def get_reaction_dialogue(self, trigger_type: str) -> str:
         """
-        Generate reactive dialogue based on behavior type/personality.
-        
-        trigger_type: "STEALTH_DETECTED", "SUSPICIOUS", etc.
-        """
-        # Default lines
-        lines = ["Who's there?", "What was that?"]
-        
-        if trigger_type == "STEALTH_DETECTED":
-            if self.behavior_type == "Aggressive":
-                lines = ["Show yourself!", "I know you're there!", "Come out and fight!"]
-            elif self.behavior_type == "Nervous":
-                lines = ["Who's there?!", "Stay back!", "I... I hear you!"]
-            elif self.behavior_type == "Analytical":
-                lines = ["Identify yourself.", "Movement detected.", "Someone is lurking."]
-            else:
-                lines = ["Is someone there?", "Hello?", "Stop sneaking around."]
+        Legacy helper retained for compatibility.
 
+        Delegates to DialogueSystem via game systems; kept as a fallback string.
+        """
+        from systems.dialogue import DialogueSystem
+
+        system = DialogueSystem()
+        result = system._behavioral_reaction(self, trigger_type)
+        return result
         # Simple deterministic choice based on name length for now to act as RNG
         # (Since we don't have easy access to RNG here without passing it in, 
         # and simple consistent variation is fine)

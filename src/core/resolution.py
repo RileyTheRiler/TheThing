@@ -33,6 +33,7 @@ class Skill(Enum):
     METEOROLOGY = "Meteorology"
     HANDLING = "Handling"
     COMMS = "Comms"
+    DECEPTION = "Deception"
     STEALTH = "Stealth"
 
     @staticmethod
@@ -55,6 +56,7 @@ class Skill(Enum):
 
             Skill.PERSUASION: Attribute.INFLUENCE,
             Skill.EMPATHY: Attribute.INFLUENCE,  # Social standing/understanding
+            Skill.DECEPTION: Attribute.INFLUENCE,
 
             # Resolve serves as a defense/resistance stat primarily
         }
