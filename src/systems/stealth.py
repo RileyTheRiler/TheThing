@@ -175,11 +175,20 @@ class StealthSystem:
              event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, payload))
 
         
+        # Check for reverse thermal detection (Thing sensing player heat in darkness)
+        if player_evaded:
+            # Even if visually evaded, Thing might detect by heat
+            if self.check_reverse_thermal_detection(opponent, player, game_state):
+                player_evaded = False  # Override evasion
+                payload["outcome"] = "thermal_detected"
+                payload["thermal_detection"] = True
+
         if not player_evaded:
             # If detected, opponent might attack or reveal
             opponent.detected_player = True  # Set for visual indicator
+            thermal_msg = " by heat signature" if payload.get("thermal_detection") else ""
             event_bus.emit(GameEvent(EventType.WARNING, {
-                "text": f"{opponent.name} spots you in {room}!"
+                "text": f"{opponent.name} spots you{thermal_msg} in {room}!"
             }))
             
             # Contextual Dialogue
@@ -217,13 +226,30 @@ class StealthSystem:
 
         visual_detected = observer_score >= subject_result['success_count']
 
-        # Heat-based detection when power is off and the room is not frozen
+        # Heat-based detection when room is dark and not frozen
         thermal_detected = False
-        if ctx["env_effects"] and ctx["env_effects"].heat_detection_enabled and not ctx["is_frozen"]:
-            thermal_pool = observer.attributes.get(Attribute.THERMAL, 1) + ctx["env_effects"].thermal_detection_bonus
+        if ctx["is_dark"] and not ctx["is_frozen"]:
+            # Get observer's thermal detection pool (includes thermal goggles bonus)
+            if hasattr(observer, 'get_thermal_detection_pool'):
+                thermal_pool = observer.get_thermal_detection_pool()
+            else:
+                thermal_pool = observer.attributes.get(Attribute.THERMAL, 2)
+
+            # Environmental thermal bonus (power off gives equipment bonus)
+            if ctx["env_effects"] and ctx["env_effects"].heat_detection_enabled:
+                thermal_pool += ctx["env_effects"].thermal_detection_bonus
+
+            # Subject's thermal signature (Things run hotter)
+            if hasattr(subject, 'get_thermal_signature'):
+                subject_thermal = subject.get_thermal_signature()
+            else:
+                subject_thermal = 2  # Default human thermal
+
             thermal_pool = max(1, thermal_pool)
             thermal_result = res.roll_check(thermal_pool, game_state.rng)
-            thermal_detected = thermal_result['success_count'] >= subject_result['success_count']
+            # Thermal detection is easier against higher thermal signatures
+            thermal_threshold = max(0, subject_result['success_count'] - (subject_thermal - 2))
+            thermal_detected = thermal_result['success_count'] >= thermal_threshold
 
         return visual_detected or thermal_detected
 
@@ -291,6 +317,7 @@ class StealthSystem:
             "observer_pool": max(1, observer_pool),
             "subject_pool": max(1, subject_pool),
             "env_effects": env_effects,
+            "is_dark": is_dark,
             "is_frozen": is_frozen,
             "room_name": room_name,
             "cover_bonus": cover_bonus,
@@ -438,3 +465,73 @@ class StealthSystem:
     def set_posture(self, subject, posture: StealthPosture):
         """Helper to set stealth posture on a member without requiring imports in tests."""
         subject.stealth_posture = posture
+
+    def check_reverse_thermal_detection(self, infected_npc, player, game_state) -> bool:
+        """Check if an infected NPC (The Thing) can detect the player by heat.
+
+        Reverse thermal detection: Things have heightened thermal senses and can
+        detect human heat signatures in darkness. Frozen rooms block this.
+
+        Args:
+            infected_npc: The infected NPC doing the detecting
+            player: The player being detected
+            game_state: Current game state
+
+        Returns:
+            True if the Thing detects the player's heat signature
+        """
+        if not getattr(infected_npc, 'is_infected', False):
+            return False
+
+        station_map = getattr(game_state, 'station_map', None)
+        room_states = getattr(game_state, 'room_states', None)
+
+        if not station_map or not player:
+            return False
+
+        # Must be in same location
+        if getattr(infected_npc, 'location', None) != getattr(player, 'location', None):
+            return False
+
+        room_name = station_map.get_room_name(*player.location)
+
+        # Check room states
+        is_dark = room_states.has_state(room_name, RoomState.DARK) if room_states and room_name else False
+        is_frozen = room_states.has_state(room_name, RoomState.FROZEN) if room_states and room_name else False
+
+        # Thermal detection only works in darkness, NOT in frozen rooms
+        if not is_dark or is_frozen:
+            return False
+
+        # The Thing has enhanced thermal senses (+2 base, +3 from infection)
+        thing_thermal_pool = 5  # Enhanced Thing senses
+
+        # Human's thermal signature (standard human warmth)
+        if hasattr(player, 'get_thermal_signature'):
+            human_thermal = player.get_thermal_signature()
+        else:
+            human_thermal = 2
+
+        # Roll detection
+        res = ResolutionSystem()
+        rng = getattr(game_state, 'rng', None)
+        if not rng:
+            return False
+
+        # Player's stealth provides defense
+        prowess = player.attributes.get(Attribute.PROWESS, 1) if hasattr(player, 'attributes') else 2
+        stealth = player.skills.get(Skill.STEALTH, 0) if hasattr(player, 'skills') else 0
+        defense_pool = max(1, prowess + stealth)
+
+        thing_result = res.roll_check(thing_thermal_pool, rng)
+        player_result = res.roll_check(defense_pool, rng)
+
+        # Thing needs more successes to detect by heat
+        detected = thing_result['success_count'] > player_result['success_count']
+
+        if detected:
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": f"{infected_npc.name} senses your body heat in the darkness!"
+            }))
+
+        return detected

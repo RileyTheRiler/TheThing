@@ -51,7 +51,8 @@ class CrewMember:
         self.stealth_posture = StealthPosture.STANDING
         self.in_vent = False        # Whether the character is moving through vents
         # Thermal sense/resistance baseline for heat-based detection
-        self.attributes.setdefault(Attribute.THERMAL, 1)
+        # Base thermal signature (human body heat)
+        self.attributes.setdefault(Attribute.THERMAL, 2)
         # Suspicion tracking toward the player
         self.suspicion_level = 0
         self.suspicion_thresholds = {"question": 4, "follow": 8}
@@ -418,6 +419,34 @@ class CrewMember:
         if level >= 4:
             bonus += 1
         return bonus
+
+    def get_thermal_signature(self) -> int:
+        """Return thermal signature for heat-based detection.
+
+        The Thing runs hotter than humans - infected characters have
+        a higher thermal signature, making them detectable via thermal sensing.
+        """
+        base_thermal = self.attributes.get(Attribute.THERMAL, 2)
+
+        # Infected creatures run hotter (+3 thermal signature)
+        if getattr(self, 'is_infected', False):
+            return base_thermal + 3
+
+        return base_thermal
+
+    def get_thermal_detection_pool(self) -> int:
+        """Return thermal detection pool for detecting heat signatures.
+
+        Checks if character has thermal goggles equipped for bonus.
+        """
+        base_pool = self.attributes.get(Attribute.THERMAL, 2)
+
+        # Check for thermal goggles in inventory
+        for item in getattr(self, 'inventory', []):
+            if hasattr(item, 'effect') and item.effect == 'thermal_detection':
+                base_pool += getattr(item, 'effect_value', 0)
+
+        return base_pool
 
     def is_out_of_schedule(self, game_state) -> bool:
         """

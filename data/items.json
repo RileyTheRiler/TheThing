@@ -152,6 +152,17 @@
             "noise_level": 5,
             "uses": 1,
             "spawn_room": "Rec Room"
+        },
+        {
+            "id": "thermal_goggles",
+            "name": "Thermal Goggles",
+            "description": "Military-grade infrared goggles. Reveals heat signatures in darkness.",
+            "category": "tool",
+            "effect": "thermal_detection",
+            "effect_value": 3,
+            "effect_desc": "+3 to thermal detection pool. Detect The Thing's higher heat signature.",
+            "uses": -1,
+            "spawn_room": "Radio Room"
         }
     ]
 }

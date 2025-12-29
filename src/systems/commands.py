@@ -1438,9 +1438,123 @@ class SabotageSecurityCommand(Command):
             event_bus.emit(GameEvent(EventType.WARNING, {"text": message}))
 
 
+class ThermalCommand(Command):
+    name = "THERMAL"
+    aliases = ["SCAN", "HEATSCAN"]
+    description = "Scan for heat signatures with thermal goggles. Only works in darkness."
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        from core.resolution import ResolutionSystem
+        from systems.room_state import RoomState
+
+        game_state = context.game
+        player = game_state.player
+        player_room = game_state.station_map.get_room_name(*player.location)
+        room_states = getattr(game_state, 'room_states', None)
+
+        # Check if player has thermal goggles
+        has_goggles = any(
+            hasattr(item, 'effect') and item.effect == 'thermal_detection'
+            for item in getattr(player, 'inventory', [])
+        )
+
+        if not has_goggles:
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": "You need Thermal Goggles to scan for heat signatures."
+            }))
+            return
+
+        # Check room darkness
+        is_dark = room_states.has_state(player_room, RoomState.DARK) if room_states else False
+        if not is_dark:
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": "Thermal scanning only works in darkness. The ambient light washes out heat signatures."
+            }))
+            return
+
+        # Check if room is frozen (blocks thermal)
+        is_frozen = room_states.has_state(player_room, RoomState.FROZEN) if room_states else False
+        if is_frozen:
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": "The room is frozen solid. All heat signatures are masked by the extreme cold."
+            }))
+            return
+
+        # Get player's thermal detection pool
+        if hasattr(player, 'get_thermal_detection_pool'):
+            thermal_pool = player.get_thermal_detection_pool()
+        else:
+            thermal_pool = 2
+
+        event_bus.emit(GameEvent(EventType.MESSAGE, {
+            "text": "You activate the thermal goggles and scan the room..."
+        }))
+
+        # Find all characters in the same room
+        crew_in_room = [
+            m for m in game_state.crew
+            if m.is_alive and m.location == player.location and m != player
+        ]
+
+        if not crew_in_room:
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": "No heat signatures detected in this area."
+            }))
+            game_state.advance_turn()
+            return
+
+        res = ResolutionSystem()
+        rng = game_state.rng
+
+        detections = []
+        for target in crew_in_room:
+            # Get target's thermal signature (Things run hotter)
+            if hasattr(target, 'get_thermal_signature'):
+                target_thermal = target.get_thermal_signature()
+            else:
+                target_thermal = 2
+
+            # Roll thermal detection
+            scan_result = res.roll_check(thermal_pool, rng)
+
+            # Higher thermal signature = easier to detect
+            # Infected creatures have +3 thermal, so threshold is lower
+            if target_thermal > 3:  # Infected (5+ thermal)
+                thermal_desc = "ELEVATED"
+                intensity = "burns brightly"
+            else:
+                thermal_desc = "normal"
+                intensity = "glows steadily"
+
+            # Detection success - always see something in thermal
+            detections.append({
+                "name": target.name,
+                "thermal": thermal_desc,
+                "intensity": intensity,
+                "successes": scan_result['success_count'],
+                "is_elevated": target_thermal > 3
+            })
+
+        event_bus.emit(GameEvent(EventType.MESSAGE, {
+            "text": f"--- THERMAL SCAN RESULTS ({player_room}) ---"
+        }))
+
+        for d in detections:
+            if d['is_elevated']:
+                event_bus.emit(GameEvent(EventType.WARNING, {
+                    "text": f"  {d['name']}: {d['thermal'].upper()} - Their heat signature {d['intensity']}!"
+                }))
+            else:
+                event_bus.emit(GameEvent(EventType.MESSAGE, {
+                    "text": f"  {d['name']}: {d['thermal']} body temperature"
+                }))
+
+        game_state.advance_turn()
+
+
 class CommandDispatcher:
     """Manages command registration and dispatching."""
-    
+
     def __init__(self):
         self.commands: Dict[str, Command] = {}
         self._register_defaults()
@@ -1487,6 +1601,7 @@ class CommandDispatcher:
         self.register(ThrowCommand())
         self.register(SecurityCommand())
         self.register(SabotageSecurityCommand())
+        self.register(ThermalCommand())
         self.register(SettingsCommand())
 
     def register(self, command: Command):
