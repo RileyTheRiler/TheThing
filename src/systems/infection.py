@@ -1,4 +1,5 @@
-from src.core.event_system import event_bus, EventType, GameEvent
+from core.event_system import EventType, GameEvent, event_bus
+from core.resolution import ResolutionSystem
 
 def check_for_communion(game_state):
     """
@@ -20,6 +21,9 @@ def check_for_communion(game_state):
             location_groups[loc] = []
         location_groups[loc].append(member)
     
+    # Instantiate ResolutionSystem once
+    res = ResolutionSystem()
+
     # 2. Check each group
     for loc, members in location_groups.items():
         if len(members) < 2:
@@ -33,6 +37,20 @@ def check_for_communion(game_state):
             
         # Try to infect non-infected members
         for member in members:
+            if member.is_infected:
+                continue
+
+            # Determine lighting (mocked for now, or derived from power)
+            lighting = "DARK" if not game_state.power_on else "LIGHT"
+
+            # Fixed call to match ResolutionSystem.calculate_infection_risk signature
+            risk = res.calculate_infection_risk(lighting, member.mask_integrity, game_state.paranoia_level)
+
+            rng = game_state.rng
+            if rng.random_float() < risk:
+                member.is_infected = True
+                # Emit event for other systems (e.g., forensics)
+                event_bus.emit(GameEvent(EventType.COMMUNION_SUCCESS, {"target": member.name, "location": loc}))
             if not member.is_infected:
                 # Use ResolutionSystem for calculation (Source of Truth)
                 # We need a resolution instance, normally passed or instantiated
@@ -42,6 +60,11 @@ def check_for_communion(game_state):
                 # Determine lighting (mocked for now, or derived from power)
                 lighting = "DARK" if not game_state.power_on else "LIGHT"
                 
+                # Determine lighting (mocked for now, or derived from power)
+                lighting = "DARK" if not game_state.power_on else "LIGHT"
+                
+                # Corrected call signature: removed game_state argument
+                # Fixed call to match ResolutionSystem.calculate_infection_risk signature
                 risk = res.calculate_infection_risk(lighting, member.mask_integrity, game_state.paranoia_level)
                 
                 rng = game_state.rng

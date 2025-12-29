@@ -1,0 +1,97 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.12, pytest-9.0.2, pluggy-1.5.0
+rootdir: C:\Users\riley\Desktop\The Thing
+collected 5 items
+
+tests\test_turn_advance_events.py FF.F.                                  [100%]
+
+================================== FAILURES ===================================
+_________________________ test_turn_advance_emission __________________________
+
+game_state = <engine.GameState object at 0x000001A7C1EEE240>
+clean_event_bus = <core.event_system.EventBus object at 0x000001A7C1DCB4A0>
+
+    def test_turn_advance_emission(game_state, clean_event_bus):
+        """Test that advance_turn emits TURN_ADVANCE event."""
+        subscriber = MagicMock()
+        clean_event_bus.subscribe(EventType.TURN_ADVANCE, subscriber)
+    
+        game_state.advance_turn()
+    
+        assert subscriber.called
+        event = subscriber.call_args[0][0]
+        assert event.type == EventType.TURN_ADVANCE
+        assert event.payload["game_state"] == game_state
+        assert event.payload["rng"] == game_state.rng
+>       assert "turn_inventory" in event.payload
+E       AssertionError: assert 'turn_inventory' in {'game_state': <engine.GameState object at 0x000001A7C1EEE240>, 'rng': <systems.architect.RandomnessEngine object at 0x000001A7C1EEE270>, 'turn': 2}
+E        +  where {'game_state': <engine.GameState object at 0x000001A7C1EEE240>, 'rng': <systems.architect.RandomnessEngine object at 0x000001A7C1EEE270>, 'turn': 2} = GameEvent(type=<EventType.TURN_ADVANCE: 1>, payload={'game_state': <engine.GameState object at 0x000001A7C1EEE240>, 'rng': <systems.architect.RandomnessEngine object at 0x000001A7C1EEE270>, 'turn': 2}, timestamp=1766895362.3062181).payload
+
+tests\test_turn_advance_events.py:43: AssertionError
+---------------------------- Captured stdout call -----------------------------
+ERROR processing event EventType.TURN_ADVANCE: '<' not supported between instances of 'MagicMock' and 'int'
+[38;5;214m
+[2m[EVENT: Lights Flicker][0m[0m
+[38;5;214mThe lights flicker ominously for a moment. Power fluctuation detected.[0m
+ERROR processing event EventType.TURN_ADVANCE: '<' not supported between instances of 'MagicMock' and 'float'
+ERROR processing event EventType.TURN_ADVANCE: '<' not supported between instances of 'MagicMock' and 'int'
+ERROR processing event EventType.TURN_ADVANCE: '<' not supported between instances of 'MagicMock' and 'int'
+_______________________ test_paranoia_update_via_event ________________________
+
+game_state = <engine.GameState object at 0x000001A7C273B950>
+clean_event_bus = <core.event_system.EventBus object at 0x000001A7C1DCB4A0>
+
+    def test_paranoia_update_via_event(game_state, clean_event_bus):
+        """Test that PsychologySystem updates paranoia via event."""
+        # Setup PsychologySystem
+        psych = PsychologySystem()
+        game_state.paranoia_level = 10
+    
+        # Emit TURN_ADVANCE
+        event_bus.emit(GameEvent(EventType.TURN_ADVANCE, {"game_state": game_state}))
+    
+        # Check paranoia increased
+>       assert game_state.paranoia_level == 11
+E       assert 12 == 11
+E        +  where 12 = <engine.GameState object at 0x000001A7C273B950>.paranoia_level
+
+tests\test_turn_advance_events.py:55: AssertionError
+---------------------------- Captured stdout call -----------------------------
+ERROR processing event EventType.TURN_ADVANCE: '<' not supported between instances of 'MagicMock' and 'float'
+ERROR processing event EventType.TURN_ADVANCE: '<' not supported between instances of 'MagicMock' and 'int'
+ERROR processing event EventType.TURN_ADVANCE: '<' not supported between instances of 'MagicMock' and 'int'
+ERROR processing event EventType.TURN_ADVANCE: '<' not supported between instances of 'MagicMock' and 'int'
+_____________________ test_rescue_timer_update_via_event ______________________
+
+game_state = <engine.GameState object at 0x000001A7C1D57A40>
+clean_event_bus = <core.event_system.EventBus object at 0x000001A7C1DCB4A0>
+
+    def test_rescue_timer_update_via_event(game_state, clean_event_bus):
+        """Test that SabotageManager updates rescue timer via event."""
+        # Setup SabotageManager
+        sab = SabotageManager()
+        game_state.rescue_signal_active = True
+        game_state.rescue_turns_remaining = 10
+        game_state.reporter = MagicMock()
+    
+        # Emit TURN_ADVANCE manual
+        # Note: SabotageManager expects 'turn_inventory' in payload if it updates it,
+        # but the rescue timer logic is independent of inventory.
+        # However, existing sabotage.on_turn_advance updates inventory if present.
+        payload = {"game_state": game_state, "turn_inventory": {}}
+        event_bus.emit(GameEvent(EventType.TURN_ADVANCE, payload))
+    
+>       assert game_state.rescue_turns_remaining == 9
+E       assert 10 == 9
+E        +  where 10 = <engine.GameState object at 0x000001A7C1D57A40>.rescue_turns_remaining
+
+tests\test_turn_advance_events.py:90: AssertionError
+---------------------------- Captured stdout call -----------------------------
+ERROR processing event EventType.TURN_ADVANCE: '<' not supported between instances of 'MagicMock' and 'float'
+ERROR processing event EventType.TURN_ADVANCE: '<' not supported between instances of 'MagicMock' and 'int'
+ERROR processing event EventType.TURN_ADVANCE: '<' not supported between instances of 'MagicMock' and 'int'
+=========================== short test summary info ===========================
+FAILED tests/test_turn_advance_events.py::test_turn_advance_emission - Assert...
+FAILED tests/test_turn_advance_events.py::test_paranoia_update_via_event - as...
+FAILED tests/test_turn_advance_events.py::test_rescue_timer_update_via_event
+========================= 3 failed, 2 passed in 4.68s =========================

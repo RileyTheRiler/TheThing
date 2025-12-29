@@ -1,7 +1,6 @@
-import random
 from enum import Enum
-from src.core.event_system import event_bus, EventType, GameEvent
-from src.systems.architect import RandomnessEngine
+from core.event_system import event_bus, EventType, GameEvent
+from systems.architect import RandomnessEngine
 
 class WindDirection(Enum):
     NORTH = "north"
@@ -32,10 +31,17 @@ class WeatherSystem:
         self.northeasterly_active = False
         self.northeasterly_turns_remaining = 0
         
+        # Temperature threshold tracking
+        self.FREEZING_THRESHOLD = -50
+        self.below_freezing_threshold = False
+        
         self._recalculate_modifiers()
         
         # Subscribe to turn advances
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+
+    def cleanup(self):
+        event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
     
     def _recalculate_modifiers(self):
         """Update visibility and temperature modifiers based on current conditions."""
@@ -56,20 +62,29 @@ class WeatherSystem:
     
     def on_turn_advance(self, event: GameEvent):
         """Subscriber for TURN_ADVANCE event."""
-        # DEBUG
-        print(f"[DEBUG] WeatherSystem received event: {event.type}")
         rng = event.payload.get("rng")
         if not rng:
-            print("[DEBUG] WeatherSystem: No rng in payload")
             return
             
         events = self.tick(rng)
+        game_state = event.payload.get("game_state")
+        turn_inventory = event.payload.get("turn_inventory", {})
+        if isinstance(turn_inventory, dict):
+            turn_inventory["weather"] = turn_inventory.get("weather", 0) + 1
+
+        if not rng or not game_state:
+            return
+            
+        messages = self.tick(rng, game_state)
         
-        # Emit messages if needed via a generic message system or log event
-        # For now, we will assume the engine handles display if systems emit log events
-        # but the prompt asked for the tick logic to move here.
+        # Emit messages to the reporting system
+        for msg in messages:
+            if "ALERT" in msg or "WARNING" in msg:
+                event_bus.emit(GameEvent(EventType.WARNING, {'text': msg}))
+            else:
+                event_bus.emit(GameEvent(EventType.MESSAGE, {'text': msg}))
     
-    def tick(self, rng: RandomnessEngine):
+    def tick(self, rng: RandomnessEngine, game_state=None):
         """
         Advance weather by one turn. Uses provided RNG for determinism.
         """
@@ -98,6 +113,11 @@ class WeatherSystem:
             messages.append(msg)
             
         self._recalculate_modifiers()
+        
+        # Check temperature threshold crossing
+        if game_state:
+            self._check_temperature_threshold(game_state)
+        
         return messages
     
     def trigger_northeasterly(self, duration=5):
@@ -109,6 +129,31 @@ class WeatherSystem:
         self._recalculate_modifiers()
         
         return "WEATHER ALERT: NASTY NORTHEASTERLY INCOMING"
+    
+    def _check_temperature_threshold(self, game_state):
+        """Check if temperature has crossed the freezing threshold and emit event."""
+        current_temp = getattr(game_state, 'temperature', 0)
+        effective_temp = self.get_effective_temperature(current_temp)
+        
+        currently_below = effective_temp < self.FREEZING_THRESHOLD
+        
+        # Check if we've crossed the threshold
+        if currently_below and not self.below_freezing_threshold:
+            # Temperature just dropped below threshold
+            self.below_freezing_threshold = True
+            event_bus.emit(GameEvent(EventType.TEMPERATURE_THRESHOLD_CROSSED, {
+                'temperature': effective_temp,
+                'crossed_threshold': self.FREEZING_THRESHOLD,
+                'direction': 'falling'
+            }))
+        elif not currently_below and self.below_freezing_threshold:
+            # Temperature just rose above threshold
+            self.below_freezing_threshold = False
+            event_bus.emit(GameEvent(EventType.TEMPERATURE_THRESHOLD_CROSSED, {
+                'temperature': effective_temp,
+                'crossed_threshold': self.FREEZING_THRESHOLD,
+                'direction': 'rising'
+            }))
     
     def get_visibility(self):
         return max(0.0, 1.0 + self.visibility_modifier)

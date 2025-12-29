@@ -1,0 +1,16 @@
+{
+    "action_budget": {
+        "max_time_ms": 100,
+        "scale_with_crew": true,
+        "priority_weights": {
+            "high": 1.0,
+            "medium": 0.5,
+            "low": 0.25
+        }
+    },
+    "caching": {
+        "enable_perception_cache": true,
+        "enable_room_state_cache": true,
+        "cache_ttl_turns": 1
+    }
+}
