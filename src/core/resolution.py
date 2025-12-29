@@ -34,6 +34,7 @@ class Skill(Enum):
     HANDLING = "Handling"
     COMMS = "Comms"
     STEALTH = "Stealth"
+    DECEPTION = "Deception"
 
     @staticmethod
     def get_attribute(skill):
@@ -55,6 +56,7 @@ class Skill(Enum):
 
             Skill.PERSUASION: Attribute.INFLUENCE,
             Skill.EMPATHY: Attribute.INFLUENCE,  # Social standing/understanding
+            Skill.DECEPTION: Attribute.INFLUENCE,  # Lying and misdirection
 
             # Resolve serves as a defense/resistance stat primarily
         }

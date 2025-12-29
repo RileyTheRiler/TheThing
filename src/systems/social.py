@@ -1,9 +1,14 @@
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, TYPE_CHECKING
 
 from core.event_system import event_bus, EventType, GameEvent
+from core.resolution import Attribute, Skill
 
-__all__ = ['TrustMatrix', 'LynchMobSystem', 'DialogueManager', 'SocialThresholds', 'bucket_for_thresholds', 'bucket_label']
+if TYPE_CHECKING:
+    from engine import GameState, CrewMember
+
+__all__ = ['TrustMatrix', 'LynchMobSystem', 'DialogueManager', 'SocialThresholds',
+           'bucket_for_thresholds', 'bucket_label', 'ExplainAwaySystem', 'ExplainResult']
 
 
 def bucket_for_thresholds(value: float, thresholds: List[int]) -> int:
@@ -434,3 +439,254 @@ class DialogueManager:
             
         base_line = rng.choose(options) if hasattr(rng, 'choose') else options[0]
         return base_line
+
+
+@dataclass
+class ExplainResult:
+    """Result of an explain away attempt."""
+    success: bool
+    critical: bool  # Critical success or failure
+    player_successes: int
+    observer_successes: int
+    suspicion_change: int
+    trust_change: int
+    dialogue: str
+
+
+class ExplainAwaySystem:
+    """
+    Handles the 'Explain Away' dialogue mechanic.
+
+    When a player is detected sneaking, they can attempt to explain their behavior.
+    Roll: INFLUENCE + DECEPTION vs LOGIC + EMPATHY of the observer.
+
+    Success: Reduce suspicion by 3-5, emit forgiving dialogue
+    Failure: Increase suspicion by 2, emit skeptical dialogue, trust penalty
+    Critical Failure (0 successes): Immediate accusation trigger
+    """
+
+    # Dialogue options for different outcomes
+    PLAYER_EXPLANATIONS = [
+        "I thought I heard something suspicious over there.",
+        "Just checking if this area is secure.",
+        "I was looking for supplies, didn't want to wake anyone.",
+        "Sorry, I was trying to be quiet - didn't mean to startle you.",
+        "I was investigating a noise. False alarm, I think."
+    ]
+
+    OBSERVER_ACCEPTS = [
+        "{observer} nods slowly. \"Alright, but be more careful.\"",
+        "{observer} relaxes slightly. \"Fair enough. Stay safe.\"",
+        "{observer} considers this. \"I suppose that makes sense.\"",
+        "{observer} shrugs. \"Just announce yourself next time.\"",
+        "{observer} seems satisfied. \"Okay, I believe you.\""
+    ]
+
+    OBSERVER_SKEPTICAL = [
+        "{observer} narrows their eyes. \"That's what someone would say...\"",
+        "{observer} doesn't look convinced. \"I'm watching you.\"",
+        "{observer} frowns. \"That story doesn't add up.\"",
+        "{observer} steps back warily. \"If you say so...\"",
+        "{observer} seems doubtful. \"Just... keep your distance.\""
+    ]
+
+    OBSERVER_ACCUSES = [
+        "{observer} points at you. \"THAT'S EXACTLY WHAT A THING WOULD SAY!\"",
+        "{observer} backs away in horror. \"You can't fool me! Everyone, get over here!\"",
+        "{observer} shouts. \"I KNEW IT! You're one of THEM!\"",
+        "{observer}'s face twists with fear. \"Don't come any closer! HELP!\""
+    ]
+
+    def __init__(self):
+        self._pending_explanations: Dict[str, 'CrewMember'] = {}
+        event_bus.subscribe(EventType.PERCEPTION_EVENT, self.on_perception_event)
+
+    def cleanup(self):
+        event_bus.unsubscribe(EventType.PERCEPTION_EVENT, self.on_perception_event)
+
+    def on_perception_event(self, event: GameEvent):
+        """Track detection events that allow explain away attempts."""
+        payload = event.payload
+        if not payload:
+            return
+
+        outcome = payload.get("outcome")
+        observer = payload.get("opponent_ref")
+        player = payload.get("player_ref")
+        game_state = payload.get("game_state")
+
+        if outcome != "detected" or not observer or not player:
+            return
+
+        # Check if player was sneaking (not standing)
+        from entities.crew_member import StealthPosture
+        is_sneaking = getattr(player, "stealth_posture", StealthPosture.STANDING) != StealthPosture.STANDING
+
+        if is_sneaking and observer.is_alive and not getattr(observer, 'is_revealed', False):
+            # Player can attempt to explain
+            self._pending_explanations[observer.name] = observer
+
+            # Emit prompt to player
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": f"[!] {observer.name} caught you sneaking! Type EXPLAIN to try talking your way out."
+            }))
+
+    def can_explain_to(self, observer_name: str) -> bool:
+        """Check if an explain away attempt is pending for this observer."""
+        return observer_name in self._pending_explanations
+
+    def get_pending_observers(self) -> List[str]:
+        """Get list of observer names with pending explain opportunities."""
+        return list(self._pending_explanations.keys())
+
+    def clear_pending(self, observer_name: str = None):
+        """Clear pending explanation opportunity."""
+        if observer_name:
+            self._pending_explanations.pop(observer_name, None)
+        else:
+            self._pending_explanations.clear()
+
+    def attempt_explain(self, player: 'CrewMember', observer: 'CrewMember',
+                        game_state: 'GameState') -> ExplainResult:
+        """
+        Attempt to explain away suspicious behavior.
+
+        Roll: Player INFLUENCE + DECEPTION vs Observer LOGIC + EMPATHY
+        """
+        rng = game_state.rng
+
+        # Calculate player pool: INFLUENCE + DECEPTION
+        player_influence = player.attributes.get(Attribute.INFLUENCE, 1)
+        player_deception = player.skills.get(Skill.DECEPTION, 0)
+        player_pool = player_influence + player_deception
+
+        # Calculate observer pool: LOGIC + EMPATHY
+        observer_logic = observer.attributes.get(Attribute.LOGIC, 2)
+        observer_empathy = observer.skills.get(Skill.EMPATHY, 0)
+        observer_pool = observer_logic + observer_empathy
+
+        # Roll both pools
+        player_result = rng.calculate_success(player_pool)
+        observer_result = rng.calculate_success(observer_pool)
+
+        player_successes = player_result['success_count']
+        observer_successes = observer_result['success_count']
+
+        # Clear pending explanation
+        self.clear_pending(observer.name)
+
+        # Determine outcome
+        if player_successes == 0 and observer_successes > 0:
+            # Critical failure - accusation
+            return self._critical_failure(player, observer, player_successes, observer_successes, game_state)
+        elif player_successes > observer_successes:
+            # Success - observer accepts explanation
+            margin = player_successes - observer_successes
+            return self._success(player, observer, player_successes, observer_successes, margin, game_state)
+        else:
+            # Failure - observer remains skeptical
+            return self._failure(player, observer, player_successes, observer_successes, game_state)
+
+    def _success(self, player: 'CrewMember', observer: 'CrewMember',
+                 player_successes: int, observer_successes: int,
+                 margin: int, game_state: 'GameState') -> ExplainResult:
+        """Handle successful explanation."""
+        rng = game_state.rng
+
+        # Suspicion reduction: 3 base + margin (max 5)
+        suspicion_reduction = min(5, 3 + margin)
+
+        # Apply suspicion reduction
+        if hasattr(observer, 'suspicion_level'):
+            observer.suspicion_level = max(0, observer.suspicion_level - suspicion_reduction)
+            if observer.suspicion_level == 0:
+                observer.suspicion_state = "idle"
+
+        # Small trust boost
+        trust_change = 2
+        if hasattr(game_state, 'trust_system'):
+            game_state.trust_system.modify_trust(observer.name, player.name, trust_change)
+
+        # Generate dialogue
+        explanation = rng.choose(self.PLAYER_EXPLANATIONS)
+        response = rng.choose(self.OBSERVER_ACCEPTS).format(observer=observer.name)
+        dialogue = f'You say: "{explanation}"\n{response}'
+
+        return ExplainResult(
+            success=True,
+            critical=False,
+            player_successes=player_successes,
+            observer_successes=observer_successes,
+            suspicion_change=-suspicion_reduction,
+            trust_change=trust_change,
+            dialogue=dialogue
+        )
+
+    def _failure(self, player: 'CrewMember', observer: 'CrewMember',
+                 player_successes: int, observer_successes: int,
+                 game_state: 'GameState') -> ExplainResult:
+        """Handle failed explanation."""
+        rng = game_state.rng
+
+        # Suspicion increase
+        suspicion_increase = 2
+
+        if hasattr(observer, 'increase_suspicion'):
+            observer.increase_suspicion(suspicion_increase, turn=getattr(game_state, 'turn', 0))
+
+        # Trust penalty
+        trust_change = -5
+        if hasattr(game_state, 'trust_system'):
+            game_state.trust_system.modify_trust(observer.name, player.name, trust_change)
+
+        # Generate dialogue
+        explanation = rng.choose(self.PLAYER_EXPLANATIONS)
+        response = rng.choose(self.OBSERVER_SKEPTICAL).format(observer=observer.name)
+        dialogue = f'You say: "{explanation}"\n{response}'
+
+        return ExplainResult(
+            success=False,
+            critical=False,
+            player_successes=player_successes,
+            observer_successes=observer_successes,
+            suspicion_change=suspicion_increase,
+            trust_change=trust_change,
+            dialogue=dialogue
+        )
+
+    def _critical_failure(self, player: 'CrewMember', observer: 'CrewMember',
+                          player_successes: int, observer_successes: int,
+                          game_state: 'GameState') -> ExplainResult:
+        """Handle critical failure - triggers accusation."""
+        rng = game_state.rng
+
+        # Major suspicion spike
+        suspicion_increase = 5
+
+        if hasattr(observer, 'increase_suspicion'):
+            observer.increase_suspicion(suspicion_increase, turn=getattr(game_state, 'turn', 0))
+            observer.suspicion_state = "follow"
+
+        # Severe trust penalty
+        trust_change = -15
+        if hasattr(game_state, 'trust_system'):
+            game_state.trust_system.modify_trust(observer.name, player.name, trust_change)
+
+        # Generate dialogue
+        response = rng.choose(self.OBSERVER_ACCUSES).format(observer=observer.name)
+        dialogue = f"Your words stumble and fail.\n{response}"
+
+        # Emit warning about impending trouble
+        event_bus.emit(GameEvent(EventType.WARNING, {
+            "text": f"{observer.name} is now convinced you're infected!"
+        }))
+
+        return ExplainResult(
+            success=False,
+            critical=True,
+            player_successes=player_successes,
+            observer_successes=observer_successes,
+            suspicion_change=suspicion_increase,
+            trust_change=trust_change,
+            dialogue=dialogue
+        )

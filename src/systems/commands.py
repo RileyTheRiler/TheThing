@@ -7,6 +7,7 @@ from core.event_system import event_bus, EventType, GameEvent
 
 from systems.interrogation import InterrogationSystem, InterrogationTopic
 from systems.stealth import StealthPosture
+from systems.social import ExplainAwaySystem
 
 if TYPE_CHECKING:
     from engine import GameState, CrewMember
@@ -587,6 +588,94 @@ class InterrogateCommand(Command):
             change_str = f"+{result.trust_change}" if result.trust_change > 0 else str(result.trust_change)
             event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {"text": f"Trust {change_str}"}))
 
+
+class ExplainCommand(Command):
+    name = "EXPLAIN"
+    aliases = ["EXCUSE"]
+    description = "Explain suspicious behavior to an NPC who caught you sneaking."
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+
+        # Initialize explain system if needed
+        if not hasattr(game_state, "explain_system"):
+            game_state.explain_system = ExplainAwaySystem()
+
+        explain_sys = game_state.explain_system
+
+        # Check if there are pending explanation opportunities
+        pending = explain_sys.get_pending_observers()
+
+        if not pending:
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": "There's no one expecting an explanation right now."
+            }))
+            return
+
+        # If specific target provided, use that
+        if args:
+            target_name = args[0].upper()
+            if target_name not in [p.upper() for p in pending]:
+                event_bus.emit(GameEvent(EventType.WARNING, {
+                    "text": f"{target_name} isn't waiting for an explanation from you."
+                }))
+                return
+            # Find the actual observer
+            observer = None
+            for name in pending:
+                if name.upper() == target_name:
+                    observer = next((m for m in game_state.crew if m.name == name), None)
+                    break
+        else:
+            # Default to first pending observer
+            observer_name = pending[0]
+            observer = next((m for m in game_state.crew if m.name == observer_name), None)
+
+        if not observer:
+            event_bus.emit(GameEvent(EventType.ERROR, {
+                "text": "Could not find the observer to explain to."
+            }))
+            explain_sys.clear_pending()
+            return
+
+        # Check if observer is in the same room
+        player_room = game_state.station_map.get_room_name(*game_state.player.location)
+        observer_room = game_state.station_map.get_room_name(*observer.location)
+
+        if player_room != observer_room:
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": f"{observer.name} is no longer here. The moment has passed."
+            }))
+            explain_sys.clear_pending(observer.name)
+            return
+
+        # Attempt the explanation
+        result = explain_sys.attempt_explain(game_state.player, observer, game_state)
+
+        # Display the dialogue
+        event_bus.emit(GameEvent(EventType.DIALOGUE, {
+            "speaker": game_state.player.name,
+            "target": observer.name,
+            "text": result.dialogue
+        }))
+
+        # Show outcome
+        if result.success:
+            outcome_text = f"[SUCCESS] {observer.name}'s suspicion decreased by {abs(result.suspicion_change)}."
+        elif result.critical:
+            outcome_text = f"[CRITICAL FAILURE] {observer.name} is now hostile!"
+        else:
+            outcome_text = f"[FAILURE] {observer.name}'s suspicion increased. Trust penalty: {result.trust_change}"
+
+        event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+            "text": f"EXPLAIN: Player {result.player_successes} successes vs {observer.name} {result.observer_successes} successes"
+        }))
+        event_bus.emit(GameEvent(EventType.MESSAGE, {"text": outcome_text}))
+
+        # Explaining takes a turn
+        game_state.advance_turn()
+
+
 class AccuseCommand(Command):
     name = "ACCUSE"
     aliases = []
@@ -1159,6 +1248,7 @@ class CommandDispatcher:
         self.register(CancelTestCommand())
         self.register(TalkCommand())
         self.register(InterrogateCommand())
+        self.register(ExplainCommand())
         self.register(BarricadeCommand())
         self.register(JournalCommand())
         self.register(StatusCommand())
