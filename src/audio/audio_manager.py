@@ -206,7 +206,11 @@ class AudioManager:
             # If it's the player moving:
             actor_name = event.payload.get("actor")
             if self.player_ref and actor_name == self.player_ref.name:
-                noise = self.player_ref.get_noise_level()
+                noise = event.payload.get("noise", self.player_ref.get_noise_level())
+                if event.payload.get("vent"):
+                    # Vents are loud, even compared to heavy footsteps
+                    noise = max(noise, 8)
+                    priority = max(priority, 8)
                 if noise >= 6:
                     sound = Sound.HEAVY_FOOTSTEPS
                     priority = 7 # Louder/More important

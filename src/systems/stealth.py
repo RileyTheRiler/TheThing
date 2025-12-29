@@ -240,6 +240,52 @@ class StealthSystem:
         # Noise acts as penalty to subject pool (inverse of stealth) and a boon to observers
         noise_penalty = noise_level // 2
         subject_pool = max(1, subject_pool - noise_penalty)
+        
+        subject_result = res.roll_check(subject_pool, game_state.rng)
+        
+        # Detected if observer wins
+        return observer_result['success_count'] >= subject_result['success_count']
+
+    def handle_vent_movement(self, game_state, actor, destination):
+        """High-noise vent crawling with a small chance of running into The Thing."""
+        rng = getattr(game_state, "rng", None)
+        station_map = getattr(game_state, "station_map", None)
+        crew = getattr(game_state, "crew", [])
+        if not rng or not station_map or not actor:
+            return
+
+        room = station_map.get_room_name(*destination)
+        noise_level = max(actor.get_noise_level(), 8)
+
+        # Broadcast perception event so AI can react to vent noise
+        event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, {
+            "source": "vent",
+            "room": room,
+            "noise_level": noise_level,
+            "game_state": game_state
+        }))
+
+        # Limited chance to bump into an infected creature while crawling
+        encounter_chance = self.config.get("vent_encounter_chance", 0.15) if self.config else 0.15
+        if rng.random_float() < encounter_chance:
+            opponent = rng.choose(self._detect_candidates(crew)) or None
+            opponent_name = opponent.name if opponent else "something skittering in the vents"
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": f"You feel the duct vibrate—{opponent_name} is close!"
+            }))
+            payload = {
+                "room": room,
+                "opponent": opponent_name,
+                "opponent_ref": opponent,
+                "player_ref": actor,
+                "game_state": game_state,
+                "outcome": "detected",
+                "player_successes": 0,
+                "opponent_successes": 0,
+                "subject_pool": 0,
+                "observer_pool": 0
+            }
+            event_bus.emit(GameEvent(EventType.STEALTH_REPORT, payload))
         observer_pool = ResolutionSystem.adjust_pool(observer_pool, noise_penalty)
 
         return {

@@ -49,6 +49,7 @@ class CrewMember:
         self.slipped_vapor = False  # Hook: Biological Slip flag
         self.knowledge_tags = []    # Agent 3: Searchlight Harvest
         self.stealth_posture = StealthPosture.STANDING
+        self.in_vent = False        # Whether the character is moving through vents
         # Thermal sense/resistance baseline for heat-based detection
         self.attributes.setdefault(Attribute.THERMAL, 1)
         # Suspicion tracking toward the player
@@ -244,6 +245,7 @@ class CrewMember:
             "invariants": self.invariants,
             "knowledge_tags": self.knowledge_tags,
             "stealth_posture": self.stealth_posture.name,
+            "in_vent": self.in_vent,
             "suspicion_level": getattr(self, 'suspicion_level', 0),
             "suspicion_thresholds": getattr(self, 'suspicion_thresholds', {"question": 4, "follow": 8}),
             "suspicion_decay_delay": getattr(self, 'suspicion_decay_delay', 3),
@@ -313,6 +315,7 @@ class CrewMember:
         m.mask_integrity = data.get("mask_integrity", 100.0)
         m.is_revealed = data.get("is_revealed", False)
         m.knowledge_tags = data.get("knowledge_tags", [])
+        m.in_vent = data.get("in_vent", False)
         m.suspicion_level = data.get("suspicion_level", 0)
         m.suspicion_thresholds = data.get("suspicion_thresholds", {"question": 4, "follow": 8})
         m.suspicion_decay_delay = data.get("suspicion_decay_delay", 3)
@@ -348,8 +351,12 @@ class CrewMember:
             posture_mod = -2
         elif self.stealth_posture == StealthPosture.CRAWLING:
             posture_mod = -4
-            
-        return max(1, base_noise + weight - stealth_skill + posture_mod)
+        elif self.stealth_posture == StealthPosture.HIDING:
+            posture_mod = -1
+
+        vent_penalty = 4 if getattr(self, "in_vent", False) else 0
+
+        return max(1, base_noise + weight - stealth_skill + posture_mod + vent_penalty)
 
     def get_reaction_dialogue(self, trigger_type: str) -> str:
         """

@@ -200,6 +200,14 @@ COMMAND_REGISTRY: List[CommandMetadata] = [
         help_text="Attempt to hide in the current room. Affected by lighting."
     ),
     CommandMetadata(
+        name="VENT",
+        aliases=["DUCT"],
+        description="Enter or crawl through ventilation ducts.",
+        category="STEALTH",
+        usage="VENT ENTER|EXIT|<DIR>",
+        help_text="Enter a vent at an entry point, crawl to adjacent vent nodes, or exit back into a room."
+    ),
+    CommandMetadata(
         name="SNEAK",
         aliases=[],
         description="Move stealthily.",
