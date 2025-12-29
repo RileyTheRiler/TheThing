@@ -48,6 +48,14 @@ class CrewMember:
         self.knowledge_tags = []    # Agent 3: Searchlight Harvest
         self.stealth_posture = StealthPosture.STANDING
 
+        # Player tracking / search memory
+        self.last_seen_player_location = None
+        self.last_seen_player_room = None
+        self.last_seen_player_turn = None
+        self.search_targets = []
+        self.current_search_target = None
+        self.search_turns_remaining = 0
+
     def add_knowledge_tag(self, tag):
         """Add a knowledge tag/memory log if it doesn't already exist."""
         if tag not in self.knowledge_tags:
