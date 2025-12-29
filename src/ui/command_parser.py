@@ -25,8 +25,9 @@ class CommandParser:
         
         # Observation
         'look': 'LOOK', 'examine': 'LOOK', 'inspect': 'LOOK',
-        'observe': 'LOOK', 'check': 'LOOK', 'see': 'LOOK',
+        'observe': 'LOOK', 'see': 'LOOK',
         'describe': 'LOOK', 'study': 'LOOK', 'watch': 'LOOK',
+        # 'check' -> 'CHECK' (Skill check)
         
         # Communication
         'talk': 'TALK', 'speak': 'TALK', 'ask': 'TALK',
@@ -40,6 +41,7 @@ class CommandParser:
         'throw': 'THROW', 'toss': 'THROW', 'lob': 'THROW',
         'inventory': 'INVENTORY', 'inv': 'INVENTORY', 'items': 'INVENTORY',
         'bag': 'INVENTORY', 'stuff': 'INVENTORY',
+        'use': 'USE', # Although not in engine.py blocks explicitly, help text mentions it.
         'craft': 'CRAFT', 'build': 'CRAFT', 'assemble': 'CRAFT', 'make': 'CRAFT',
         
         # Combat
@@ -49,7 +51,12 @@ class CommandParser:
         
         # Investigation
         'tag': 'TAG', 'note': 'TAG', 'mark': 'TAG', 'record': 'TAG',
-        'journal': 'JOURNAL', 'notes': 'JOURNAL', 'log': 'JOURNAL',
+        'journal': 'JOURNAL', 'notes': 'JOURNAL', 'diary': 'JOURNAL',
+        'log': 'LOG', # Evidence log
+        'dossier': 'DOSSIER', 'report': 'DOSSIER', 'file': 'DOSSIER',
+
+        # Forensics
+        'test': 'TEST', 'heat': 'HEAT', 'apply': 'APPLY', 'cancel': 'CANCEL',
         
         # Social
         'trust': 'TRUST', 'status': 'STATUS',
@@ -57,6 +64,11 @@ class CommandParser:
         # System
         'help': 'HELP', 'quit': 'EXIT', 'exit': 'EXIT',
         'advance': 'ADVANCE', 'wait': 'ADVANCE', 'pass': 'ADVANCE',
+        'save': 'SAVE', 'load': 'LOAD',
+
+        # Skills/Actions
+        'check': 'CHECK', 'roll': 'CHECK', 'skill': 'CHECK',
+        'barricade': 'BARRICADE', 'fortify': 'BARRICADE', 'block': 'BARRICADE',
 
         # Tier 6.3: Endings
         'fix': 'REPAIR', 'repair': 'REPAIR', 'patch': 'REPAIR',
@@ -82,7 +94,7 @@ class CommandParser:
     
     # Natural language patterns
     PATTERNS = [
-        # "check X for breath" -> LOOK X (special vapor check)
+        # "check X for breath" -> LOOK X (special vapor check) - Exception for 'check' mapping
         (r"check\s+(\w+)\s+for\s+(?:breath|vapor|breathing)", "LOOK {0} VAPOR"),
         
         # "go to the X" -> MOVE X (only when "to" is present for room navigation)
@@ -129,6 +141,7 @@ class CommandParser:
         
         Returns:
             dict with 'action', 'target', 'args', 'raw'
+            OR None if parsing failed.
         """
         if not raw_input:
             return None
@@ -206,13 +219,8 @@ class CommandParser:
                 'raw': normalized
             }
         
-        # Unknown command - return as-is for legacy handling
-        return {
-            'action': words[0],
-            'target': words[1] if len(words) > 1 else None,
-            'args': words[2:] if len(words) > 2 else [],
-            'raw': normalized
-        }
+        # Unrecognized command
+        return None
     
     def _fuzzy_match_name(self, input_name):
         """
@@ -249,13 +257,16 @@ AVAILABLE COMMANDS:
 ===================
 MOVEMENT:    go/move/walk [north/south/east/west] or just n/s/e/w
 LOOK:        look/examine/check [name or 'around']
+             check [name] for vapor -> Look for breath
+SKILLS:      check/roll [skill]
 TALK:        talk/speak [to name]
 CRAFTING:    craft/build [recipe id]
 ITEMS:       get/take [item], drop [item], inventory/inv
 COMBAT:      attack/fight [name]
-NOTES:       tag [name] [note...], journal
+NOTES:       tag [name] [note...], journal, log [item], dossier [name]
 SOCIAL:      trust [name], status
-SYSTEM:      help, wait/advance, exit
+SYSTEM:      help, wait/advance, exit, save/load [slot]
+FORENSICS:   test [name], heat, apply, cancel, barricade
 
 NATURAL PHRASES:
 ================

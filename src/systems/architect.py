@@ -184,6 +184,10 @@ class TimeSystem:
         return (8 + self.turn_count) % 24
         self.start_hour = start_hour
         
+    @property
+    def hour(self):
+        """Calculates current hour based on turn count."""
+        return self.turn_count % 24
         # Subscribe to turn advances
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
 

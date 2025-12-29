@@ -492,6 +492,34 @@ def main():
 
         game.journal = data.get("journal", [])
         
+        try:
+            prompt = game.crt.prompt("CMD")
+            user_input = input(prompt).strip()
+            if not user_input:
+                continue
+            
+            # Use CommandParser
+            parsed = game.parser.parse(user_input)
+            if not parsed:
+                suggestion = game.parser.suggest_correction(user_input)
+                if suggestion:
+                    print(f"Unknown command. {suggestion}")
+                else:
+                    print("I don't understand that command.")
+                continue
+
+            action = parsed['action']
+            target = parsed.get('target')
+            cmd = [action]
+            if target: cmd.append(target)
+            if parsed.get('args'):
+                cmd.extend(parsed['args'])
+                
+            game.audio.trigger_event('success')
+        except EOFError:
+            break
+            
+        action = cmd[0]
         if hasattr(game, "trust_system") and game.trust_system:
             game.trust_system.cleanup()
         game.trust_system = TrustMatrix(game.crew, thresholds=game.social_thresholds)
