@@ -49,6 +49,7 @@ class AISystem:
         outcome = payload.get("outcome") # "detected" or "evaded"
         player_successes = payload.get("player_successes", 0)
         opponent_successes = payload.get("opponent_successes", 0)
+        suspicion_delta = payload.get("suspicion_delta", 0)
         
         # Diagnostics
         event_bus.emit(GameEvent(EventType.DIAGNOSTIC, {
@@ -61,6 +62,12 @@ class AISystem:
         
         # If we have full context, trigger reactions
         if game_state and observer and player:
+            # Apply suspicion raised by the stealth resolution
+            if suspicion_delta:
+                self._apply_suspicion(observer, suspicion_delta, game_state, reason="stealth_check")
+            if getattr(player, "location_hint_active", False):
+                self._apply_suspicion(observer, 1, game_state, reason="location_hint")
+
             if outcome == "detected":
                 self._react_to_detection(observer, player, game_state)
             elif outcome == "evaded":
@@ -81,6 +88,7 @@ class AISystem:
         
         # Broadcast alert to nearby NPCs
         self._broadcast_alert(observer, player.location, game_state)
+        self._apply_suspicion(observer, 2, game_state, reason="direct_detection")
         
         # Emit reaction event
         event_bus.emit(GameEvent(EventType.MESSAGE, {
@@ -93,6 +101,7 @@ class AISystem:
         observer.last_known_player_location = player.location
         self._record_last_seen(observer, player.location, game_state)
         observer.suspicion_level = 5 # Moderate suspicion
+        self._apply_suspicion(observer, 2, game_state, reason="near_detection")
         
         event_bus.emit(GameEvent(EventType.MESSAGE, {
             "text": f"{observer.name} pauses, looking suspicious... \"What was that?\""
@@ -101,10 +110,53 @@ class AISystem:
     def _react_to_evasion(self, observer: 'CrewMember', player: 'CrewMember', game_state: 'GameState'):
         """NPC reacts to player evading detection completely."""
         # Increase suspicion slightly
-        if not hasattr(observer, 'suspicion_level'):
-            observer.suspicion_level = 0
-        observer.suspicion_level = min(10, observer.suspicion_level + 1)
-        
+        self._apply_suspicion(observer, 1, game_state, reason="evasion")
+
+    def _apply_suspicion(self, observer: 'CrewMember', amount: int, game_state: 'GameState', reason: str = ""):
+        """Adjust suspicion and update state transitions."""
+        if not hasattr(observer, "increase_suspicion"):
+            return
+        current_turn = getattr(game_state, "turn", 0)
+        observer.increase_suspicion(amount, turn=current_turn)
+        self._update_suspicion_state(observer, game_state.player, game_state, reason=reason)
+
+    def _update_suspicion_state(self, observer: 'CrewMember', player: 'CrewMember', game_state: 'GameState', reason: str = ""):
+        """Evaluate suspicion thresholds and trigger dialogue prompts."""
+        thresholds = getattr(observer, "suspicion_thresholds", {"question": 4, "follow": 8})
+        prev_state = getattr(observer, "suspicion_state", "idle")
+        level = getattr(observer, "suspicion_level", 0)
+
+        new_state = "idle"
+        if level >= thresholds.get("follow", 8):
+            new_state = "follow"
+        elif level >= thresholds.get("question", 4):
+            new_state = "question"
+
+        observer.suspicion_state = new_state
+
+        if new_state == prev_state:
+            return
+
+        dialogue_payload = {
+            "speaker": observer.name,
+            "text": "",
+            "prompt": "FOLLOW_UP",
+            "target": player.name
+        }
+
+        if new_state == "question":
+            dialogue_payload["text"] = f"{player.name}, what are you doing here?"
+            dialogue_payload["prompt"] = "QUESTION_PLAYER"
+            event_bus.emit(GameEvent(EventType.DIALOGUE, dialogue_payload))
+        elif new_state == "follow":
+            dialogue_payload["text"] = f"{observer.name} starts shadowing you closely."
+            dialogue_payload["prompt"] = "FOLLOW_PLAYER"
+            event_bus.emit(GameEvent(EventType.DIALOGUE, dialogue_payload))
+        elif prev_state in ["question", "follow"] and new_state == "idle":
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": f"{observer.name} seems less focused on you now."
+            }))
+
     def _broadcast_alert(self, alerter: 'CrewMember', player_location: Tuple[int, int], game_state: 'GameState'):
         """Broadcast alert to nearby NPCs about player location."""
         alerter_room = game_state.station_map.get_room_name(*alerter.location)
@@ -157,11 +209,26 @@ class AISystem:
         """
         if not member.is_alive:
             return
+        current_turn = getattr(game_state, "turn", 0)
+        if hasattr(member, "decay_suspicion"):
+            member.decay_suspicion(current_turn)
+        if hasattr(member, "suspicion_state"):
+            self._update_suspicion_state(member, game_state.player, game_state)
 
         # 0. PRIORITY: Thing AI (Agent 3) - Revealed Things actively hunt
         if getattr(member, 'is_revealed', False):
             self._update_thing_ai(member, game_state)
             return
+
+        # Suspicion-driven behaviors (question or follow the player)
+        if getattr(member, "suspicion_state", "idle") == "follow":
+            member.last_known_player_location = game_state.player.location
+            self._pursue_player(member, game_state)
+            return
+        elif getattr(member, "suspicion_state", "idle") == "question":
+            if self._request_budget(self.COST_PERCEPTION):
+                self._question_player(member, game_state)
+            # still allow other logic if questioning but not blocked
 
         # Passive perception hook: if an NPC spots the player, move toward them
         if self._request_budget(self.COST_PERCEPTION):
@@ -487,3 +554,21 @@ class AISystem:
 
         member.search_turns_remaining = 0
         return False
+    def _question_player(self, member: 'CrewMember', game_state: 'GameState'):
+        """
+        Move toward the player and issue a questioning dialogue when nearby.
+        """
+        player = game_state.player
+        member_room = game_state.station_map.get_room_name(*member.location)
+        player_room = game_state.station_map.get_room_name(*player.location)
+
+        if member_room == player_room:
+            event_bus.emit(GameEvent(EventType.DIALOGUE, {
+                "speaker": member.name,
+                "target": player.name,
+                "text": f"{player.name}, I have some questions for you.",
+                "prompt": "QUESTION_PLAYER"
+            }))
+            member.last_known_player_location = player.location
+        else:
+            self._pursue_player(member, game_state)
