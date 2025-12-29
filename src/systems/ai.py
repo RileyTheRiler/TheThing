@@ -17,6 +17,7 @@ class AISystem:
     COST_ASTAR = 5
     COST_PATH_CACHE = 1
     COST_PERCEPTION = 2
+    SEARCH_TURNS = 5
 
     def __init__(self):
         self.cache: Optional[AICache] = None
@@ -82,6 +83,8 @@ class AISystem:
         # Set alert state
         observer.detected_player = True
         observer.investigating = False # Already found
+        room = self._record_last_seen(observer, player.location, game_state)
+        self._enter_search_mode(observer, player.location, room, game_state)
         
         # Broadcast alert to nearby NPCs
         self._broadcast_alert(observer, player.location, game_state)
@@ -96,6 +99,8 @@ class AISystem:
         """NPC reacts to almost detecting the player - investigates location."""
         observer.investigating = True
         observer.last_known_player_location = player.location
+        self._record_last_seen(observer, player.location, game_state)
+        observer.suspicion_level = 5 # Moderate suspicion
         self._apply_suspicion(observer, 2, game_state, reason="near_detection")
         
         event_bus.emit(GameEvent(EventType.MESSAGE, {
@@ -259,6 +264,11 @@ class AISystem:
         else:
             member.in_lynch_mob = False
 
+        # Search mode: sweep around last seen room/corridors
+        if getattr(member, "search_turns_remaining", 0) > 0:
+            if self._execute_search(member, game_state):
+                return
+
         # 3. Check Schedule
         # Schedule entries: {"start": 8, "end": 20, "room": "Rec Room"}
         current_hour = game_state.time_system.hour
@@ -416,6 +426,8 @@ class AISystem:
         detected = stealth.evaluate_detection(member, player, game_state, noise_level=noise)
         if detected and hasattr(member, "add_knowledge_tag"):
             member.add_knowledge_tag(f"Spotted {player.name} in {player_room}")
+            room = self._record_last_seen(member, player.location, game_state, player_room)
+            self._enter_search_mode(member, player.location, room, game_state)
         return detected
 
     def _pathfind_step(self, member: 'CrewMember', target_x: int, target_y: int, game_state: 'GameState'):
@@ -470,6 +482,78 @@ class AISystem:
         player_loc = self.cache.player_location if self.cache else game_state.player.location
         self._pathfind_step(member, player_loc[0], player_loc[1], game_state)
 
+    def _record_last_seen(self, member: 'CrewMember', location: Tuple[int, int], game_state: 'GameState', room_name: Optional[str] = None) -> str:
+        """Store last-seen player data on the NPC for later search behavior."""
+        room = room_name or game_state.station_map.get_room_name(*location)
+        member.last_seen_player_location = location
+        member.last_seen_player_room = room
+        member.last_seen_player_turn = game_state.turn
+        return room
+
+    def _enter_search_mode(self, member: 'CrewMember', anchor_location: Tuple[int, int], anchor_room: str, game_state: 'GameState'):
+        """Initialize search mode around the last seen position and nearby corridors."""
+        if not hasattr(member, "search_turns_remaining"):
+            return
+
+        station_map = game_state.station_map
+        targets = [anchor_location]
+
+        # Add adjacent corridor tiles for a quick sweep
+        for dx in [-1, 0, 1]:
+            for dy in [-1, 0, 1]:
+                if dx == 0 and dy == 0:
+                    continue
+                pos = (anchor_location[0] + dx, anchor_location[1] + dy)
+                if not station_map.is_walkable(*pos):
+                    continue
+                room_name = station_map.get_room_name(*pos)
+                if room_name.startswith("Corridor"):
+                    targets.append(pos)
+
+        # Deduplicate while preserving order
+        deduped_targets = []
+        seen = set()
+        for t in targets:
+            if t not in seen:
+                deduped_targets.append(t)
+                seen.add(t)
+
+        member.search_targets = deduped_targets
+        member.current_search_target = None
+        member.search_turns_remaining = self.SEARCH_TURNS
+
+        event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+            "text": f"{member.name} is searching around {anchor_room} (Last seen at turn {game_state.turn})."
+        }))
+        event_bus.emit(GameEvent(EventType.MESSAGE, {
+            "text": f"{member.name} starts sweeping {anchor_room} and nearby corridors!"
+        }))
+
+    def _execute_search(self, member: 'CrewMember', game_state: 'GameState') -> bool:
+        """Advance the search pattern; returns True if a search action occurred."""
+        if member.search_turns_remaining <= 0 or not member.search_targets:
+            member.search_turns_remaining = 0
+            return False
+
+        if member.current_search_target is None:
+            member.current_search_target = member.search_targets[0]
+
+        # If we've reached the current target, rotate to next target
+        if member.location == member.current_search_target:
+            member.search_targets = member.search_targets[1:] + [member.current_search_target]
+            member.current_search_target = member.search_targets[0] if member.search_targets else None
+
+        if member.current_search_target:
+            tx, ty = member.current_search_target
+            self._pathfind_step(member, tx, ty, game_state)
+            member.search_turns_remaining -= 1
+            if member.search_turns_remaining <= 0:
+                member.search_targets = []
+                member.current_search_target = None
+            return True
+
+        member.search_turns_remaining = 0
+        return False
     def _question_player(self, member: 'CrewMember', game_state: 'GameState'):
         """
         Move toward the player and issue a questioning dialogue when nearby.
