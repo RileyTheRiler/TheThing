@@ -7,6 +7,7 @@ from core.event_system import event_bus, EventType, GameEvent
 
 from systems.distraction import DistractionSystem
 from systems.interrogation import InterrogationSystem, InterrogationTopic
+from systems.security import SecuritySystem
 from systems.stealth import StealthPosture
 from systems.social import ExplainAwaySystem
 
@@ -135,8 +136,11 @@ class MoveCommand(Command):
             destination = game_state.station_map.get_room_name(*game_state.player.location)
             event_bus.emit(GameEvent(EventType.MOVEMENT, {
                 "actor": getattr(game_state.player, "name", "You"),
+                "mover": game_state.player,
+                "to": game_state.player.location,
                 "direction": direction,
-                "destination": destination
+                "destination": destination,
+                "game_state": game_state
             }))
             _handle_hiding_entry(game_state)
             game_state.advance_turn()
@@ -1039,8 +1043,11 @@ class SneakCommand(Command):
             destination = game_state.station_map.get_room_name(*game_state.player.location)
             event_bus.emit(GameEvent(EventType.MOVEMENT, {
                 "actor": "You",
+                "mover": game_state.player,
+                "to": game_state.player.location,
                 "direction": direction,
-                "destination": destination
+                "destination": destination,
+                "game_state": game_state
             }))
             event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "(Sneaking)"}))
             _handle_hiding_entry(game_state)
@@ -1289,6 +1296,129 @@ class SettingsCommand(Command):
         event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "Settings updated (simulated)."}))
 
 
+class SecurityCommand(Command):
+    name = "SECURITY"
+    aliases = ["CAMERAS"]
+    description = "Check security console for alerts. Usage: SECURITY [STATUS]"
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+        player_room = game_state.station_map.get_room_name(*game_state.player.location)
+
+        # Initialize security system if needed
+        if not hasattr(game_state, 'security_system'):
+            game_state.security_system = SecuritySystem(game_state)
+
+        security_sys = game_state.security_system
+
+        if args and args[0].upper() == "STATUS":
+            # Show device status
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": f"--- SECURITY STATUS ---\n{security_sys.get_status()}"
+            }))
+            return
+
+        # Check the security console (only in Radio Room)
+        if player_room != "Radio Room":
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": "The security console is in the Radio Room."
+            }))
+            return
+
+        unread = security_sys.check_console()
+
+        if not unread:
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": "--- SECURITY LOG ---\nNo new alerts."
+            }))
+        else:
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": f"--- SECURITY LOG ({len(unread)} alerts) ---"
+            }))
+            for entry in unread[-10:]:  # Show last 10
+                device = entry['device_type'].replace('_', ' ').title()
+                event_bus.emit(GameEvent(EventType.MESSAGE, {
+                    "text": f"[Turn {entry['turn']}] {device} ({entry['device_room']}): {entry['target']} detected at {entry['position']}"
+                }))
+
+
+class SabotageSecurityCommand(Command):
+    name = "SABOTAGE"
+    aliases = ["DISABLE"]
+    description = "Sabotage a security device. Usage: SABOTAGE CAMERA/SENSOR"
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+
+        if not args:
+            event_bus.emit(GameEvent(EventType.ERROR, {
+                "text": "Usage: SABOTAGE <CAMERA/SENSOR>\nYou must be at the device's location."
+            }))
+            return
+
+        target_type = args[0].upper()
+
+        if target_type not in ["CAMERA", "SENSOR", "MOTION_SENSOR"]:
+            event_bus.emit(GameEvent(EventType.ERROR, {
+                "text": "You can sabotage: CAMERA, SENSOR"
+            }))
+            return
+
+        # Initialize security system if needed
+        if not hasattr(game_state, 'security_system'):
+            game_state.security_system = SecuritySystem(game_state)
+
+        security_sys = game_state.security_system
+        player_pos = game_state.player.location
+
+        # Check if there's a device at player's location
+        device = security_sys.get_device_at(player_pos)
+
+        if not device:
+            # Check for nearby devices in the same room
+            player_room = game_state.station_map.get_room_name(*player_pos)
+            room_devices = security_sys.get_devices_in_room(player_room)
+
+            if not room_devices:
+                event_bus.emit(GameEvent(EventType.WARNING, {
+                    "text": "There's no security device here to sabotage."
+                }))
+                return
+
+            # Find matching device type
+            matching = [d for d in room_devices if
+                       (target_type == "CAMERA" and d.device_type == "camera") or
+                       (target_type in ["SENSOR", "MOTION_SENSOR"] and d.device_type == "motion_sensor")]
+
+            if not matching:
+                event_bus.emit(GameEvent(EventType.WARNING, {
+                    "text": f"There's no {target_type.lower()} in this room."
+                }))
+                return
+
+            device = matching[0]
+            device_pos = device.position
+        else:
+            device_pos = player_pos
+
+        # Check for required tools
+        tools = next((i for i in game_state.player.inventory if "TOOLS" in i.name.upper()), None)
+        if not tools:
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": "You need Tools to sabotage security devices."
+            }))
+            return
+
+        # Attempt sabotage
+        success, message = security_sys.sabotage_device(device_pos, game_state)
+
+        if success:
+            event_bus.emit(GameEvent(EventType.MESSAGE, {"text": message}))
+            game_state.advance_turn()
+        else:
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": message}))
+
+
 class CommandDispatcher:
     """Manages command registration and dispatching."""
     
@@ -1336,6 +1466,8 @@ class CommandDispatcher:
         self.register(SOSCommand())
         self.register(AccuseCommand())
         self.register(ThrowCommand())
+        self.register(SecurityCommand())
+        self.register(SabotageSecurityCommand())
         self.register(SettingsCommand())
 
     def register(self, command: Command):

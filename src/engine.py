@@ -16,6 +16,7 @@ from entities.station_map import StationMap
 
 from systems.ai import AISystem
 from systems.alert import AlertSystem
+from systems.security import SecuritySystem
 from systems.architect import RandomnessEngine, GameMode, TimeSystem, Difficulty, DifficultySettings, Verbosity
 from systems.commands import CommandDispatcher, GameContext
 from systems.combat import CombatSystem, CoverType
@@ -127,6 +128,7 @@ class GameState:
         self.stealth = StealthSystem()
         self.stealth_system = self.stealth  # Alias for systems expecting stealth_system attr
         self.alert_system = AlertSystem(self)
+        self.security_system = SecuritySystem(self)
         self.crafting = CraftingSystem()
         self.endgame = EndgameSystem(self.design_registry) # Agent 8
         self.combat = CombatSystem(self.rng, self.room_states)
@@ -342,6 +344,8 @@ class GameState:
             self.ai_system.cleanup()
         if hasattr(self, 'alert_system') and self.alert_system:
             self.alert_system.cleanup()
+        if hasattr(self, 'security_system') and self.security_system:
+            self.security_system.cleanup()
         if hasattr(self, 'audio') and self.audio:
             self.audio.cleanup()
         if hasattr(self, 'reporter') and self.reporter:
@@ -416,7 +420,8 @@ class GameState:
             "journal": self.journal,
             "trust": self.trust_system.matrix if hasattr(self, "trust_system") else {},
             "crafting": self.crafting.to_dict() if hasattr(self.crafting, "to_dict") else {},
-            "alert_system": self.alert_system.to_dict() if hasattr(self, "alert_system") else {}
+            "alert_system": self.alert_system.to_dict() if hasattr(self, "alert_system") else {},
+            "security_system": self.security_system.to_dict() if hasattr(self, "security_system") else {}
         }
 
     @classmethod
@@ -487,5 +492,10 @@ class GameState:
         if hasattr(game, 'alert_system') and game.alert_system:
             game.alert_system.cleanup()
         game.alert_system = AlertSystem.from_dict(data.get("alert_system", {}), game)
+
+        # Restore security system state
+        if hasattr(game, 'security_system') and game.security_system:
+            game.security_system.cleanup()
+        game.security_system = SecuritySystem.from_dict(data.get("security_system", {}), game)
 
         return game

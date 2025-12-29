@@ -255,3 +255,43 @@ class StationMap:
     def get_hiding_spot(self, x: int, y: int) -> Dict:
         """Return hiding spot metadata for the coordinate or None."""
         return self.hiding_spots.get((x, y))
+
+    def _build_security_devices(self) -> tuple:
+        """Define static security device positions across the station.
+
+        Returns (cameras, motion_sensors) dicts with position metadata.
+        Cameras have: room, facing direction, range
+        Motion sensors have: room
+        """
+        cameras = {
+            (6, 6): {"room": "Rec Room", "facing": "S", "range": 3},
+            (12, 2): {"room": "Radio Room", "facing": "E", "range": 3},
+            (17, 2): {"room": "Storage", "facing": "W", "range": 3},
+            (7, 17): {"room": "Hangar", "facing": "N", "range": 3},
+            (12, 12): {"room": "Lab", "facing": "S", "range": 3},
+        }
+        motion_sensors = {
+            (13, 3): {"room": "Radio Room"},
+            (16, 17): {"room": "Generator"},
+            (1, 17): {"room": "Kennel"},
+        }
+        return cameras, motion_sensors
+
+    def is_camera_location(self, x: int, y: int) -> bool:
+        """Return True if there is a camera at this position."""
+        cameras, _ = self._build_security_devices()
+        return (x, y) in cameras
+
+    def is_sensor_location(self, x: int, y: int) -> bool:
+        """Return True if there is a motion sensor at this position."""
+        _, sensors = self._build_security_devices()
+        return (x, y) in sensors
+
+    def get_security_device_info(self, x: int, y: int) -> Dict:
+        """Return security device metadata for the coordinate or None."""
+        cameras, sensors = self._build_security_devices()
+        if (x, y) in cameras:
+            return {"type": "camera", **cameras[(x, y)]}
+        if (x, y) in sensors:
+            return {"type": "motion_sensor", **sensors[(x, y)]}
+        return None
