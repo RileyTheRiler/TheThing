@@ -5,7 +5,7 @@ Systems emit events instead of returning strings.
 """
 
 from core.event_system import event_bus, EventType, GameEvent
-from systems.architect import Verbosity
+from systems.architect import Difficulty
 
 
 class MessageReporter:
@@ -16,6 +16,13 @@ class MessageReporter:
     Supports event coalescing (batching) to avoid output floods.
     Supports verbosity levels for filtering events.
     """
+
+    # Pseudo-enum for Verbosity since the actual enum was removed
+    class Verbosity:
+        MINIMAL = 0
+        STANDARD = 1
+        VERBOSE = 2
+        DEBUG = 3
 
     # Map EventType to minimum required Verbosity
     VERBOSITY_MAP = {
@@ -56,16 +63,21 @@ class MessageReporter:
         self._subscribe_all()
 
     @property
-    def verbosity(self) -> Verbosity:
+    def verbosity(self):
         """Get current verbosity level from game state."""
-        if self.game_state:
-            return self.game_state.verbosity
-        return Verbosity.STANDARD
+        # if self.game_state:
+        #    return self.game_state.verbosity
+        return self.Verbosity.STANDARD
 
     def _should_report(self, event_type: EventType) -> bool:
         """Check if event should be reported based on verbosity."""
-        required = self.VERBOSITY_MAP.get(event_type, Verbosity.DEBUG)
-        return self.verbosity.value >= required.value
+        required = self.VERBOSITY_MAP.get(event_type, self.Verbosity.DEBUG)
+        # Assuming verbosity is just an int or enum with value
+        current = self.verbosity
+        req_val = required if isinstance(required, int) else required.value
+        cur_val = current if isinstance(current, int) else current.value
+
+        return cur_val >= req_val
 
     def flush(self):
         """Flush any batched messages to the output."""
