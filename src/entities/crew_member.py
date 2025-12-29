@@ -51,6 +51,9 @@ class CrewMember:
         self.slipped_vapor = False  # Hook: Biological Slip flag
         self.knowledge_tags = []    # Agent 3: Searchlight Harvest
         self.stealth_posture = StealthPosture.STANDING
+        self.schedule_slip_flag = False  # Flagged when off expected schedule
+        self.schedule_slip_reason = None
+        self.location_hint_active = False
         self.investigating = False
         self.investigation_goal = None
         self.investigation_priority = 0
@@ -262,7 +265,9 @@ class CrewMember:
             "detected_player": getattr(self, 'detected_player', False),
             "target_room": getattr(self, 'target_room', None),
             "in_lynch_mob": getattr(self, 'in_lynch_mob', False),
-            "location_hint_active": getattr(self, 'location_hint_active', False)
+            "location_hint_active": getattr(self, 'location_hint_active', False),
+            "schedule_slip_flag": getattr(self, 'schedule_slip_flag', False),
+            "schedule_slip_reason": getattr(self, 'schedule_slip_reason', None)
         }
 
     @classmethod
@@ -322,6 +327,9 @@ class CrewMember:
         m.mask_integrity = data.get("mask_integrity", 100.0)
         m.is_revealed = data.get("is_revealed", False)
         m.knowledge_tags = data.get("knowledge_tags", [])
+        m.schedule_slip_flag = data.get("schedule_slip_flag", False)
+        m.schedule_slip_reason = data.get("schedule_slip_reason")
+        m.location_hint_active = data.get("location_hint_active", False)
         m.in_vent = data.get("in_vent", False)
         m.suspicion_level = data.get("suspicion_level", 0)
         m.suspicion_thresholds = data.get("suspicion_thresholds", {"question": 4, "follow": 8})
