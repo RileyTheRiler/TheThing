@@ -11,10 +11,11 @@ class StealthSystem:
     Key mechanic: Subject Pool vs Observer Pool contest using ResolutionSystem.
     """
 
-    def __init__(self, design_registry: Optional[DesignBriefRegistry] = None):
+    def __init__(self, design_registry: Optional[DesignBriefRegistry] = None, room_states=None):
         self.design_registry = design_registry or DesignBriefRegistry()
         self.config = self.design_registry.get_brief("stealth")
         self.cooldown = 0
+        self.room_states = room_states
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
 
     def cleanup(self):
@@ -48,7 +49,7 @@ class StealthSystem:
         player = getattr(game_state, "player", None)
         crew = getattr(game_state, "crew", [])
         station_map = getattr(game_state, "station_map", None)
-        room_states = getattr(game_state, "room_states", None)
+        room_states = getattr(game_state, "room_states", None) or self.room_states
         
         if not player or not station_map:
             return
@@ -64,6 +65,33 @@ class StealthSystem:
 
         # Opponent is the first infected person found
         opponent = nearby_infected[0]
+
+        # Quick detection chance gate before rolling dice
+        detection_chance = 0.5
+        if self.config:
+            detection_chance = self.config.get("base_detection_chance", detection_chance)
+        mods = None
+        if room_states:
+            mods = room_states.get_resolution_modifiers(room)
+            detection_chance = max(0.0, detection_chance + mods.stealth_detection)
+
+        roll = rng.random_float()
+        if roll > detection_chance:
+            payload = {
+                "room": room,
+                "opponent": opponent.name,
+                "opponent_ref": opponent,
+                "player_ref": player,
+                "game_state": game_state,
+                "outcome": "evaded",
+                "player_successes": 0,
+                "opponent_successes": 0,
+                "subject_pool": 0,
+                "observer_pool": 0
+            }
+            event_bus.emit(GameEvent(EventType.STEALTH_REPORT, payload))
+            self.cooldown = self.config.get("cooldown_turns", 1) if self.config else 1
+            return
         
         # 1. Subject Pool (Player Stealth)
         prowess = player.attributes.get(Attribute.PROWESS, 1) if hasattr(player, "attributes") else 2

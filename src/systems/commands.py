@@ -484,7 +484,9 @@ class InterrogateCommand(Command):
         "ALIBI": InterrogationTopic.ALIBI,
         "SUSPICION": InterrogationTopic.SUSPICION,
         "BEHAVIOR": InterrogationTopic.BEHAVIOR,
-        "KNOWLEDGE": InterrogationTopic.KNOWLEDGE
+        "KNOWLEDGE": InterrogationTopic.KNOWLEDGE,
+        "SLIP": InterrogationTopic.SCHEDULE_SLIP,
+        "SCHEDULE": InterrogationTopic.SCHEDULE_SLIP
     }
 
     def execute(self, context: GameContext, args: List[str]) -> None:
@@ -536,6 +538,62 @@ class InterrogateCommand(Command):
                 event_bus.emit(GameEvent(EventType.MESSAGE, {"text": tell}))
 
         if result.trust_change != 0:
+            game_state.trust_system.update_trust(target.name, game_state.player.name, result.trust_change)
+            change_str = f"+{result.trust_change}" if result.trust_change > 0 else str(result.trust_change)
+            event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {"text": f"Trust {change_str}"}))
+
+class ConfrontSlipCommand(Command):
+    name = "CONFRONT"
+    aliases = ["CALLOUT"]
+    description = "Confront a crew member who is off their schedule."
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+        player_room = game_state.station_map.get_room_name(*game_state.player.location)
+
+        if not args:
+            event_bus.emit(GameEvent(EventType.ERROR, {
+                "text": "Usage: CONFRONT <NAME>"
+            }))
+            return
+
+        target_name = args[0]
+        target = next((m for m in game_state.crew if m.name.upper() == target_name.upper()), None)
+
+        if not target:
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": f"Unknown target: {target_name}"}))
+            return
+        if game_state.station_map.get_room_name(*target.location) != player_room:
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": f"{target.name} is not here."}))
+            return
+        if not target.is_alive:
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": f"{target.name} cannot answer..."}))
+            return
+        if not getattr(target, "schedule_slip_flag", False):
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": f"{target.name} seems to be where they're supposed to be. No slip to confront."
+            }))
+            return
+
+        if not hasattr(game_state, "interrogation_system"):
+            game_state.interrogation_system = InterrogationSystem(game_state.rng, game_state.room_states)
+
+        result = game_state.interrogation_system.confront_schedule_slip(
+            game_state.player, target, game_state
+        )
+
+        event_bus.emit(GameEvent(EventType.MESSAGE, {
+            "text": f"[CONFRONT: {target.name} - OFF-SCHEDULE]"
+        }))
+        event_bus.emit(GameEvent(EventType.DIALOGUE, {
+            "speaker": target.name,
+            "text": result.dialogue
+        }))
+
+        for tell in result.tells:
+            event_bus.emit(GameEvent(EventType.MESSAGE, {"text": tell}))
+
+        if result.trust_change != 0 and hasattr(game_state, "trust_system"):
             game_state.trust_system.update_trust(target.name, game_state.player.name, result.trust_change)
             change_str = f"+{result.trust_change}" if result.trust_change > 0 else str(result.trust_change)
             event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {"text": f"Trust {change_str}"}))
@@ -1010,6 +1068,7 @@ class CommandDispatcher:
         self.register(CancelTestCommand())
         self.register(TalkCommand())
         self.register(InterrogateCommand())
+        self.register(ConfrontSlipCommand())
         self.register(BarricadeCommand())
         self.register(JournalCommand())
         self.register(StatusCommand())
