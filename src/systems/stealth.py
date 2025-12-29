@@ -160,7 +160,7 @@ class StealthSystem:
             "opponent_successes": observer_result['success_count'],
             "subject_pool": subject_pool,
             "observer_pool": observer_pool,
-            "hiding_spot": hiding_spot
+            "hiding_spot": hiding_spot,
             "suspicion_delta": suspicion_delta,
             "suspicion_level": getattr(opponent, "suspicion_level", 0)
         }
@@ -278,67 +278,142 @@ class StealthSystem:
         hiding_spot, cover_bonus, blocks_los = self._hiding_spot_modifiers(getattr(game_state, "station_map", None), subject)
         if cover_bonus and getattr(subject, "stealth_posture", StealthPosture.STANDING) == StealthPosture.HIDING:
             subject_pool += cover_bonus
-            observer_result_penalty = cover_bonus + (1 if blocks_los else 0)
-        else:
-            observer_result_penalty = 0
-        
-        subject_result = res.roll_check(subject_pool, game_state.rng)
-        
-        if observer_result_penalty:
-            observer_result['success_count'] = max(0, observer_result['success_count'] - observer_result_penalty)
-        
-        # Detected if observer wins
-        return observer_result['success_count'] >= subject_result['success_count']
+
+        # Noise acts as penalty to observer pool as well (harder to spot in loud environments)
+        noise_penalty = noise_level // 3
+        observer_pool = ResolutionSystem.adjust_pool(observer_pool, -noise_penalty)
+
+        return {
+            "observer_pool": max(1, observer_pool),
+            "subject_pool": max(1, subject_pool),
+            "env_effects": env_effects,
+            "is_frozen": is_frozen,
+            "room_name": room_name,
+            "cover_bonus": cover_bonus,
+            "blocks_los": blocks_los,
+        }
+
+    # === VENT MECHANICS CONFIGURATION ===
+    VENT_BASE_NOISE = 10        # Echoing noise in metal ducts
+    VENT_ENCOUNTER_CHANCE = 0.20  # 20% chance to encounter Thing in vents
+    VENT_CRAWL_TURNS = 2        # Takes 2 turns per vent tile movement
 
     def handle_vent_movement(self, game_state, actor, destination):
-        """High-noise vent crawling with a small chance of running into The Thing."""
+        """Enhanced vent crawling with echoing noise, Thing encounters, and danger.
+
+        Features:
+        - High base noise (echoes in metal ducts)
+        - Sound propagates to adjacent vent nodes
+        - Chance to encounter The Thing in confined space
+        - Limited escape options when encountered
+        """
         rng = getattr(game_state, "rng", None)
         station_map = getattr(game_state, "station_map", None)
         crew = getattr(game_state, "crew", [])
         if not rng or not station_map or not actor:
-            return
+            return {"encounter": False}
 
         room = station_map.get_room_name(*destination)
-        noise_level = max(actor.get_noise_level(), 8)
 
-        # Broadcast perception event so AI can react to vent noise
+        # Vent noise is louder due to echoing in metal ducts
+        base_noise = self.config.get("vent_base_noise", self.VENT_BASE_NOISE) if self.config else self.VENT_BASE_NOISE
+        noise_level = max(actor.get_noise_level(), base_noise)
+
+        # Broadcast perception event at current location
         event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, {
             "source": "vent",
             "room": room,
+            "location": destination,
             "noise_level": noise_level,
             "game_state": game_state
         }))
 
-        # Limited chance to bump into an infected creature while crawling
-        encounter_chance = self.config.get("vent_encounter_chance", 0.15) if self.config else 0.15
-        if rng.random_float() < encounter_chance:
-            opponent = rng.choose(self._detect_candidates(crew)) or None
-            opponent_name = opponent.name if opponent else "something skittering in the vents"
-            event_bus.emit(GameEvent(EventType.WARNING, {
-                "text": f"You feel the duct vibrate—{opponent_name} is close!"
+        # Sound propagates to adjacent vent nodes (echoing effect)
+        adjacent_vents = station_map.get_vent_neighbors(*destination)
+        for adj_x, adj_y in adjacent_vents:
+            adj_room = station_map.get_room_name(adj_x, adj_y)
+            # Reduced noise at adjacent nodes (echo falloff)
+            echo_noise = max(noise_level - 3, 5)
+            event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, {
+                "source": "vent_echo",
+                "room": adj_room,
+                "location": (adj_x, adj_y),
+                "noise_level": echo_noise,
+                "game_state": game_state
             }))
-            payload = {
-                "room": room,
-                "opponent": opponent_name,
-                "opponent_ref": opponent,
-                "player_ref": actor,
-                "game_state": game_state,
-                "outcome": "detected",
-                "player_successes": 0,
-                "opponent_successes": 0,
-                "subject_pool": 0,
-                "observer_pool": 0
-            }
-            event_bus.emit(GameEvent(EventType.STEALTH_REPORT, payload))
-        observer_pool = ResolutionSystem.adjust_pool(observer_pool, noise_penalty)
 
-        return {
-            "observer_pool": observer_pool,
-            "subject_pool": subject_pool,
-            "env_effects": env_effects,
-            "is_frozen": is_frozen,
-            "room_name": room_name,
-        }
+        # Check for Thing encounter in the vents
+        encounter_chance = self.config.get("vent_encounter_chance", self.VENT_ENCOUNTER_CHANCE) if self.config else self.VENT_ENCOUNTER_CHANCE
+        encounter_result = {"encounter": False, "escaped": False, "damage": 0}
+
+        if rng.random_float() < encounter_chance:
+            candidates = self._detect_candidates(crew)
+            if candidates:
+                opponent = rng.choose(candidates)
+                encounter_result["encounter"] = True
+                encounter_result["opponent"] = opponent
+
+                # Vent encounter is extremely dangerous - limited escape options
+                event_bus.emit(GameEvent(EventType.WARNING, {
+                    "text": f"DANGER! You come face-to-face with {opponent.name} in the cramped vent!"
+                }))
+
+                # Contested roll: Player tries to escape, Thing tries to grab
+                res = ResolutionSystem()
+                prowess = actor.attributes.get(Attribute.PROWESS, 1) if hasattr(actor, "attributes") else 2
+                player_pool = max(1, prowess - 1)  # Cramped space penalty
+
+                thing_prowess = opponent.attributes.get(Attribute.PROWESS, 3) if hasattr(opponent, "attributes") else 3
+                thing_pool = thing_prowess + 2  # Advantage in confined space
+
+                player_result = res.roll_check(player_pool, rng)
+                thing_result = res.roll_check(thing_pool, rng)
+
+                if player_result['success_count'] > thing_result['success_count']:
+                    # Escaped but injured
+                    encounter_result["escaped"] = True
+                    encounter_result["damage"] = 1
+                    event_bus.emit(GameEvent(EventType.MESSAGE, {
+                        "text": "You scramble backward, scraping yourself on the duct walls!"
+                    }))
+                    if hasattr(actor, "take_damage"):
+                        actor.take_damage(1)
+                else:
+                    # Caught - serious damage
+                    encounter_result["escaped"] = False
+                    encounter_result["damage"] = 3
+                    event_bus.emit(GameEvent(EventType.WARNING, {
+                        "text": f"{opponent.name} grabs you in the confined space! You take serious wounds!"
+                    }))
+                    if hasattr(actor, "take_damage"):
+                        actor.take_damage(3, game_state=game_state)
+
+                # Emit stealth report for encounter
+                payload = {
+                    "room": room,
+                    "opponent": opponent.name,
+                    "opponent_ref": opponent,
+                    "player_ref": actor,
+                    "game_state": game_state,
+                    "outcome": "escaped" if encounter_result["escaped"] else "caught",
+                    "vent_encounter": True,
+                    "player_successes": player_result['success_count'],
+                    "opponent_successes": thing_result['success_count'],
+                    "subject_pool": player_pool,
+                    "observer_pool": thing_pool
+                }
+                event_bus.emit(GameEvent(EventType.STEALTH_REPORT, payload))
+            else:
+                # No infected nearby, just eerie sounds
+                event_bus.emit(GameEvent(EventType.MESSAGE, {
+                    "text": "You hear something skittering in a distant duct..."
+                }))
+
+        return encounter_result
+
+    def get_vent_crawl_turns(self) -> int:
+        """Return the number of turns required per vent tile movement."""
+        return self.config.get("vent_crawl_turns", self.VENT_CRAWL_TURNS) if self.config else self.VENT_CRAWL_TURNS
 
     def get_detection_chance(self, observer, subject, game_state, noise_level=0) -> float:
         """Return an estimated probability of detection for diagnostics/tests."""

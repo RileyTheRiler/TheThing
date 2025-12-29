@@ -973,20 +973,39 @@ class VentCommand(Command):
 
         movement_payload = {
             "actor": getattr(player, "name", "You"),
+            "mover": player,
+            "to": target,
             "direction": direction,
             "destination": destination_room,
             "vent": True,
             "mode": "vent",
-            "noise": player.get_noise_level()
+            "noise": player.get_noise_level(),
+            "game_state": game_state
         }
         event_bus.emit(GameEvent(EventType.MOVEMENT, movement_payload))
         event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "Metal scrapes under you as you crawl through the vent."}))
 
+        # Handle vent movement with enhanced mechanics (echoing noise, encounters)
         stealth_sys = getattr(game_state, "stealth", None) or getattr(game_state, "stealth_system", None)
+        encounter_result = None
         if stealth_sys and hasattr(stealth_sys, "handle_vent_movement"):
-            stealth_sys.handle_vent_movement(game_state, player, target)
+            encounter_result = stealth_sys.handle_vent_movement(game_state, player, target)
 
-        game_state.advance_turn()
+        # Vent crawling takes multiple turns (slow movement in cramped space)
+        crawl_turns = 2  # Default
+        if stealth_sys and hasattr(stealth_sys, "get_vent_crawl_turns"):
+            crawl_turns = stealth_sys.get_vent_crawl_turns()
+
+        for _ in range(crawl_turns):
+            game_state.advance_turn()
+
+        # If player was caught in vent encounter, they may be forced out
+        if encounter_result and encounter_result.get("encounter") and not encounter_result.get("escaped"):
+            player.in_vent = False
+            player.set_posture(StealthPosture.CROUCHING)
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": "You are knocked out of the vent!"
+            }))
 
 class CrawlCommand(Command):
     name = "CRAWL"
