@@ -58,7 +58,9 @@ class Sound(Enum):
     # Event Sounds
     SCREECH = "screech"       # The Thing reveal
     DOOR = "door"             # Door opening/closing
-    FOOTSTEPS = "footsteps"   # Movement
+    FOOTSTEPS = "footsteps"   # Standard walking
+    HEAVY_FOOTSTEPS = "heavy_steps" # Running/Loud
+    SHUFFLE = "shuffle"       # Crawling/Sneaking
     POWER_DOWN = "power_down" # Generator failure
     POWER_UP = "power_up"     # Generator restored
     
@@ -84,6 +86,8 @@ class AudioManager:
         Sound.SCREECH: (1500, 2500),    # High-pitched alien
         Sound.DOOR: (200, 400),         # Clunk
         Sound.FOOTSTEPS: (150, 250),    # Thuds
+        Sound.HEAVY_FOOTSTEPS: (100, 200), # Deeper Thuds
+        Sound.SHUFFLE: (400, 500),      # Higher friction sound
         Sound.POWER_DOWN: (500, 100),   # Descending
         Sound.POWER_UP: (100, 500),     # Ascending
         Sound.BEEP: (440, 440),         # Standard beep (A4)
@@ -101,6 +105,8 @@ class AudioManager:
         Sound.SCREECH: 800,
         Sound.DOOR: 200,
         Sound.FOOTSTEPS: 100,
+        Sound.HEAVY_FOOTSTEPS: 150,
+        Sound.SHUFFLE: 50,
         Sound.POWER_DOWN: 1000,
         Sound.POWER_UP: 1000,
         Sound.BEEP: 100,
@@ -127,7 +133,7 @@ class AudioManager:
         EventType.SOS_EMITTED: Sound.BEEP,
         EventType.ESCAPE_SUCCESS: Sound.SUCCESS,
         
-        # Movement
+        # Movement handled dynamically now
         EventType.MOVEMENT: Sound.FOOTSTEPS,
         
         # Items
@@ -136,6 +142,9 @@ class AudioManager:
         
         # Room
         EventType.BARRICADE_ACTION: Sound.DOOR,
+        
+        # Dialogue
+        EventType.DIALOGUE: Sound.BEEP # Simple chirp for text
     }
     
     def __init__(self, enabled=True, rng=None, player_ref=None, station_map=None):
@@ -186,6 +195,28 @@ class AudioManager:
         is_critical = event.type in (EventType.LYNCH_MOB_TRIGGER, EventType.POWER_FAILURE, EventType.BIOLOGICAL_SLIP)
         if is_critical:
             priority = 10
+        
+        # Dynamic Movement Audio
+        if event.type == EventType.MOVEMENT:
+            # Check for actor to allow dynamic noise
+            # Note: We can't access CrewMember directly from here easily unless passed in event or we lookup
+            # But the event usually has 'actor' as a name string.
+            # However, for the Player, we have self.player_ref!
+            
+            # If it's the player moving:
+            actor_name = event.payload.get("actor")
+            if self.player_ref and actor_name == self.player_ref.name:
+                noise = event.payload.get("noise", self.player_ref.get_noise_level())
+                if event.payload.get("vent"):
+                    # Vents are loud, even compared to heavy footsteps
+                    noise = max(noise, 8)
+                    priority = max(priority, 8)
+                if noise >= 6:
+                    sound = Sound.HEAVY_FOOTSTEPS
+                    priority = 7 # Louder/More important
+                elif noise < 4:
+                    sound = Sound.SHUFFLE
+                    priority = 3 # Softer/Less important
         
         # Spatial Filtering
         # If the event has a room/location, only play it if it's "close" to the player

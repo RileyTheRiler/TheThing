@@ -472,6 +472,16 @@ body {
     border: 1px solid var(--border-color);
 }
 
+.interactive-map-3d {
+    background-color: var(--bg-dark);
+    width: 100%;
+    height: 300px;
+    /* Or whatever fixed height suits the UI */
+    border: 1px solid var(--border-color);
+    overflow: hidden;
+    position: relative;
+}
+
 /* Map enhancements */
 .player-marker {
     color: var(--terminal-green);
@@ -1042,19 +1052,25 @@ body {
 }
 
 @keyframes event-pulse {
-    0%, 100% {
+
+    0%,
+    100% {
         opacity: 1;
     }
+
     50% {
         opacity: 0.7;
     }
 }
 
 @keyframes combat-pulse {
-    0%, 100% {
+
+    0%,
+    100% {
         opacity: 1;
         transform: scale(1);
     }
+
     50% {
         opacity: 0.8;
         transform: scale(1.02);
@@ -1253,6 +1269,7 @@ body {
         opacity: 0;
         transform: translateY(20px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);
@@ -1682,6 +1699,7 @@ body {
         opacity: 0;
         transform: translateX(100px);
     }
+
     to {
         opacity: 1;
         transform: translateX(0);
@@ -1693,6 +1711,7 @@ body {
         opacity: 1;
         transform: translateX(0);
     }
+
     to {
         opacity: 0;
         transform: translateX(100px);
@@ -1739,37 +1758,74 @@ body {
 .toast-info {
     border-left-color: #0099ff;
 }
-.toast-info .toast-icon { color: #0099ff; }
-.toast-info .toast-title { color: #0099ff; }
+
+.toast-info .toast-icon {
+    color: #0099ff;
+}
+
+.toast-info .toast-title {
+    color: #0099ff;
+}
 
 .toast-success {
     border-left-color: var(--terminal-green);
 }
-.toast-success .toast-icon { color: var(--terminal-green); }
-.toast-success .toast-title { color: var(--terminal-green); }
+
+.toast-success .toast-icon {
+    color: var(--terminal-green);
+}
+
+.toast-success .toast-title {
+    color: var(--terminal-green);
+}
 
 .toast-warning {
     border-left-color: var(--warning-yellow);
 }
-.toast-warning .toast-icon { color: var(--warning-yellow); }
-.toast-warning .toast-title { color: var(--warning-yellow); }
+
+.toast-warning .toast-icon {
+    color: var(--warning-yellow);
+}
+
+.toast-warning .toast-title {
+    color: var(--warning-yellow);
+}
 
 .toast-danger {
     border-left-color: var(--danger-red);
     animation: toastSlideIn 0.3s ease-out, dangerPulse 1s ease-in-out 2;
 }
-.toast-danger .toast-icon { color: var(--danger-red); }
-.toast-danger .toast-title { color: var(--danger-red); }
+
+.toast-danger .toast-icon {
+    color: var(--danger-red);
+}
+
+.toast-danger .toast-title {
+    color: var(--danger-red);
+}
 
 .toast-discovery {
     border-left-color: #0099ff;
 }
-.toast-discovery .toast-icon { color: #0099ff; }
-.toast-discovery .toast-message { color: #0099ff; }
+
+.toast-discovery .toast-icon {
+    color: #0099ff;
+}
+
+.toast-discovery .toast-message {
+    color: #0099ff;
+}
 
 @keyframes dangerPulse {
-    0%, 100% { box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5); }
-    50% { box-shadow: 0 4px 30px rgba(255, 51, 51, 0.4); }
+
+    0%,
+    100% {
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    }
+
+    50% {
+        box-shadow: 0 4px 30px rgba(255, 51, 51, 0.4);
+    }
 }
 
 /* ===== STATISTICS MODAL ===== */
@@ -1942,6 +1998,7 @@ body {
 .journal-entry-discovery {
     border-left-color: #0099ff;
 }
+
 .journal-entry-discovery .journal-entry-type {
     background-color: rgba(0, 153, 255, 0.2);
     color: #0099ff;
@@ -1950,6 +2007,7 @@ body {
 .journal-entry-test {
     border-left-color: var(--terminal-green);
 }
+
 .journal-entry-test .journal-entry-type {
     background-color: rgba(0, 255, 65, 0.2);
     color: var(--terminal-green);
@@ -1958,6 +2016,7 @@ body {
 .journal-entry-death {
     border-left-color: var(--danger-red);
 }
+
 .journal-entry-death .journal-entry-type {
     background-color: rgba(255, 51, 51, 0.2);
     color: var(--danger-red);
@@ -1966,6 +2025,7 @@ body {
 .journal-entry-event {
     border-left-color: var(--warning-yellow);
 }
+
 .journal-entry-event .journal-entry-type {
     background-color: rgba(255, 170, 0, 0.2);
     color: var(--warning-yellow);
@@ -1974,7 +2034,57 @@ body {
 .journal-entry-infected {
     border-left-color: #ff00ff;
 }
+
 .journal-entry-infected .journal-entry-type {
     background-color: rgba(255, 0, 255, 0.2);
     color: #ff00ff;
-}
+
+    /* Stealth Posture Styling */
+    .posture-standing {
+        color: #ffffff;
+    }
+
+    .posture-crouching {
+        color: #ffdd00;
+        font-weight: bold;
+    }
+
+    .posture-crawling {
+        color: #ff8800;
+        font-weight: bold;
+    }
+
+    .posture-hiding {
+        color: #00ff00;
+        font-weight: bold;
+    }
+
+    /* Detection Meter */
+    .detection-meter {
+        display: inline-block;
+        width: 60px;
+        height: 12px;
+        background: #222;
+        border: 1px solid #00ff41;
+        position: relative;
+        vertical-align: middle;
+    }
+
+    .detection-fill {
+        height: 100%;
+        transition: width 0.3s ease, background-color 0.3s ease;
+        display: block;
+        width: 0%;
+    }
+
+    .detection-fill.safe {
+        background: #00ff41;
+    }
+
+    .detection-fill.warning {
+        background: #ffaa00;
+    }
+
+    .detection-fill.danger {
+        background: #ff3333;
+    }

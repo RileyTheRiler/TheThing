@@ -2,6 +2,7 @@
 
 let sessionId = 'session_' + Date.now();
 let gameState = null;
+let renderer3d = null;
 let commandHistory = [];
 let historyIndex = -1;
 let crewFilter = 'nearby'; // 'nearby', 'alive', or 'all'
@@ -86,8 +87,44 @@ const COMMON_COMMANDS = [
 ];
 
 // Initialize on page load
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
     setupEventListeners();
+    // Initialize 3D Renderer
+    if (document.getElementById('game-canvas')) {
+        renderer3d = new Renderer3D('game-canvas');
+    }
+
+    // Initialize Socket.IO
+    const socket = io();
+    socket.on('connect', () => {
+        console.log('Socket connected');
+    });
+
+    socket.on('game_event', (event) => {
+        console.log('Game Event:', event);
+
+        if (event.type === 'STEALTH') {
+            // Pass stealth events to 3D renderer for visualization
+            if (renderer3d) {
+                renderer3d.handleStealthEvent(event.data);
+            }
+
+            // Also show toast/log
+            const outcome = event.data.outcome;
+            const opponent = event.data.opponent;
+            if (outcome === 'detected') {
+                showToast(`DETECTED by ${opponent}!`, 'danger', 4000);
+                addOutput(`[STEALTH] You are spotted by ${opponent}!`, 'danger');
+            } else {
+                showToast(`Evaded ${opponent}`, 'success', 2000);
+                addOutput(`[STEALTH] You slip past ${opponent} unseen.`, 'info');
+            }
+        }
+        else if (event.type === 'WARNING') {
+            addOutput(`[WARNING] ${event.data.text}`, 'warning');
+            showToast(event.data.text, 'warning');
+        }
+    });
 });
 
 function setupEventListeners() {
@@ -99,7 +136,7 @@ function setupEventListeners() {
 
     // Setup crew filter buttons
     document.querySelectorAll('.filter-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
+        btn.addEventListener('click', function () {
             document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
             this.classList.add('active');
             crewFilter = this.dataset.filter;
@@ -111,7 +148,7 @@ function setupEventListeners() {
 
     // Setup navigation buttons
     document.querySelectorAll('.nav-btn[data-dir]').forEach(btn => {
-        btn.addEventListener('click', function() {
+        btn.addEventListener('click', function () {
             const direction = this.dataset.dir.toUpperCase();
             sendQuickCommand(direction);
         });
@@ -119,7 +156,7 @@ function setupEventListeners() {
 
     // Setup command category buttons
     document.querySelectorAll('.category-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
+        btn.addEventListener('click', function () {
             document.querySelectorAll('.category-btn').forEach(b => b.classList.remove('active'));
             this.classList.add('active');
             currentCommandCategory = this.dataset.category;
@@ -130,7 +167,7 @@ function setupEventListeners() {
     // Setup command modal close on outside click
     const modal = document.getElementById('command-modal');
     if (modal) {
-        modal.addEventListener('click', function(e) {
+        modal.addEventListener('click', function (e) {
             if (e.target === modal) {
                 closeCommandModal();
             }
@@ -145,7 +182,7 @@ function setupEventListeners() {
 
     // Setup journal filter buttons
     document.querySelectorAll('.journal-filter-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
+        btn.addEventListener('click', function () {
             filterJournalEntries(this.dataset.filter);
         });
     });
@@ -153,7 +190,7 @@ function setupEventListeners() {
     // Setup stats modal close on outside click
     const statsModal = document.getElementById('stats-modal');
     if (statsModal) {
-        statsModal.addEventListener('click', function(e) {
+        statsModal.addEventListener('click', function (e) {
             if (e.target === statsModal) {
                 closeStatsModal();
             }
@@ -163,7 +200,7 @@ function setupEventListeners() {
     // Setup journal modal close on outside click
     const journalModal = document.getElementById('journal-modal');
     if (journalModal) {
-        journalModal.addEventListener('click', function(e) {
+        journalModal.addEventListener('click', function (e) {
             if (e.target === journalModal) {
                 closeJournalModal();
             }
@@ -332,22 +369,22 @@ function startGame(difficulty) {
             session_id: sessionId
         })
     })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            gameState = data.game_state;
-            switchToGameScreen();
-            updateGameDisplay(gameState);
-            addOutput('System initialized. Welcome to Outpost 31.');
-            addOutput('Type HELP for available commands.');
-        } else {
-            addOutput('Error starting game: ' + (data.error || 'Unknown error'));
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        addOutput('Network error: ' + error.message);
-    });
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                gameState = data.game_state;
+                switchToGameScreen();
+                updateGameDisplay(gameState);
+                addOutput('System initialized. Welcome to Outpost 31.');
+                addOutput('Type HELP for available commands.');
+            } else {
+                addOutput('Error starting game: ' + (data.error || 'Unknown error'));
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            addOutput('Network error: ' + error.message);
+        });
 }
 
 function switchToGameScreen() {
@@ -369,27 +406,27 @@ function sendCommand(command) {
             command: command
         })
     })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            if (data.message) {
-                addOutput(data.message);
-            }
-            gameState = data.game_state;
-            updateGameDisplay(gameState);
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                if (data.message) {
+                    addOutput(data.message);
+                }
+                gameState = data.game_state;
+                updateGameDisplay(gameState);
 
-            // Check for game over
-            if (gameState.game_over) {
-                showGameOver(gameState.won, gameState.game_over_message);
+                // Check for game over
+                if (gameState.game_over) {
+                    showGameOver(gameState.won, gameState.game_over_message);
+                }
+            } else {
+                addOutput('Error: ' + (data.error || 'Command failed'));
             }
-        } else {
-            addOutput('Error: ' + (data.error || 'Command failed'));
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        addOutput('Network error: ' + error.message);
-    });
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            addOutput('Network error: ' + error.message);
+        });
 }
 
 function sendQuickCommand(command) {
@@ -403,23 +440,23 @@ function sendQuickCommand(command) {
 // Autocomplete system
 function getCommandSuggestion(input) {
     if (!input || input.length === 0) return null;
-    
+
     const upperInput = input.toUpperCase();
-    const match = COMMON_COMMANDS.find(cmd => 
+    const match = COMMON_COMMANDS.find(cmd =>
         cmd.startsWith(upperInput) && cmd !== upperInput
     );
-    
+
     return match || null;
 }
 
 function updateAutoComplete() {
     const input = document.getElementById('command-input');
     const hint = document.getElementById('autocomplete-hint');
-    
+
     if (!input || !hint) return;
-    
+
     const suggestion = getCommandSuggestion(input.value);
-    
+
     if (suggestion && input.value.length > 0) {
         hint.textContent = suggestion;
         hint.style.paddingLeft = (input.value.length * 9.6) + 'px'; // Approximate char width
@@ -433,37 +470,37 @@ function renderTrustBar(trustValue) {
     const maxBars = 10;
     const filledBars = Math.round((trustValue / 100) * maxBars);
     const emptyBars = maxBars - filledBars;
-    
+
     const filled = '|'.repeat(filledBars);
     const empty = '.'.repeat(emptyBars);
-    
+
     let cssClass = 'trust-high';
     if (trustValue < 30) {
         cssClass = 'trust-low';
     } else if (trustValue < 60) {
         cssClass = 'trust-medium';
     }
-    
+
     return `<span class="trust-bar ${cssClass}">[${filled}${empty}] ${trustValue.toFixed(0)}%</span>`;
 }
 
 // Room danger detection
 function getRoomDangerLevel(roomState) {
     if (!roomState) return 'safe';
-    
+
     const description = (roomState.room_description || '').toUpperCase();
     const icons = (roomState.room_icons || '').toUpperCase();
-    
-    if (description.includes('BLOODY') || description.includes('UNSAFE') || 
+
+    if (description.includes('BLOODY') || description.includes('UNSAFE') ||
         icons.includes('BLOODY') || icons.includes('DANGER')) {
         return 'danger';
     }
-    
+
     if (description.includes('DARK') || description.includes('COLD') ||
         icons.includes('WARNING')) {
         return 'warning';
     }
-    
+
     return 'safe';
 }
 
@@ -480,17 +517,17 @@ function getDefaultRoomFlavor(location) {
         'Hallway': 'Fluorescent lights flicker overhead. Your footsteps echo.',
         'default': 'The air is cold and still. Nothing seems out of place.'
     };
-    
+
     return flavors[location] || flavors['default'];
 }
 
 // Enhance map display
 function enhanceMapDisplay(mapString) {
     if (!mapString) return 'Map unavailable';
-    
+
     // Wrap player marker in span for pulsing effect
     let enhanced = mapString.replace(/@/g, '<span class="player-marker">@</span>');
-    
+
     return enhanced;
 }
 
@@ -667,11 +704,11 @@ function updateGameDisplay(state) {
     document.getElementById('temperature').textContent = state.temperature + '°C';
     document.getElementById('power-status').textContent = state.power_on ? 'ON' : 'OFF';
     document.getElementById('location').textContent = state.location;
-    
+
     // Update wind speed if available
     const windSpeed = state.wind_speed || 0;
     document.getElementById('wind-speed').textContent = windSpeed + ' mph';
-    
+
     // Update fuel bar
     const fuelPercent = state.fuel_percent || 100;
     const fuelBars = Math.round((fuelPercent / 100) * 8);
@@ -690,10 +727,44 @@ function updateGameDisplay(state) {
         updateQuickActions(state.quick_actions);
     }
 
+    // Update stealth posture
+    const postureElement = document.getElementById('stealth-posture');
+    if (postureElement && state.player_stealth_posture) {
+        postureElement.textContent = state.player_stealth_posture;
+        postureElement.className = 'value posture-' + state.player_stealth_posture.toLowerCase();
+    }
+
+    // Update detection meter
+    if (state.stealth_modifiers) {
+        const detectionFill = document.getElementById('detection-fill');
+        if (detectionFill) {
+            const playerPool = state.stealth_modifiers.total_stealth_pool || 0;
+            const observerPool = state.stealth_modifiers.last_observer_pool || 0;
+
+            // Calculate detection risk (0-100%)
+            // Simple heuristic: if observer pool is high compared to player pool, risk is high
+            let detectionRisk = 0;
+            if (observerPool > 0) {
+                // Formula: Risk = Observer / (Player + Observer)
+                detectionRisk = Math.min(100, (observerPool / (playerPool + observerPool)) * 100);
+            }
+
+            // If actively detected, max it out
+            if (state.detection_status === 'detected') {
+                detectionRisk = 100;
+            }
+
+            detectionFill.style.width = detectionRisk + '%';
+            detectionFill.className = 'detection-fill ' +
+                (detectionRisk > 60 ? 'danger' : detectionRisk > 30 ? 'warning' : 'safe');
+        }
+    }
+
+
     // Update room info
     document.getElementById('room-description').textContent = state.room_description || '';
     document.getElementById('room-icons').textContent = state.room_icons || '';
-    
+
     // Update room flavor text
     const flavorDiv = document.getElementById('room-flavor');
     if (!state.room_description || state.room_description.trim() === '') {
@@ -702,12 +773,17 @@ function updateGameDisplay(state) {
         flavorDiv.textContent = '';
     }
 
-    // Update map with enhancements
+    // Update map with enhancements (keeping 2D map update for fallback if needed, or hidden)
     const mapDisplay = document.getElementById('game-map');
     if (state.map) {
         mapDisplay.innerHTML = enhanceMapDisplay(state.map);
     } else {
         mapDisplay.textContent = 'Map unavailable';
+    }
+
+    // Update 3D Renderer
+    if (renderer3d) {
+        renderer3d.update(state);
     }
 
     // Update map legend
@@ -750,6 +826,13 @@ function updateGameDisplay(state) {
     // Update sabotage status if any
     if (state.sabotage_status) {
         addOutput('[WARNING] ' + state.sabotage_status, 'warning');
+    }
+
+    // Display ambient warnings from location hints
+    if (state.ambient_warnings && state.ambient_warnings.length > 0) {
+        state.ambient_warnings.forEach(warning => {
+            addOutput('[AMBIENT] ' + warning, 'warning');
+        });
     }
 }
 
@@ -875,8 +958,8 @@ function filterCommands() {
         const syntax = item.querySelector('.command-syntax').textContent.toLowerCase();
 
         const matchesSearch = name.includes(searchTerm) ||
-                             desc.includes(searchTerm) ||
-                             syntax.includes(searchTerm);
+            desc.includes(searchTerm) ||
+            syntax.includes(searchTerm);
         const matchesCategory = currentCommandCategory === 'all' || category === currentCommandCategory;
 
         if (matchesSearch && matchesCategory) {

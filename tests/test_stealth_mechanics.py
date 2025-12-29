@@ -1,10 +1,10 @@
 import pytest
 from unittest.mock import MagicMock
-from src.entities.crew_member import CrewMember, StealthPosture
-from src.systems.stealth import StealthSystem
-from src.core.event_system import GameEvent, EventType, event_bus
-from src.core.resolution import Attribute, Skill
-from src.systems.architect import RandomnessEngine
+from entities.crew_member import CrewMember, StealthPosture
+from systems.stealth import StealthSystem
+from core.event_system import GameEvent, EventType, event_bus
+from core.resolution import Attribute, Skill
+from systems.architect import RandomnessEngine
 
 @pytest.fixture
 def game_state():

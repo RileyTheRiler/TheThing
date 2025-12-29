@@ -18,6 +18,7 @@ class EventType(Enum):
     # "Lynch Mob" Hook (Psychologist -> Architect)
     LYNCH_MOB_TRIGGER = auto()
     LYNCH_MOB_UPDATE = auto()
+    LYNCH_MOB_VOTE = auto()
     TRUST_THRESHOLD_CROSSED = auto()
     PARANOIA_THRESHOLD_CROSSED = auto()
 

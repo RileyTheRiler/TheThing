@@ -16,6 +16,8 @@ sys.path.insert(0, src_path)
 
 from engine import GameState
 from systems.architect import Difficulty
+from entities.crew_member import StealthPosture
+from core.resolution import Attribute, Skill
 from ui.settings import settings
 
 app = Flask(__name__,
@@ -28,6 +30,71 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # Global game state
 game_sessions = {}
+
+# --- EVENT BRIDGE ---
+# Import EventType from the correct module path (src/core/event_system.py)
+from core.event_system import event_bus, EventType, GameEvent
+
+class EventBridge:
+    """Bridges backend GameEvents to frontend SocketIO events."""
+    def __init__(self, socketio_instance):
+        self.socketio = socketio_instance
+        self.setup_listeners()
+        
+    def setup_listeners(self):
+        # Subscribe to relevant events
+        event_bus.subscribe(EventType.WARNING, self.on_warning)
+        event_bus.subscribe(EventType.COMBAT_LOG, self.on_combat)
+        event_bus.subscribe(EventType.BIOLOGICAL_SLIP, self.on_biological_slip)
+        event_bus.subscribe(EventType.PARANOIA_THRESHOLD_CROSSED, self.on_paranoia)
+        event_bus.subscribe(EventType.POWER_FAILURE, self.on_power_failure)
+        event_bus.subscribe(EventType.ENVIRONMENTAL_STATE_CHANGE, self.on_environment_change)
+        event_bus.subscribe(EventType.STEALTH_REPORT, self.on_stealth_report)
+        
+    def on_warning(self, event: GameEvent):
+        self.socketio.emit('game_event', {
+            'type': 'WARNING',
+            'data': event.payload
+        })
+        
+    def on_combat(self, event: GameEvent):
+        self.socketio.emit('game_event', {
+            'type': 'COMBAT',
+            'data': event.payload
+        })
+        
+    def on_biological_slip(self, event: GameEvent):
+        self.socketio.emit('game_event', {
+            'type': 'BIOLOGICAL_SLIP',
+            'data': event.payload
+        })
+        
+    def on_paranoia(self, event: GameEvent):
+        self.socketio.emit('game_event', {
+            'type': 'PARANOIA',
+            'data': event.payload
+        })
+        
+    def on_power_failure(self, event: GameEvent):
+        self.socketio.emit('game_event', {
+            'type': 'POWER_FAILURE',
+            'data': event.payload
+        })
+        
+    def on_environment_change(self, event: GameEvent):
+        self.socketio.emit('game_event', {
+            'type': 'ENVIRONMENT',
+            'data': event.payload
+        })
+        
+    def on_stealth_report(self, event: GameEvent):
+        self.socketio.emit('game_event', {
+            'type': 'STEALTH',
+            'data': event.payload
+        })
+
+# Initialize Event Bridge
+event_bridge = EventBridge(socketio)
 
 
 def _generate_quick_actions(game, player_room):
@@ -95,7 +162,12 @@ def serialize_game_state(game):
             'health': m.health,
             'is_alive': m.is_alive,
             'is_infected': m.is_infected if hasattr(m, 'is_infected') else False,
-            'trust': game.trust_system.get_average_trust(m.name)
+            'is_revealed': m.is_revealed if hasattr(m, 'is_revealed') else False,
+            'trust': game.trust_system.get_average_trust(m.name),
+            'stress': m.stress if hasattr(m, 'stress') else 0,
+            'mask_integrity': m.mask_integrity if hasattr(m, 'mask_integrity') else 100,
+            'stealth_posture': m.stealth_posture.name if hasattr(m, 'stealth_posture') else 'STANDING',
+            'detected_player': getattr(m, 'detected_player', False)
         })
 
     # Get player inventory
@@ -128,7 +200,23 @@ def serialize_game_state(game):
         'paranoia': game.paranoia_level,
         'player_health': game.player.health,
         'player_alive': game.player.is_alive,
-        'quick_actions': quick_actions
+        'player_stress': game.player.stress if hasattr(game.player, 'stress') else 0,
+        'quick_actions': quick_actions,
+        'ambient_warnings': game.get_ambient_warnings() if hasattr(game, 'get_ambient_warnings') else [],
+        'player_stealth_posture': game.player.stealth_posture.name if hasattr(game.player, 'stealth_posture') else "STANDING",
+        'detection_status': getattr(game.player, 'detection_status', None), # 'detected' or 'evaded'
+        'stealth_modifiers': {
+            'posture_bonus': game.player.stealth_posture.value if hasattr(game.player, 'stealth_posture') and hasattr(game.player.stealth_posture, 'value') else 0,
+            # We need to grab this from a centralized place, or simple heuristic for now
+             'total_stealth_pool': (game.player.attributes.get(Attribute.PROWESS, 1) + game.player.skills.get(Skill.STEALTH, 0)) if hasattr(game.player, 'attributes') else 0,
+             'last_observer_pool': getattr(game, 'last_stealth_observer_pool', 0)
+        } if hasattr(game, 'player') else {},
+        'weather_detail': {
+            'visibility': game.weather.get_visibility(),
+            'storm_intensity': game.weather.storm_intensity,
+            'wind_direction': game.weather.wind_direction.value,
+            'temperature_modifier': game.weather.temperature_modifier
+        } if hasattr(game, 'weather') else None
     }
 
 
@@ -202,8 +290,26 @@ def execute_command():
     if not cmd:
         return jsonify({'success': True, 'message': '', 'game_state': serialize_game_state(game)})
 
+    # Start capturing CRT output
+    game.crt.start_capture()
+
     # Execute command and capture output
     result = _execute_game_command(game, cmd)
+
+    # Stop capture and get extra messages (combat batches, movements, etc.)
+    extra_messages = game.crt.stop_capture()
+    if extra_messages:
+        # If result is a string, make it a list or append
+        if isinstance(result, list):
+            result.extend(extra_messages)
+        else:
+            # If result is a single string, we might need to handle it carefully.
+            # But looking at _execute_game_command, it returns a string joined by newlines.
+            if result:
+                # If there's already result text, add a newline
+                result += "\n" + "\n".join(extra_messages)
+            else:
+                result = "\n".join(extra_messages)
 
     # Check for game over
     game_over, won, message = game.check_game_over()
@@ -224,6 +330,7 @@ def _execute_game_command(game, cmd):
     """Execute a game command and return result message"""
     from systems.combat import CombatSystem, CoverType
     from systems.interrogation import InterrogationSystem, InterrogationTopic
+    from entities.crew_member import StealthPosture
     from core.resolution import Skill
 
     action = cmd[0]
@@ -469,6 +576,51 @@ def _execute_game_command(game, cmd):
                 if result.trust_change != 0:
                     change_str = f"+{result.trust_change}" if result.trust_change > 0 else str(result.trust_change)
                     output.append(f"[Trust: {change_str}]")
+
+    elif action == "CROUCH":
+        game.player.set_posture(StealthPosture.CROUCHING)
+        output.append("You crouch down low.")
+
+    elif action == "CRAWL":
+        game.player.set_posture(StealthPosture.CRAWLING)
+        output.append("You drop to the floor and crawl.")
+
+    elif action == "STAND":
+        game.player.set_posture(StealthPosture.STANDING)
+        output.append("You stand up.")
+
+    elif action == "HIDE":
+        # Simplified HIDE logic for web interface
+        game.player.set_posture(StealthPosture.HIDING)
+        output.append(f"You slip into the shadows of the {player_room}...")
+        game.advance_turn()
+
+    elif action == "SNEAK":
+        if len(cmd) < 2:
+            output.append("Usage: SNEAK <DIRECTION>")
+        else:
+            direction = cmd[1]
+            game.player.set_posture(StealthPosture.CROUCHING)
+            
+            dx, dy = 0, 0
+            if direction in ["NORTH", "N"]: dy = -1
+            elif direction in ["SOUTH", "S"]: dy = 1
+            elif direction in ["EAST", "E"]: dx = 1
+            elif direction in ["WEST", "W"]: dx = -1
+
+            new_x = game.player.location[0] + dx
+            new_y = game.player.location[1] + dy
+
+            if game.station_map.is_walkable(new_x, new_y):
+                target_room = game.station_map.get_room_name(new_x, new_y)
+                if game.room_states.is_entry_blocked(target_room) and target_room != player_room:
+                     output.append(f"The {target_room} is barricaded!")
+                else:
+                    game.player.location = (new_x, new_y)
+                    output.append(f"You sneak {direction} into {target_room}.")
+                    game.advance_turn()
+            else:
+                output.append("Blocked.")
 
     else:
         output.append(f"Unknown command: {action}. Type HELP for available commands.")

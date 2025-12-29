@@ -78,15 +78,20 @@ class Verbosity(Enum):
 class RandomnessEngine:
     def __init__(self, seed=None):
         self.seed = seed
-        if self.seed:
-            random.seed(self.seed)
+        self._random = random.Random(self.seed)
     
     def roll_2d6(self):
         """Standard 2d6 roll."""
-        return random.randint(1, 6) + random.randint(1, 6)
+        return self._random.randint(1, 6) + self._random.randint(1, 6)
     
     def roll_d6(self):
-        return random.randint(1, 6)
+        return self._random.randint(1, 6)
+
+    def randint(self, a, b):
+        return self._random.randint(a, b)
+
+    def sample(self, population, k):
+        return self._random.sample(population, k)
         
     def calculate_success(self, pool_size):
         """
@@ -98,24 +103,25 @@ class RandomnessEngine:
         return {
             "success": successes > 0,
             "success_count": successes,
-            "dice": dice
+            "dice": dice,
+            "dice_count": pool_size
         }
 
     def choose(self, collection):
         if not collection:
             return None
-        return random.choice(collection)
-        
+        return self._random.choice(list(collection))
+
     def random_float(self):
-        return random.random()
+        return self._random.random()
 
     def random(self):
-        return random.random()
+        return self._random.random()
 
     def to_dict(self):
         # Save state as JSON-serializable structure instead of pickle
         # random.getstate() returns (version, internal_state_tuple, gaussian_state)
-        state = random.getstate()
+        state = self._random.getstate()
 
         # Convert tuple to list for JSON serialization
         # internal_state_tuple is a tuple of 624 ints, so it converts cleanly
@@ -142,11 +148,19 @@ class RandomnessEngine:
                     tuple(rng_state[1]),
                     rng_state[2]
                 )
-                random.setstate(state)
+                self._random.setstate(state)
             except (TypeError, ValueError, IndexError) as e:
                 print(f"Warning: Failed to restore RNG state: {e}")
                 if self.seed:
-                    random.seed(self.seed)
+                    self._random.seed(self.seed)
+
+
+class Verbosity(Enum):
+    MINIMAL = "Minimal"
+    STANDARD = "Standard"
+    VERBOSE = "Verbose"
+    DEBUG = "Debug"
+
 
 
 class TimeSystem:
@@ -173,6 +187,19 @@ class TimeSystem:
     def hour(self):
         """Current in-game hour (0-23)."""
         return (self.start_hour + self.turn_count) % 24
+
+    @hour.setter
+    def hour(self, value: int):
+        """
+        Set the current in-game hour by adjusting the start offset.
+
+        The TimeSystem tracks time as an offset from the initial hour plus
+        turn_count. Updating the hour recalculates start_hour so that future
+        ticks continue from the requested time.
+        """
+        # Normalize to 0-23 to keep representation consistent
+        normalized = value % 24
+        self.start_hour = (normalized - self.turn_count) % 24
 
     def tick(self):
         """Advance time by one turn."""

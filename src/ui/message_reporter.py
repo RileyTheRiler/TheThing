@@ -5,7 +5,7 @@ Systems emit events instead of returning strings.
 """
 
 from core.event_system import event_bus, EventType, GameEvent
-from systems.architect import Verbosity
+from systems.architect import Difficulty
 
 
 class MessageReporter:
@@ -16,6 +16,13 @@ class MessageReporter:
     Supports event coalescing (batching) to avoid output floods.
     Supports verbosity levels for filtering events.
     """
+
+    # Pseudo-enum for Verbosity since the actual enum was removed
+    class Verbosity:
+        MINIMAL = 0
+        STANDARD = 1
+        VERBOSE = 2
+        DEBUG = 3
 
     # Map EventType to minimum required Verbosity
     VERBOSITY_MAP = {
@@ -38,6 +45,7 @@ class MessageReporter:
         EventType.SYSTEM_LOG: Verbosity.VERBOSE,
         EventType.CRAFTING_REPORT: Verbosity.VERBOSE,
         EventType.ITEM_DROP: Verbosity.VERBOSE,
+        EventType.PERCEPTION_EVENT: Verbosity.VERBOSE,
     }
 
     def __init__(self, crt_output, game_state=None):
@@ -55,16 +63,21 @@ class MessageReporter:
         self._subscribe_all()
 
     @property
-    def verbosity(self) -> Verbosity:
+    def verbosity(self):
         """Get current verbosity level from game state."""
-        if self.game_state:
-            return self.game_state.verbosity
-        return Verbosity.STANDARD
+        # if self.game_state:
+        #    return self.game_state.verbosity
+        return self.Verbosity.STANDARD
 
     def _should_report(self, event_type: EventType) -> bool:
         """Check if event should be reported based on verbosity."""
-        required = self.VERBOSITY_MAP.get(event_type, Verbosity.DEBUG)
-        return self.verbosity.value >= required.value
+        required = self.VERBOSITY_MAP.get(event_type, self.Verbosity.DEBUG)
+        # Assuming verbosity is just an int or enum with value
+        current = self.verbosity
+        req_val = required if isinstance(required, int) else required.value
+        cur_val = current if isinstance(current, int) else current.value
+
+        return cur_val >= req_val
 
     def flush(self):
         """Flush any batched messages to the output."""
@@ -137,6 +150,7 @@ class MessageReporter:
         event_bus.subscribe(EventType.TEST_RESULT, self._handle_test)
         event_bus.subscribe(EventType.BARRICADE_ACTION, self._handle_barricade)
         event_bus.subscribe(EventType.STEALTH_REPORT, self._handle_stealth)
+        event_bus.subscribe(EventType.PERCEPTION_EVENT, self._handle_perception)
         event_bus.subscribe(EventType.CRAFTING_REPORT, self._handle_crafting)
         event_bus.subscribe(EventType.ENDING_REPORT, self._handle_ending)
         event_bus.subscribe(EventType.INTERROGATION_RESULT, self._handle_interrogation)
@@ -157,6 +171,7 @@ class MessageReporter:
         event_bus.unsubscribe(EventType.TEST_RESULT, self._handle_test)
         event_bus.unsubscribe(EventType.BARRICADE_ACTION, self._handle_barricade)
         event_bus.unsubscribe(EventType.STEALTH_REPORT, self._handle_stealth)
+        event_bus.unsubscribe(EventType.PERCEPTION_EVENT, self._handle_perception)
         event_bus.unsubscribe(EventType.CRAFTING_REPORT, self._handle_crafting)
         event_bus.unsubscribe(EventType.ENDING_REPORT, self._handle_ending)
         event_bus.unsubscribe(EventType.INTERROGATION_RESULT, self._handle_interrogation)
@@ -208,7 +223,15 @@ class MessageReporter:
         if not self._should_report(event.type):
             return
         text = event.payload.get('text', '')
-        self.crt.output(f"[SYS] {text}")
+        ammo = event.payload.get('ammo')
+        cooldown = event.payload.get('cooldown')
+        details = []
+        if ammo is not None:
+            details.append(f"ammo: {ammo}")
+        if cooldown:
+            details.append(f"cooldown: {cooldown} turn(s)")
+        suffix = f" ({'; '.join(details)})" if details else ""
+        self.crt.output(f"[SYS] {text}{suffix}")
 
     def _handle_movement(self, event: GameEvent):
         """Handle movement messages with batching."""
@@ -216,6 +239,11 @@ class MessageReporter:
             return
         actor = event.payload.get('actor', 'You')
         destination = event.payload.get('destination', '')
+        if event.payload.get('vent'):
+            direction = event.payload.get('direction', '').lower()
+            direction_text = f" {direction}" if direction else ""
+            self.crt.output(f"{actor} scrapes through the vents{direction_text} toward {destination}.")
+            return
 
         if not destination:
             # Non-batchable movement (no destination specified)
@@ -306,6 +334,20 @@ class MessageReporter:
             self.crt.warning(f"{prefix} {opponent} spots you in the {room}!")
         else:
             self.crt.output(f"{prefix} You evade {opponent} in the {room}.")
+
+    def _handle_perception(self, event: GameEvent):
+        """Handle passive perception events such as thrown distractions."""
+        payload = event.payload or {}
+        if payload.get("player_ref"):
+            return  # Stealth encounters already handled elsewhere
+        room = payload.get("room") or "unknown area"
+        source = payload.get("source", "Noise")
+        intensity = payload.get("intensity", 1)
+        cooldown = payload.get("cooldown")
+        note = f"[SENSOR] {source} reported in {room} (intensity {intensity})"
+        if cooldown:
+            note += f" - cooldown {cooldown}"
+        self.crt.output(note)
 
     def _handle_crafting(self, event: GameEvent):
         """Handle crafting progress updates."""
