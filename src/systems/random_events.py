@@ -270,7 +270,7 @@ class RandomEventSystem:
             elif eff_type == "weather_intensity":
                 amount = effect.get("amount", 1)
                 if hasattr(game_state, 'weather'):
-                    game_state.weather.intensity = min(3, game_state.weather.intensity + amount)
+                    game_state.weather.storm_intensity = min(100, game_state.weather.storm_intensity + (amount * 10))
                     
             elif eff_type == "temperature_drop":
                 amount = effect.get("amount", 5)
@@ -355,7 +355,7 @@ class RandomEventSystem:
             elif eff_type == "weather_clear":
                 amount = effect.get("amount", 1)
                 if hasattr(game_state, 'weather'):
-                    game_state.weather.intensity = max(0, game_state.weather.intensity - amount)
+                    game_state.weather.storm_intensity = max(0, game_state.weather.storm_intensity - (amount * 10))
                     event_bus.emit(GameEvent(EventType.MESSAGE, {
                         "text": "The weather seems to be clearing up."
                     }))

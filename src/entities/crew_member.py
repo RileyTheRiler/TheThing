@@ -14,7 +14,6 @@ class StealthPosture(Enum):
     CRAWLING = auto()
     HIDING = auto()
     # Aliases for external callers/tests
-    EXPOSED = STANDING
     EXPOSED = STANDING  # Alias for clarity in tests/UI
     HIDDEN = HIDING
 
@@ -82,6 +81,7 @@ class CrewMember:
         self.search_targets = []
         self.current_search_target = None
         self.search_turns_remaining = 0
+        self.last_location_hint_turn = -1  # Cooldown for ambient warnings
 
     def add_knowledge_tag(self, tag):
         """Add a knowledge tag/memory log if it doesn't already exist."""
@@ -186,10 +186,15 @@ class CrewMember:
         current_room = game_state.station_map.get_room_name(*self.location)
         current_hour = game_state.time_system.hour
         rng = game_state.rng
+        current_turn = game_state.turn
         
         # Reset flag
         self.location_hint_active = False
         
+        # Only check once per turn to avoid spamming the same hint
+        if current_turn <= self.last_location_hint_turn:
+            return hints
+            
         # Check location_hint invariants
         for inv in [i for i in self.invariants if i.get('type') == 'location_hint']:
             expected_room = inv.get('expected_room')
@@ -204,6 +209,7 @@ class CrewMember:
                     if rng.random_float() < slip_chance:
                         hints.append(slip_desc)
                         self.location_hint_active = True  # Set for visual indicator
+                        self.last_location_hint_turn = current_turn
         
         return hints
 

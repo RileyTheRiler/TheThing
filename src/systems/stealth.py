@@ -223,7 +223,7 @@ class StealthSystem:
             "opponent_successes": observer_result['success_count'],
             "subject_pool": subject_pool,
             "observer_pool": observer_pool,
-            "hiding_spot": hiding_spot
+            "hiding_spot": hiding_spot,
             "suspicion_delta": suspicion_delta,
             "suspicion_level": getattr(opponent, "suspicion_level", 0)
         }

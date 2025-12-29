@@ -1,0 +1,10 @@
+..
+----------------------------------------------------------------------
+Ran 2 tests in 0.005s
+
+OK
+[38;5;214mNormal message[0m
+Buffered Output Flow Verified:
+You moved North.
+Combat log 1
+Movement log 1

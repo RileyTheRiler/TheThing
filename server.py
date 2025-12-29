@@ -226,6 +226,12 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/favicon.ico')
+def favicon():
+    """Return 204 No Content for favicon to suppress 404 logs"""
+    return '', 204
+
+
 @app.route('/api/new_game', methods=['POST'])
 def new_game():
     """Start a new game"""
@@ -334,6 +340,13 @@ def _execute_game_command(game, cmd):
     from core.resolution import Skill
 
     action = cmd[0]
+    
+    # Handle bare direction aliases
+    if action in ["NORTH", "SOUTH", "EAST", "WEST", "N", "S", "E", "W"]:
+        direction = action
+        action = "MOVE"
+        cmd = ["MOVE", direction]
+        
     player_room = game.station_map.get_room_name(*game.player.location)
     output = []
 

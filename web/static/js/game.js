@@ -390,6 +390,10 @@ function startGame(difficulty) {
 function switchToGameScreen() {
     document.getElementById('start-screen').classList.remove('active');
     document.getElementById('game-screen').classList.add('active');
+    // Ensure 3D renderer updates its size now that the container is visible
+    if (renderer3d) {
+        renderer3d.onWindowResize();
+    }
     document.getElementById('command-input').focus();
 }
 
@@ -696,7 +700,6 @@ function updateGameDisplay(state) {
 
     // Detect and log game events
     detectAndLogEvents(state, previousGameState);
-    previousGameState = JSON.parse(JSON.stringify(state)); // Deep copy for comparison
 
     // Update status bar
     document.getElementById('turn-counter').textContent = state.turn;
@@ -831,9 +834,19 @@ function updateGameDisplay(state) {
     // Display ambient warnings from location hints
     if (state.ambient_warnings && state.ambient_warnings.length > 0) {
         state.ambient_warnings.forEach(warning => {
-            addOutput('[AMBIENT] ' + warning, 'warning');
+            // Only log if not already present in the previous state's warnings
+            const wasPresent = previousGameState && previousGameState.ambient_warnings &&
+                previousGameState.ambient_warnings.includes(warning) &&
+                previousGameState.turn === state.turn;
+
+            if (!wasPresent) {
+                addOutput('[AMBIENT] ' + warning, 'warning');
+            }
         });
     }
+
+    // Update previous state for next comparison
+    previousGameState = JSON.parse(JSON.stringify(state)); // Deep copy for comparison
 }
 
 function addOutput(text, type = 'normal') {
