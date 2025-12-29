@@ -227,6 +227,11 @@ class MessageReporter:
             return
         actor = event.payload.get('actor', 'You')
         destination = event.payload.get('destination', '')
+        if event.payload.get('vent'):
+            direction = event.payload.get('direction', '').lower()
+            direction_text = f" {direction}" if direction else ""
+            self.crt.output(f"{actor} scrapes through the vents{direction_text} toward {destination}.")
+            return
 
         if not destination:
             # Non-batchable movement (no destination specified)

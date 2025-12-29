@@ -17,6 +17,9 @@ class SaveManager:
     def on_turn_advance(self, event: GameEvent):
         """Subscriber for TURN_ADVANCE event. Handles auto-saving."""
         game_state = event.payload.get("game_state")
+        current_turn = event.payload.get("turn")
+        if game_state:
+            self.apply_suspicion_decay(game_state, current_turn)
         if game_state and game_state.turn % 5 == 0:
             try:
                 self.save_game(game_state, "autosave")
@@ -76,3 +79,14 @@ class SaveManager:
         except Exception as e:
             print(f"Failed to load game from {filepath}: {e}")
             return None
+
+    def apply_suspicion_decay(self, game_state, current_turn=None):
+        """
+        Apply suspicion decay rules to all crew members.
+        """
+        if current_turn is None and hasattr(game_state, "turn"):
+            current_turn = game_state.turn
+
+        for member in getattr(game_state, "crew", []):
+            if hasattr(member, "decay_suspicion"):
+                member.decay_suspicion(current_turn)

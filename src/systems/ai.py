@@ -17,6 +17,7 @@ class AISystem:
     COST_ASTAR = 5
     COST_PATH_CACHE = 1
     COST_PERCEPTION = 2
+    SEARCH_TURNS = 5
 
     def __init__(self):
         self.cache: Optional[AICache] = None
@@ -53,6 +54,7 @@ class AISystem:
         outcome = payload.get("outcome") # "detected" or "evaded"
         player_successes = payload.get("player_successes", 0)
         opponent_successes = payload.get("opponent_successes", 0)
+        suspicion_delta = payload.get("suspicion_delta", 0)
         
         # Diagnostics
         event_bus.emit(GameEvent(EventType.DIAGNOSTIC, {
@@ -65,6 +67,12 @@ class AISystem:
         
         # If we have full context, trigger reactions
         if game_state and observer and player:
+            # Apply suspicion raised by the stealth resolution
+            if suspicion_delta:
+                self._apply_suspicion(observer, suspicion_delta, game_state, reason="stealth_check")
+            if getattr(player, "location_hint_active", False):
+                self._apply_suspicion(observer, 1, game_state, reason="location_hint")
+
             if outcome == "detected":
                 self._react_to_detection(observer, player, game_state)
             elif outcome == "evaded":
@@ -80,9 +88,12 @@ class AISystem:
         # Set alert state
         observer.detected_player = True
         observer.investigating = False # Already found
+        room = self._record_last_seen(observer, player.location, game_state)
+        self._enter_search_mode(observer, player.location, room, game_state)
         
         # Broadcast alert to nearby NPCs
         self._broadcast_alert(observer, player.location, game_state)
+        self._apply_suspicion(observer, 2, game_state, reason="direct_detection")
         
         # Emit reaction event
         event_bus.emit(GameEvent(EventType.MESSAGE, {
@@ -97,7 +108,9 @@ class AISystem:
         observer.investigation_priority = max(getattr(observer, "investigation_priority", 0), 2)
         observer.investigation_expires = game_state.turn + 3
         observer.investigation_source = "suspicion"
+        self._record_last_seen(observer, player.location, game_state)
         observer.suspicion_level = 5 # Moderate suspicion
+        self._apply_suspicion(observer, 2, game_state, reason="near_detection")
         
         event_bus.emit(GameEvent(EventType.MESSAGE, {
             "text": f"{observer.name} pauses, looking suspicious... \"What was that?\""
@@ -106,10 +119,53 @@ class AISystem:
     def _react_to_evasion(self, observer: 'CrewMember', player: 'CrewMember', game_state: 'GameState'):
         """NPC reacts to player evading detection completely."""
         # Increase suspicion slightly
-        if not hasattr(observer, 'suspicion_level'):
-            observer.suspicion_level = 0
-        observer.suspicion_level = min(10, observer.suspicion_level + 1)
-        
+        self._apply_suspicion(observer, 1, game_state, reason="evasion")
+
+    def _apply_suspicion(self, observer: 'CrewMember', amount: int, game_state: 'GameState', reason: str = ""):
+        """Adjust suspicion and update state transitions."""
+        if not hasattr(observer, "increase_suspicion"):
+            return
+        current_turn = getattr(game_state, "turn", 0)
+        observer.increase_suspicion(amount, turn=current_turn)
+        self._update_suspicion_state(observer, game_state.player, game_state, reason=reason)
+
+    def _update_suspicion_state(self, observer: 'CrewMember', player: 'CrewMember', game_state: 'GameState', reason: str = ""):
+        """Evaluate suspicion thresholds and trigger dialogue prompts."""
+        thresholds = getattr(observer, "suspicion_thresholds", {"question": 4, "follow": 8})
+        prev_state = getattr(observer, "suspicion_state", "idle")
+        level = getattr(observer, "suspicion_level", 0)
+
+        new_state = "idle"
+        if level >= thresholds.get("follow", 8):
+            new_state = "follow"
+        elif level >= thresholds.get("question", 4):
+            new_state = "question"
+
+        observer.suspicion_state = new_state
+
+        if new_state == prev_state:
+            return
+
+        dialogue_payload = {
+            "speaker": observer.name,
+            "text": "",
+            "prompt": "FOLLOW_UP",
+            "target": player.name
+        }
+
+        if new_state == "question":
+            dialogue_payload["text"] = f"{player.name}, what are you doing here?"
+            dialogue_payload["prompt"] = "QUESTION_PLAYER"
+            event_bus.emit(GameEvent(EventType.DIALOGUE, dialogue_payload))
+        elif new_state == "follow":
+            dialogue_payload["text"] = f"{observer.name} starts shadowing you closely."
+            dialogue_payload["prompt"] = "FOLLOW_PLAYER"
+            event_bus.emit(GameEvent(EventType.DIALOGUE, dialogue_payload))
+        elif prev_state in ["question", "follow"] and new_state == "idle":
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": f"{observer.name} seems less focused on you now."
+            }))
+
     def _broadcast_alert(self, alerter: 'CrewMember', player_location: Tuple[int, int], game_state: 'GameState'):
         """Broadcast alert to nearby NPCs about player location."""
         alerter_room = game_state.station_map.get_room_name(*alerter.location)
@@ -163,11 +219,26 @@ class AISystem:
         if not member.is_alive:
             return
         self._expire_investigation(member, game_state)
+        current_turn = getattr(game_state, "turn", 0)
+        if hasattr(member, "decay_suspicion"):
+            member.decay_suspicion(current_turn)
+        if hasattr(member, "suspicion_state"):
+            self._update_suspicion_state(member, game_state.player, game_state)
 
         # 0. PRIORITY: Thing AI (Agent 3) - Revealed Things actively hunt
         if getattr(member, 'is_revealed', False):
             self._update_thing_ai(member, game_state)
             return
+
+        # Suspicion-driven behaviors (question or follow the player)
+        if getattr(member, "suspicion_state", "idle") == "follow":
+            member.last_known_player_location = game_state.player.location
+            self._pursue_player(member, game_state)
+            return
+        elif getattr(member, "suspicion_state", "idle") == "question":
+            if self._request_budget(self.COST_PERCEPTION):
+                self._question_player(member, game_state)
+            # still allow other logic if questioning but not blocked
 
         # Passive perception hook: if an NPC spots the player, move toward them
         if self._request_budget(self.COST_PERCEPTION):
@@ -205,6 +276,11 @@ class AISystem:
                 return
         else:
             member.in_lynch_mob = False
+
+        # Search mode: sweep around last seen room/corridors
+        if getattr(member, "search_turns_remaining", 0) > 0:
+            if self._execute_search(member, game_state):
+                return
 
         # 3. Check Schedule
         # Schedule entries: {"start": 8, "end": 20, "room": "Rec Room"}
@@ -351,11 +427,16 @@ class AISystem:
 
         member_room = game_state.station_map.get_room_name(*member.location)
         player_room = self.cache.player_room if self.cache else game_state.station_map.get_room_name(*player.location)
+        in_vent = getattr(player, "in_vent", False)
         
         if member_room != player_room:
-            return False
+            # Vent noise can carry into rooms that share an entry grate
+            if not (in_vent and game_state.station_map.is_vent_entry(*member.location)):
+                return False
 
         noise = self.cache.player_noise if self.cache else player.get_noise_level()
+        if in_vent:
+            noise += 3  # Vents amplify scraping sounds
         # Use cached visibility modifier if available
         vis_mod = self.cache.get_visibility_modifier(player_room, game_state) if self.cache else None
         
@@ -363,6 +444,8 @@ class AISystem:
         detected = stealth.evaluate_detection(member, player, game_state, noise_level=noise)
         if detected and hasattr(member, "add_knowledge_tag"):
             member.add_knowledge_tag(f"Spotted {player.name} in {player_room}")
+            room = self._record_last_seen(member, player.location, game_state, player_room)
+            self._enter_search_mode(member, player.location, room, game_state)
         return detected
 
     def _pathfind_step(self, member: 'CrewMember', target_x: int, target_y: int, game_state: 'GameState'):
@@ -461,3 +544,93 @@ class AISystem:
             member.investigation_source = None
             member.investigation_expires = 0
             member.last_known_player_location = None
+    def _record_last_seen(self, member: 'CrewMember', location: Tuple[int, int], game_state: 'GameState', room_name: Optional[str] = None) -> str:
+        """Store last-seen player data on the NPC for later search behavior."""
+        room = room_name or game_state.station_map.get_room_name(*location)
+        member.last_seen_player_location = location
+        member.last_seen_player_room = room
+        member.last_seen_player_turn = game_state.turn
+        return room
+
+    def _enter_search_mode(self, member: 'CrewMember', anchor_location: Tuple[int, int], anchor_room: str, game_state: 'GameState'):
+        """Initialize search mode around the last seen position and nearby corridors."""
+        if not hasattr(member, "search_turns_remaining"):
+            return
+
+        station_map = game_state.station_map
+        targets = [anchor_location]
+
+        # Add adjacent corridor tiles for a quick sweep
+        for dx in [-1, 0, 1]:
+            for dy in [-1, 0, 1]:
+                if dx == 0 and dy == 0:
+                    continue
+                pos = (anchor_location[0] + dx, anchor_location[1] + dy)
+                if not station_map.is_walkable(*pos):
+                    continue
+                room_name = station_map.get_room_name(*pos)
+                if room_name.startswith("Corridor"):
+                    targets.append(pos)
+
+        # Deduplicate while preserving order
+        deduped_targets = []
+        seen = set()
+        for t in targets:
+            if t not in seen:
+                deduped_targets.append(t)
+                seen.add(t)
+
+        member.search_targets = deduped_targets
+        member.current_search_target = None
+        member.search_turns_remaining = self.SEARCH_TURNS
+
+        event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+            "text": f"{member.name} is searching around {anchor_room} (Last seen at turn {game_state.turn})."
+        }))
+        event_bus.emit(GameEvent(EventType.MESSAGE, {
+            "text": f"{member.name} starts sweeping {anchor_room} and nearby corridors!"
+        }))
+
+    def _execute_search(self, member: 'CrewMember', game_state: 'GameState') -> bool:
+        """Advance the search pattern; returns True if a search action occurred."""
+        if member.search_turns_remaining <= 0 or not member.search_targets:
+            member.search_turns_remaining = 0
+            return False
+
+        if member.current_search_target is None:
+            member.current_search_target = member.search_targets[0]
+
+        # If we've reached the current target, rotate to next target
+        if member.location == member.current_search_target:
+            member.search_targets = member.search_targets[1:] + [member.current_search_target]
+            member.current_search_target = member.search_targets[0] if member.search_targets else None
+
+        if member.current_search_target:
+            tx, ty = member.current_search_target
+            self._pathfind_step(member, tx, ty, game_state)
+            member.search_turns_remaining -= 1
+            if member.search_turns_remaining <= 0:
+                member.search_targets = []
+                member.current_search_target = None
+            return True
+
+        member.search_turns_remaining = 0
+        return False
+    def _question_player(self, member: 'CrewMember', game_state: 'GameState'):
+        """
+        Move toward the player and issue a questioning dialogue when nearby.
+        """
+        player = game_state.player
+        member_room = game_state.station_map.get_room_name(*member.location)
+        player_room = game_state.station_map.get_room_name(*player.location)
+
+        if member_room == player_room:
+            event_bus.emit(GameEvent(EventType.DIALOGUE, {
+                "speaker": member.name,
+                "target": player.name,
+                "text": f"{player.name}, I have some questions for you.",
+                "prompt": "QUESTION_PLAYER"
+            }))
+            member.last_known_player_location = player.location
+        else:
+            self._pursue_player(member, game_state)
