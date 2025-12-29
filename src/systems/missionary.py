@@ -256,7 +256,9 @@ class MissionarySystem:
         """
         Actual mechanics of assimilation.
         """
-        print(f">>> SILENT EVENT: {agent.name} approaches {target.name}...")
+        event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+            "text": f"SILENT EVENT: {agent.name} approaches {target.name}..."
+        }))
         
         # Refill Agent's Mask
         agent.mask_integrity = min(100, agent.mask_integrity + 50)
@@ -272,7 +274,9 @@ class MissionarySystem:
         """
         Transfer nomenclature data from target to agent.
         """
-        print(f">>> SEARCHLIGHT HARVEST: {agent.name} extracts nomenclature from {target.name}.")
+        event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+            "text": f"SEARCHLIGHT HARVEST: {agent.name} extracts nomenclature from {target.name}."
+        }))
         
         # Reduce slip chances for the Agent
         for inv in agent.invariants:

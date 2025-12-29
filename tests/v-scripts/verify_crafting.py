@@ -85,13 +85,12 @@ def test_command_wiring():
     print("Executing 'CRAFT makeshift_torch' via dispatcher...")
     game.dispatcher.dispatch(context, "CRAFT makeshift_torch")
     
-    # Crafting is queued, turn should have advanced
-    assert len(game.crafting.active_jobs) == 1
-    assert game.turn == 2 # Started at 1, advanced once
-    
-    # Advance one more time to finish
-    game.advance_turn()
-    assert any(i.name == "Makeshift Torch" for i in game.player.inventory)
+    # The CRAFT command advances the turn, which processes the 1-turn crafting job
+    # So the item should be completed and in inventory
+    print(f"DEBUG: Active jobs: {len(game.crafting.active_jobs)}, Turn: {game.turn}")
+    assert game.turn == 2, f"Expected turn 2, got {game.turn}" # Started at 1, advanced once
+    assert len(game.crafting.active_jobs) == 0, f"Expected 0 active jobs (job completed), got {len(game.crafting.active_jobs)}"
+    assert any(i.name == "Makeshift Torch" for i in game.player.inventory), "Makeshift Torch should be in inventory after 1-turn craft"
     
     print("--- Command Wiring Verification Passed ---")
 

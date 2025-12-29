@@ -90,6 +90,17 @@
                     <span class="label">POWER:</span>
                     <span id="power-status" class="value">ON</span>
                 </div>
+                <div class="status-item" title="Your current movement posture">
+                    <span class="label">POSTURE:</span>
+                    <span id="stealth-posture" class="value">STANDING</span>
+                </div>
+                <div class="status-item" title="Risk of being detected by enemies">
+                    <span class="label">DETECTION:</span>
+                    <div class="fuel-bar-container"> <!-- Reuse container style or simple div -->
+                        <div id="detection-fill" class="detection-fill"
+                            style="width: 0%; height: 10px; background-color: #ff3333;"></div>
+                    </div>
+                </div>
                 <div class="status-item" title="Generator fuel level - if fuel runs out, power fails">
                     <span class="label">FUEL:</span>
                     <span id="fuel-bar" class="fuel-bar">████████</span>
@@ -97,6 +108,16 @@
                 <div class="status-item" title="Your current location in the station">
                     <span class="label">LOCATION:</span>
                     <span id="location" class="value">Unknown</span>
+                </div>
+                <div class="status-item" title="Your current stealth posture - affects detection chance">
+                    <span class="label">POSTURE:</span>
+                    <span id="stealth-posture" class="value">STANDING</span>
+                </div>
+                <div class="status-item" title="Detection risk level based on your stealth vs nearby threats">
+                    <span class="label">DETECTION:</span>
+                    <span id="detection-meter" class="detection-meter">
+                        <span id="detection-fill" class="detection-fill"></span>
+                    </span>
                 </div>
             </div>
 
@@ -106,7 +127,8 @@
                 <div class="left-panel">
                     <div class="map-container">
                         <h3>STATION MAP <span class="map-hint">(Click adjacent rooms to move)</span></h3>
-                        <div id="game-map" class="map-display interactive-map">Loading...</div>
+                        <div id="game-map" class="map-display interactive-map hidden">Loading...</div>
+                        <div id="game-canvas" class="map-display interactive-map-3d"></div>
                         <div id="map-legend" class="map-legend"></div>
                         <div class="nav-controls">
                             <button class="nav-btn" data-dir="north" title="Go North (Arrow Up)">▲</button>
@@ -161,9 +183,12 @@
                         <div class="crew-header">
                             <h3>CREW STATUS</h3>
                             <div class="crew-filters">
-                                <button class="filter-btn active" data-filter="nearby" title="Show crew in your location">NEARBY</button>
-                                <button class="filter-btn" data-filter="alive" title="Show all living crew">ALIVE</button>
-                                <button class="filter-btn" data-filter="all" title="Show all crew including dead">ALL</button>
+                                <button class="filter-btn active" data-filter="nearby"
+                                    title="Show crew in your location">NEARBY</button>
+                                <button class="filter-btn" data-filter="alive"
+                                    title="Show all living crew">ALIVE</button>
+                                <button class="filter-btn" data-filter="all"
+                                    title="Show all crew including dead">ALL</button>
                             </div>
                         </div>
                         <div id="crew-status" class="crew-list"></div>
@@ -231,7 +256,8 @@
             </div>
             <div class="minigame-content">
                 <div class="interrogation-topics">
-                    <button class="topic-btn" onclick="sendQuickCommand('ASK WHEREABOUTS')" title="Ask where they've been recently">
+                    <button class="topic-btn" onclick="sendQuickCommand('ASK WHEREABOUTS')"
+                        title="Ask where they've been recently">
                         <span class="topic-icon">📍</span>
                         <span class="topic-name">WHEREABOUTS</span>
                         <span class="topic-desc">Where have you been?</span>
@@ -246,7 +272,8 @@
                         <span class="topic-name">SUSPICIONS</span>
                         <span class="topic-desc">Who do you suspect?</span>
                     </button>
-                    <button class="topic-btn" onclick="sendQuickCommand('ASK BEHAVIOR')" title="Ask about strange behavior">
+                    <button class="topic-btn" onclick="sendQuickCommand('ASK BEHAVIOR')"
+                        title="Ask about strange behavior">
                         <span class="topic-icon">👁</span>
                         <span class="topic-name">BEHAVIOR</span>
                         <span class="topic-desc">Notice anything strange?</span>
@@ -397,6 +424,10 @@
         </div>
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="{{ url_for('static', filename='js/renderer3d.js') }}"></script>
     <script src="{{ url_for('static', filename='js/game.js') }}"></script>
 </body>
 

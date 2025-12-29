@@ -24,14 +24,16 @@ class BiologicalSlipGenerator:
     ]
     
     @staticmethod
-    def get_visual_slip(random_engine=None):
-        engine = random_engine or RandomnessEngine()
-        return engine.choose(BiologicalSlipGenerator.VISUAL_TELLS)
+    def get_visual_slip(random_engine):
+        if not random_engine:
+             raise ValueError("RandomnessEngine must be provided for deterministic slips.")
+        return random_engine.choose(BiologicalSlipGenerator.VISUAL_TELLS)
         
     @staticmethod
-    def get_audio_slip(random_engine=None):
-        engine = random_engine or RandomnessEngine()
-        return engine.choose(BiologicalSlipGenerator.AUDIO_TELLS)
+    def get_audio_slip(random_engine):
+        if not random_engine:
+             raise ValueError("RandomnessEngine must be provided for deterministic slips.")
+        return random_engine.choose(BiologicalSlipGenerator.AUDIO_TELLS)
 
 
 class ForensicDatabase:
@@ -113,7 +115,9 @@ class BloodTestSim:
         self.target_temp = 90 # Hot enough to burn (lowered for gameplay reliability)
         self.current_sample = None # Name of crew member
         self.state = "IDLE" # IDLE, HEATING, READY, REACTION
-        self.rng = rng or RandomnessEngine()
+        if not rng:
+            raise ValueError("BloodTestSim requires a valid RandomnessEngine")
+        self.rng = rng
         
     def start_test(self, crew_name):
         self.active = True
@@ -129,41 +133,21 @@ class BloodTestSim:
         increase = self.rng.randint(20, 30)
         self.wire_temp += increase
         
-        if self.wire_temp >= self.READY_THRESHOLD: # Lowered from 100 for gameplay reliability
+        if self.wire_temp >= self.READY_THRESHOLD:
             self.state = "READY"
             return f"Wire is GLOWING HOT ({self.wire_temp}C). Ready to apply."
         else:
             return f"Heating wire... ({self.wire_temp}C)"
 
     def cool_down(self):
-        """
-        Simulates the wire cooling down over time.
-        """
+        """Simulate natural cooling of the wire over time."""
         if not self.active:
             return
 
-        if self.wire_temp > 20:
-            # Cool down by 15 degrees, but don't go below 20
-            cooling_amount = 15
-            self.wire_temp = max(20, self.wire_temp - cooling_amount)
+        self.wire_temp = max(self.ROOM_TEMP, self.wire_temp - self.COOLING_RATE)
 
-            # If it was READY but cooled down too much, revert state
-            if self.state == "READY" and self.wire_temp < 90:
-                self.state = "HEATING"
-            
-    def cool_down(self):
-        """
-        Simulate thermal decay of the wire over time.
-        """
-        if not self.active:
-            return
-
-        # Cooling rate (degrees per turn)
-        cooling_rate = 15
-        self.wire_temp = max(20, self.wire_temp - cooling_rate)
-
-        # Check state regression if temp drops below threshold
-        if self.state == "READY" and self.wire_temp < self.target_temp:
+        # State transition: if we lose heat, we might no longer be READY
+        if self.state == "READY" and self.wire_temp < self.READY_THRESHOLD:
             self.state = "HEATING"
 
     def apply_wire(self, is_infected):
@@ -199,20 +183,7 @@ class BloodTestSim:
         self.state = "IDLE"
         return "Test cancelled."
 
-    def cool_down(self):
-        """
-        Simulate natural cooling of the wire over time.
-        """
-        if not self.active:
-            return
 
-        # Simple linear cooling
-        if self.wire_temp > self.ROOM_TEMP:
-            self.wire_temp = max(self.ROOM_TEMP, self.wire_temp - self.COOLING_RATE)
-
-        # State transition: if we lose heat, we might no longer be READY
-        if self.state == "READY" and self.wire_temp < self.READY_THRESHOLD:
-            self.state = "HEATING"
 
 class ForensicsSystem:
     """

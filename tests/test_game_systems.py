@@ -204,6 +204,34 @@ class TestInterrogationSystem:
 
         assert count2 > count1
 
+    def test_schedule_slip_confrontation(self, rng, sample_crew, station_map):
+        """Confronting a schedule slip should consume the flag and shift trust."""
+        macready, childs = sample_crew
+        childs.schedule_slip_flag = True
+        childs.schedule_slip_reason = "Childs should be in Rec Room at 1000, but is in Infirmary."
+
+        class StubTrust:
+            def __init__(self):
+                self.calls = []
+            def modify_trust(self, observer, subject, amount):
+                self.calls.append((observer, subject, amount))
+
+        game = SimpleNamespace(
+            crew=sample_crew,
+            station_map=station_map,
+            rng=rng,
+            paranoia_level=0,
+            trust_system=StubTrust()
+        )
+
+        interrogation = InterrogationSystem(rng)
+        result = interrogation.confront_schedule_slip(macready, childs, game)
+
+        assert childs.schedule_slip_flag is False
+        assert any("Rec Room" in tell or "slip" in tell.lower() for tell in result.tells)
+        assert game.paranoia_level >= 0
+        assert game.trust_system.calls, "Trust should be adjusted when a slip is confronted."
+
 
 # === ROOM STATE TESTS ===
 
@@ -331,6 +359,31 @@ class TestRoomStateManager:
 
         assert rng.pools[0] == 0  # Base 1 empathy, -2 from DARK+FROZEN, clamped to 0
 
+    def test_schedule_slip_flagged_when_off_route(self, sample_crew, station_map):
+        """NPCs off their scheduled room should be flagged for confrontation."""
+        manager = RoomStateManager(list(station_map.rooms.keys()))
+        macready, childs = sample_crew
+        childs.schedule = [{"start": 0, "end": 24, "room": "Rec Room"}]
+        # Place Childs in a different room
+        childs.location = (0, 0)  # Infirmary coordinates
+
+        class TimeStub:
+            @property
+            def hour(self):
+                return 10
+        game = SimpleNamespace(
+            crew=sample_crew,
+            station_map=station_map,
+            time_system=TimeStub(),
+            power_on=True,
+            temperature=-20
+        )
+
+        manager.tick(game)
+
+        assert childs.schedule_slip_flag is True
+        assert "Rec Room" in (childs.schedule_slip_reason or "")
+
 
 def test_stealth_detection_darkness_penalty(sample_crew, station_map):
     """Dark rooms should make stealth detection less likely."""
@@ -356,7 +409,7 @@ def test_stealth_detection_darkness_penalty(sample_crew, station_map):
     infected.location = (7, 7)
     infected.is_infected = True
 
-    game_state = SimpleNamespace(player=player, crew=[player, infected], station_map=station_map)
+    game_state = SimpleNamespace(player=player, crew=[player, infected], station_map=station_map, power_on=True)
     stealth = StealthSystem(StubRegistry(), manager)
     captured = []
     event_bus.subscribe(EventType.STEALTH_REPORT, captured.append)
