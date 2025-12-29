@@ -15,7 +15,7 @@ from entities.item import Item
 from entities.station_map import StationMap
 
 from systems.ai import AISystem
-from systems.architect import RandomnessEngine, GameMode, TimeSystem, Difficulty, DifficultySettings, Verbosity
+from systems.architect import RandomnessEngine, GameMode, TimeSystem, Difficulty, DifficultySettings
 from systems.commands import CommandDispatcher, GameContext
 from systems.combat import CombatSystem, CoverType
 from systems.crafting import CraftingSystem
@@ -100,7 +100,7 @@ class GameState:
         self.blood_bank_destroyed = False
         self.paranoia_level = self.difficulty_settings["starting_paranoia"]
         self.mode = GameMode.INVESTIGATIVE
-        self.verbosity = Verbosity.STANDARD
+        # self.verbosity = Verbosity.STANDARD
 
         # 5. Core Simulation Systems
         self.station_map = StationMap()

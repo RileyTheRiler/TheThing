@@ -3,6 +3,15 @@
 import heapq
 from typing import List, Tuple, Optional, Dict
 
+# Pre-computed neighbor constants to avoid allocation in loops
+# Format: (dx, dy, cost)
+NEIGHBORS = (
+    (-1, 0, 1.0), (0, -1, 1.0), (0, 1, 1.0), (1, 0, 1.0),  # Orthogonal
+    (-1, -1, 1.41421356), (-1, 1, 1.41421356), (1, -1, 1.41421356), (1, 1, 1.41421356)  # Diagonal
+)
+
+# Heuristic weight for tie-breaking
+HEURISTIC_WEIGHT = 0.41421356
 
 class PathfindingSystem:
     """A* pathfinding for NPC navigation in the station.
@@ -106,7 +115,7 @@ class PathfindingSystem:
         # Counter is used as tiebreaker for equal f_scores
         counter = 0
         open_set = [(0, counter, start)]
-        heapq.heapify(open_set)
+        # heapq.heapify(open_set) # Not needed for single element
 
         # Track where we came from
         came_from: Dict[Tuple[int, int], Tuple[int, int]] = {}
@@ -120,63 +129,53 @@ class PathfindingSystem:
         # Track what's in open set for O(1) lookup
         open_set_hash = {start}
 
+        # Localize globals for speed in loop
+        heappush = heapq.heappush
+        heappop = heapq.heappop
+        neighbors = NEIGHBORS
+        heuristic_weight = HEURISTIC_WEIGHT
+        goal_x, goal_y = goal
+
         while open_set:
             # Get node with lowest f_score
-            _, _, current = heapq.heappop(open_set)
+            _, _, current = heappop(open_set)
             open_set_hash.discard(current)
 
             if current == goal:
                 return self._reconstruct_path(came_from, current)
 
-            # Process orthogonal neighbors
-            for dx, dy in [(-1, 0), (0, -1), (0, 1), (1, 0)]:
-                nx, ny = current[0] + dx, current[1] + dy
+            cx, cy = current
+            current_g = g_score[current]
+
+            # Process neighbors
+            for dx, dy, cost in neighbors:
+                nx, ny = cx + dx, cy + dy
 
                 if not station_map.is_walkable(nx, ny):
                     continue
 
                 neighbor = (nx, ny)
-                tentative_g = g_score[current] + 1.0
+                tentative_g = current_g + cost
 
                 if neighbor not in g_score or tentative_g < g_score[neighbor]:
                     came_from[neighbor] = current
                     g_score[neighbor] = tentative_g
 
-                    # Inline heuristic
-                    dx_h = abs(nx - goal[0])
-                    dy_h = abs(ny - goal[1])
-                    # Octile distance: max(dx, dy) + (sqrt(2) - 1) * min(dx, dy)
-                    h_val = max(dx_h, dy_h) + 0.41421356 * min(dx_h, dy_h)
+                    # Inline heuristic: Octile distance
+                    # max(dx, dy) + (sqrt(2) - 1) * min(dx, dy)
+                    dx_h = abs(nx - goal_x)
+                    dy_h = abs(ny - goal_y)
+
+                    if dx_h > dy_h:
+                        h_val = dx_h + heuristic_weight * dy_h
+                    else:
+                        h_val = dy_h + heuristic_weight * dx_h
 
                     f_score[neighbor] = tentative_g + h_val
+
                     if neighbor not in open_set_hash:
                         counter += 1
-                        heapq.heappush(open_set, (f_score[neighbor], counter, neighbor))
-                        open_set_hash.add(neighbor)
-
-            # Process diagonal neighbors
-            for dx, dy in [(-1, -1), (-1, 1), (1, -1), (1, 1)]:
-                nx, ny = current[0] + dx, current[1] + dy
-
-                if not station_map.is_walkable(nx, ny):
-                    continue
-
-                neighbor = (nx, ny)
-                tentative_g = g_score[current] + 1.41421356
-
-                if neighbor not in g_score or tentative_g < g_score[neighbor]:
-                    came_from[neighbor] = current
-                    g_score[neighbor] = tentative_g
-
-                    # Inline heuristic
-                    dx_h = abs(nx - goal[0])
-                    dy_h = abs(ny - goal[1])
-                    h_val = max(dx_h, dy_h) + 0.41421356 * min(dx_h, dy_h)
-
-                    f_score[neighbor] = tentative_g + h_val
-                    if neighbor not in open_set_hash:
-                        counter += 1
-                        heapq.heappush(open_set, (f_score[neighbor], counter, neighbor))
+                        heappush(open_set, (f_score[neighbor], counter, neighbor))
                         open_set_hash.add(neighbor)
 
         # No path found
