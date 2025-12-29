@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.join(project_root, 'src'))
 from core.event_system import event_bus, EventType, GameEvent
 from systems.architect import RandomnessEngine
 from systems.weather import WeatherSystem
-from systems.sabotage import SabotageManager
+from systems.sabotage import SabotageManager, SabotageEvent
 from systems.forensics import ForensicsSystem
 
 print("--- Verifying Event-Driven Architecture ---\n")
@@ -52,16 +52,16 @@ else:
 
 # Test 3: Sabotage Cooldown Tick
 print("\n[Test 3] Sabotage Cooldown Management")
-sabotage.cooldowns[sabotage.SabotageEvent.POWER_OUTAGE] = 5
-print(f"Initial cooldown: {sabotage.cooldowns[sabotage.SabotageEvent.POWER_OUTAGE]}")
+sabotage.cooldowns[SabotageEvent.POWER_OUTAGE] = 5
+print(f"Initial cooldown: {sabotage.cooldowns[SabotageEvent.POWER_OUTAGE]}")
 
 event_bus.emit(GameEvent(EventType.TURN_ADVANCE, {"turn": 2}))
-print(f"After tick: {sabotage.cooldowns[sabotage.SabotageEvent.POWER_OUTAGE]}")
+print(f"After tick: {sabotage.cooldowns[SabotageEvent.POWER_OUTAGE]}")
 
-if sabotage.cooldowns[sabotage.SabotageEvent.POWER_OUTAGE] == 4:
+if sabotage.cooldowns[SabotageEvent.POWER_OUTAGE] == 4:
     print("PASS: Sabotage cooldown decremented")
 else:
-    print(f"FAIL: Expected 4, got {sabotage.cooldowns[sabotage.SabotageEvent.POWER_OUTAGE]}")
+    print(f"FAIL: Expected 4, got {sabotage.cooldowns[SabotageEvent.POWER_OUTAGE]}")
 
 # Test 4: Serialization Round-Trip
 print("\n[Test 4] Serialization (Item, CrewMember)")

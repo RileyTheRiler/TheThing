@@ -1,0 +1,3 @@
+Place MacReady.glb here.
+This model represents the player character.
+Required animations: Idle, Walk.

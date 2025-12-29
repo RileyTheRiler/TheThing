@@ -103,6 +103,14 @@
             "effect": "provide_light",
             "uses": 10,
             "spawn_room": "Generator"
+        },
+        {
+            "id": "mop_handle",
+            "name": "Mop Handle",
+            "description": "A sturdy wooden handle from the kitchen's mop.",
+            "category": "tool",
+            "uses": -1,
+            "spawn_room": "Kitchen"
         }
     ]
 }

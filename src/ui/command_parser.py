@@ -38,9 +38,11 @@ class CommandParser:
         'pickup': 'GET', 'acquire': 'GET', 'collect': 'GET',
         'drop': 'DROP', 'discard': 'DROP', 'leave': 'DROP',
         'put': 'DROP', 'place': 'DROP',
+        'throw': 'THROW', 'toss': 'THROW', 'lob': 'THROW',
         'inventory': 'INVENTORY', 'inv': 'INVENTORY', 'items': 'INVENTORY',
         'bag': 'INVENTORY', 'stuff': 'INVENTORY',
         'use': 'USE', # Although not in engine.py blocks explicitly, help text mentions it.
+        'craft': 'CRAFT', 'build': 'CRAFT', 'assemble': 'CRAFT', 'make': 'CRAFT',
         
         # Combat
         'attack': 'ATTACK', 'hit': 'ATTACK', 'fight': 'ATTACK',
@@ -67,6 +69,19 @@ class CommandParser:
         # Skills/Actions
         'check': 'CHECK', 'roll': 'CHECK', 'skill': 'CHECK',
         'barricade': 'BARRICADE', 'fortify': 'BARRICADE', 'block': 'BARRICADE',
+
+        # Tier 6.3: Endings
+        'fix': 'REPAIR', 'repair': 'REPAIR', 'patch': 'REPAIR',
+        'signal': 'SIGNAL', 'call': 'SIGNAL', 'transmit': 'SIGNAL',
+        'fly': 'ESCAPE', 'escape': 'ESCAPE', 'takeoff': 'ESCAPE',
+
+        # Stealth
+        'crouch': 'CROUCH', 'duck': 'CROUCH', 'low': 'CROUCH',
+        'crawl': 'CRAWL', 'prone': 'CRAWL',
+        'stand': 'STAND', 'up': 'STAND', 'rise': 'STAND',
+        'hide': 'HIDE', 'stealth': 'HIDE', 'unhide': 'UNHIDE', 'exitcover': 'UNHIDE',
+        'sneak': 'SNEAK',
+        'vent': 'VENT', 'duct': 'VENT', 'vents': 'VENT',
     }
     
     # Direction keywords
@@ -245,6 +260,7 @@ LOOK:        look/examine/check [name or 'around']
              check [name] for vapor -> Look for breath
 SKILLS:      check/roll [skill]
 TALK:        talk/speak [to name]
+CRAFTING:    craft/build [recipe id]
 ITEMS:       get/take [item], drop [item], inventory/inv
 COMBAT:      attack/fight [name]
 NOTES:       tag [name] [note...], journal, log [item], dossier [name]
