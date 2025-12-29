@@ -89,6 +89,11 @@ class StealthSystem:
         observation = opponent.skills.get(Skill.OBSERVATION, 0)
         observer_pool = logic + observation
 
+        # Station Alert Bonus (all NPCs more vigilant during alert)
+        alert_system = getattr(game_state, 'alert_system', None)
+        if alert_system and alert_system.is_active:
+            observer_pool += alert_system.get_observation_bonus()
+
         # 3. Modifiers (Posture and Environment)
         posture = getattr(player, "stealth_posture", StealthPosture.STANDING)
         
@@ -234,6 +239,11 @@ class StealthSystem:
         logic = observer.attributes.get(Attribute.LOGIC, 1)
         observation = observer.skills.get(Skill.OBSERVATION, 0)
         observer_pool = logic + observation
+
+        # Station Alert Bonus (all NPCs more vigilant during alert)
+        alert_system = getattr(game_state, 'alert_system', None)
+        if alert_system and alert_system.is_active:
+            observer_pool += alert_system.get_observation_bonus()
 
         prowess = subject.attributes.get(Attribute.PROWESS, 1)
         stealth = subject.skills.get(Skill.STEALTH, 0)

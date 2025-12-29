@@ -67,6 +67,7 @@ class EventType(Enum):
     PERCEPTION_EVENT = auto()     # AI perception results (stealth)
     DIAGNOSTIC = auto()           # System diagnostics (performance, budget)
     INFECTED_COORDINATION = auto()  # Infected NPCs coordinating ambush
+    STATION_ALERT = auto()        # Station-wide alert triggered
 
 @dataclass
 class GameEvent:
