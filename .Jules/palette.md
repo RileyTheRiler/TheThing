@@ -7,3 +7,6 @@
 # Palette Journal
 
 _No critical UX or accessibility learnings recorded yet._
+## 2025-12-29 - [Unicode and Accessibility]
+**Learning:** Screen readers often announce unicode symbols (like ▲) literally (e.g., 'Black Up-Pointing Triangle'), which is verbose and distracting.
+**Action:** Always wrap decorative unicode/icons in <span aria-hidden='true'> and provide a semantic aria-label on the interactive container.
