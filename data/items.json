@@ -111,6 +111,47 @@
             "category": "tool",
             "uses": -1,
             "spawn_room": "Kitchen"
+        },
+        {
+            "id": "empty_can",
+            "name": "Empty Can",
+            "description": "An empty tin can. Makes a loud clatter when thrown.",
+            "category": "throwable",
+            "throwable": true,
+            "noise_level": 4,
+            "uses": 1,
+            "spawn_room": "Kitchen"
+        },
+        {
+            "id": "flare",
+            "name": "Flare",
+            "description": "Emergency flare. Burns bright and loud.",
+            "category": "throwable",
+            "throwable": true,
+            "noise_level": 6,
+            "creates_light": true,
+            "uses": 1,
+            "spawn_room": "Hangar"
+        },
+        {
+            "id": "rock",
+            "name": "Rock",
+            "description": "A chunk of Antarctic rock. Good for throwing.",
+            "category": "throwable",
+            "throwable": true,
+            "noise_level": 3,
+            "uses": -1,
+            "spawn_room": "Generator"
+        },
+        {
+            "id": "glass_bottle",
+            "name": "Glass Bottle",
+            "description": "An empty bottle. Shatters loudly on impact.",
+            "category": "throwable",
+            "throwable": true,
+            "noise_level": 5,
+            "uses": 1,
+            "spawn_room": "Rec Room"
         }
     ]
 }

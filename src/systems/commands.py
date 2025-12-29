@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from core.resolution import Attribute, Skill
 from core.event_system import event_bus, EventType, GameEvent
 
+from systems.distraction import DistractionSystem
 from systems.interrogation import InterrogationSystem, InterrogationTopic
 from systems.stealth import StealthPosture
 from systems.social import ExplainAwaySystem
@@ -1217,6 +1218,64 @@ class AccuseCommand(Command):
             game_state.player, target, [], game_state
         )
 
+class ThrowCommand(Command):
+    name = "THROW"
+    aliases = ["TOSS"]
+    description = "Throw an item to create a distraction. Usage: THROW <item> <direction>"
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+
+        if len(args) < 2:
+            event_bus.emit(GameEvent(EventType.ERROR, {
+                "text": "Usage: THROW <item> <direction>\nDirections: N/S/E/W or NE/NW/SE/SW"
+            }))
+            return
+
+        item_name = args[0].upper()
+        direction = args[1].upper()
+
+        # Find item in player inventory
+        item = next((i for i in game_state.player.inventory
+                     if i.name.upper() == item_name or item_name in i.name.upper()), None)
+
+        if not item:
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": f"You don't have a {item_name}."
+            }))
+            # Show available throwable items
+            if not hasattr(game_state, 'distraction_system'):
+                game_state.distraction_system = DistractionSystem()
+            throwables = game_state.distraction_system.get_throwable_items(game_state.player)
+            if throwables:
+                names = ", ".join([i.name for i in throwables])
+                event_bus.emit(GameEvent(EventType.MESSAGE, {
+                    "text": f"Throwable items: {names}"
+                }))
+            return
+
+        if not getattr(item, 'throwable', False):
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": f"The {item.name} can't be thrown."
+            }))
+            return
+
+        # Initialize distraction system if needed
+        if not hasattr(game_state, 'distraction_system'):
+            game_state.distraction_system = DistractionSystem()
+
+        # Attempt to throw the item
+        success, message = game_state.distraction_system.throw_item(
+            game_state.player, item, direction, game_state
+        )
+
+        if success:
+            event_bus.emit(GameEvent(EventType.MESSAGE, {"text": message}))
+            game_state.advance_turn()
+        else:
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": message}))
+
+
 class SettingsCommand(Command):
     name = "SETTINGS"
     aliases = ["CONFIG"]
@@ -1276,6 +1335,7 @@ class CommandDispatcher:
         self.register(FlyCommand())
         self.register(SOSCommand())
         self.register(AccuseCommand())
+        self.register(ThrowCommand())
         self.register(SettingsCommand())
 
     def register(self, command: Command):

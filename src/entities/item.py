@@ -11,7 +11,8 @@ class Item:
     """
 
     def __init__(self, name, description, is_evidence=False, weapon_skill=None, damage=0,
-                 uses=-1, effect=None, effect_value=0, category="misc"):
+                 uses=-1, effect=None, effect_value=0, category="misc",
+                 throwable=False, noise_level=0, creates_light=False):
         self.name = name
         self.description = description
         self.is_evidence = is_evidence
@@ -22,6 +23,10 @@ class Item:
         self.effect_value = effect_value
         self.category = category
         self.history = []
+        # Distraction mechanics
+        self.throwable = throwable
+        self.noise_level = noise_level
+        self.creates_light = creates_light
 
     def add_history(self, turn, location):
         """Record an event in the item's chain of custody."""
@@ -57,7 +62,10 @@ class Item:
             "effect": self.effect,
             "effect_value": self.effect_value,
             "category": self.category,
-            "history": self.history
+            "history": self.history,
+            "throwable": self.throwable,
+            "noise_level": self.noise_level,
+            "creates_light": self.creates_light
         }
 
     @classmethod
@@ -98,7 +106,10 @@ class Item:
             uses=data.get("uses", -1),
             effect=data.get("effect"),
             effect_value=data.get("effect_value", 0),
-            category=data.get("category", "misc")
+            category=data.get("category", "misc"),
+            throwable=data.get("throwable", False),
+            noise_level=data.get("noise_level", 0),
+            creates_light=data.get("creates_light", False)
         )
         item.history = data.get("history", [])
         return item
