@@ -7,3 +7,6 @@
 # Palette Journal
 
 _No critical UX or accessibility learnings recorded yet._
+## 2024-05-24 - [Accessible Icon Buttons]
+**Learning:** Icon-only buttons are a major accessibility trap. Using 'title' is insufficient for screen readers.
+**Action:** Always pair icon-only buttons with 'aria-label' for the action name and 'aria-keyshortcuts' if applicable. Wrap the icon itself in a span with 'aria-hidden=true' to prevent the screen reader from announcing the glyph character (e.g., 'Black Up-Pointing Triangle').
