@@ -191,8 +191,8 @@ class StealthSystem:
         # 4. Resolution
         res = ResolutionSystem()
         
-        subject_result = res.roll_check(subject_pool, rng)
-        observer_result = res.roll_check(observer_pool, rng)
+        subject_result = ResolutionSystem.roll_check(subject_pool, rng)
+        observer_result = ResolutionSystem.roll_check(observer_pool, rng)
         
         player_evaded = subject_result['success_count'] > observer_result['success_count']
         current_turn = event.payload.get("turn") or getattr(game_state, "turn", None)
@@ -261,10 +261,10 @@ class StealthSystem:
         ctx = self._prepare_detection_context(observer, subject, game_state, noise_level)
 
         res = ResolutionSystem()
-        subject_result = res.roll_check(ctx["subject_pool"], game_state.rng)
+        subject_result = ResolutionSystem.roll_check(ctx["subject_pool"], game_state.rng)
 
         # Visual detection
-        observer_result = res.roll_check(ctx["observer_pool"], game_state.rng)
+        observer_result = ResolutionSystem.roll_check(ctx["observer_pool"], game_state.rng)
         observer_score = observer_result['success_count']
         if ctx["env_effects"]:
             observer_score = max(0, observer_score + ctx["env_effects"].stealth_detection_modifier)
@@ -276,7 +276,7 @@ class StealthSystem:
         if ctx["env_effects"] and ctx["env_effects"].heat_detection_enabled and not ctx["is_frozen"]:
             thermal_pool = observer.attributes.get(Attribute.THERMAL, 1) + ctx["env_effects"].thermal_detection_bonus
             thermal_pool = max(1, thermal_pool)
-            thermal_result = res.roll_check(thermal_pool, game_state.rng)
+            thermal_result = ResolutionSystem.roll_check(thermal_pool, game_state.rng)
             thermal_detected = thermal_result['success_count'] >= subject_result['success_count']
 
         return visual_detected or thermal_detected
@@ -334,14 +334,17 @@ class StealthSystem:
             observer_result_penalty = cover_bonus + (1 if blocks_los else 0)
         else:
             observer_result_penalty = 0
-        
-        subject_result = res.roll_check(subject_pool, game_state.rng)
-        
-        if observer_result_penalty:
-            observer_result['success_count'] = max(0, observer_result['success_count'] - observer_result_penalty)
-        
-        # Detected if observer wins
-        return observer_result['success_count'] >= subject_result['success_count']
+
+        # Return context dict for use by detection methods
+        return {
+            "subject_pool": subject_pool,
+            "observer_pool": observer_pool,
+            "is_dark": is_dark,
+            "is_frozen": is_frozen,
+            "env_effects": env_effects,
+            "observer_result_penalty": observer_result_penalty,
+            "room_name": room_name
+        }
 
     def _trigger_explain_away(self, observer, intruder, game_state):
         """Route detection into the Explain Away dialogue node."""
