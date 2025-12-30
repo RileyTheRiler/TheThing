@@ -19,6 +19,8 @@ class AISystem:
     COST_PERCEPTION = 2
     SEARCH_TURNS = 8  # Extended from 5 for more thorough sweeps
     SEARCH_SPIRAL_RADIUS = 3  # Maximum tiles to expand search radius
+    SECURITY_CHECK_INTERVAL = 6
+    SECURITY_INVESTIGATION_WINDOW = 12
 
     def __init__(self):
         self.cache: Optional[AICache] = None
@@ -381,6 +383,84 @@ class AISystem:
         member.coordination_leader = None
         member.coordination_turns_remaining = 0
 
+    def _handle_security_console_duties(self, member: 'CrewMember', game_state: 'GameState') -> bool:
+        """Route security-role NPCs to the console to review alerts and investigate."""
+        if not getattr(member, "security_role", False):
+            return False
+
+        security_sys = getattr(game_state, "security_system", None)
+        if not security_sys:
+            return False
+
+        # Throttle checks unless new alerts arrive
+        next_check = getattr(member, "next_security_check_turn", 0)
+        has_unread = security_sys.has_unread_alerts()
+        if getattr(member, "investigating", False) and not has_unread:
+            return False
+        if not has_unread and game_state.turn < next_check:
+            return False
+
+        # Identify top alerts within the recent window
+        prioritized = security_sys.security_log.get_prioritized(count=5)
+        recent_entries = [
+            e for e in prioritized
+            if game_state.turn - e.get("turn", game_state.turn) <= self.SECURITY_INVESTIGATION_WINDOW
+        ]
+        if not has_unread and not recent_entries:
+            return False
+
+        console_room = "Radio Room"
+        station_map = game_state.station_map
+        console_pos = station_map.rooms.get(console_room)
+        if not console_pos:
+            return False
+
+        target_x, target_y, _, _ = console_pos
+        member_room = station_map.get_room_name(*member.location)
+
+        # Move toward the console if not already there
+        if member_room != console_room:
+            member.target_room = console_room
+            self._pathfind_step(member, target_x, target_y, game_state)
+            return True
+
+        # At the console: read alerts and choose an investigation target
+        unread = security_sys.check_console(npc=member)
+        entries_to_consider = unread if unread else recent_entries
+        if entries_to_consider:
+            entries_sorted = sorted(
+                entries_to_consider,
+                key=lambda e: (e.get("severity", 1), e.get("turn", 0)),
+                reverse=True
+            )
+            for entry in entries_sorted:
+                if self._start_security_investigation_from_entry(member, entry, game_state):
+                    break
+
+        member.next_security_check_turn = game_state.turn + self.SECURITY_CHECK_INTERVAL
+        return True
+
+    def _start_security_investigation_from_entry(self, member: 'CrewMember', entry: Dict, game_state: 'GameState') -> bool:
+        """Configure investigation state based on a security log entry."""
+        target_pos = entry.get("position")
+        if not target_pos:
+            return False
+
+        severity = entry.get("severity", 1)
+        member.investigating = True
+        member.investigation_goal = target_pos
+        member.investigation_priority = max(severity, getattr(member, "investigation_priority", 0))
+        member.investigation_expires = game_state.turn + self.SEARCH_TURNS
+        member.investigation_source = "security_log"
+        member.last_known_player_location = target_pos
+        member.last_seen_player_turn = entry.get("turn", game_state.turn)
+        member.last_seen_player_room = game_state.station_map.get_room_name(*target_pos)
+
+        event_bus.emit(GameEvent(EventType.MESSAGE, {
+            "text": f"{member.name} responds to security alert near {member.last_seen_player_room}."
+        }))
+        return True
+
     def update(self, game_state: 'GameState'):
         """Updates AI for all crew members with per-turn caching and action budget."""
         # Initialize turn-level cache and budget
@@ -449,6 +529,10 @@ class AISystem:
             if self._perceive_player(member, game_state):
                 self._pursue_player(member, game_state)
                 return
+
+        # Security-role duty: check console and dispatch investigations
+        if self._handle_security_console_duties(member, game_state):
+            return
                 
         # 1. PRIORITY: Investigation (Suspicious/Almost Detected)
         if getattr(member, 'investigating', False) and hasattr(member, 'last_known_player_location'):

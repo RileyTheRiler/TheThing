@@ -95,8 +95,10 @@ class SecurityLog:
         self.unread_count = 0
 
     def add_entry(self, turn: int, device_type: str, device_room: str,
-                  target_name: str, target_pos: Tuple[int, int], description: str):
+                  target_name: str, target_pos: Tuple[int, int], description: str,
+                  severity: int = 1):
         """Add a detection entry to the log."""
+        severity_clamped = max(1, min(5, int(severity)))
         entry = {
             "turn": turn,
             "device_type": device_type,
@@ -104,6 +106,7 @@ class SecurityLog:
             "target": target_name,
             "position": target_pos,
             "description": description,
+            "severity": severity_clamped,
             "read": False
         }
         self.entries.append(entry)
@@ -129,6 +132,14 @@ class SecurityLog:
         """Get the most recent entries."""
         return self.entries[-count:]
 
+    def get_prioritized(self, count: int = 10) -> List[Dict]:
+        """Return entries sorted by severity then recency."""
+        return sorted(
+            self.entries,
+            key=lambda e: (e.get("severity", 1), e.get("turn", 0)),
+            reverse=True
+        )[:count]
+
     def to_dict(self) -> Dict:
         """Serialize log for saving."""
         return {
@@ -142,6 +153,8 @@ class SecurityLog:
         log = cls()
         if data:
             log.entries = data.get("entries", [])
+            for entry in log.entries:
+                entry.setdefault("severity", 1)
             log.unread_count = data.get("unread_count", 0)
         return log
 
@@ -237,8 +250,14 @@ class SecuritySystem:
     def _log_detection(self, turn: int, device_type: str, device_room: str,
                        target_name: str, target_pos: Tuple[int, int], description: str):
         """Log a security detection."""
+        severity_map = {
+            "motion_sensor": 3,  # Direct intrusion
+            "camera": 2          # Observational
+        }
+        severity = severity_map.get(device_type, 1)
+
         self.security_log.add_entry(
-            turn, device_type, device_room, target_name, target_pos, description
+            turn, device_type, device_room, target_name, target_pos, description, severity=severity
         )
 
         # Emit event for UI/other systems
@@ -330,7 +349,7 @@ class SecuritySystem:
 
         If an NPC checks, they may investigate logged events.
         """
-        unread = self.security_log.get_unread()
+        unread = sorted(self.security_log.get_unread(), key=lambda e: (e.get("severity", 1), e.get("turn", 0)), reverse=True)
         self.security_log.mark_all_read()
         return unread
 

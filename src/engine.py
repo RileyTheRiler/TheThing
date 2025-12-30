@@ -66,6 +66,8 @@ class CrewMember:
         self.mask_integrity = 100.0 # Agent 3: Mask Tracking
         self.is_revealed = False    # Agent 3: Violent Reveal
         self.slipped_vapor = False  # Hook: Biological Slip flag
+        self.security_role = False
+        self.next_security_check_turn = 0
 
     def take_damage(self, amount):
         self.health -= amount
@@ -369,6 +371,7 @@ class GameState:
                 )
                 
                 member.forbidden_rooms = char_data.get("forbidden_rooms", [])
+                member.security_role = char_data.get("security_role", False)
                 
                 start_room = char_data.get("start_location", "Rec Room")
                 if start_room in self.station_map.rooms:
