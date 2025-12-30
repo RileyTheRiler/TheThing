@@ -10,7 +10,7 @@ from core.event_system import event_bus, EventType, GameEvent
 from core.resolution import Attribute, Skill, ResolutionSystem
 from core.design_briefs import DesignBriefRegistry
 
-from entities.crew_member import CrewMember
+from entities.crew_member import CrewMember as EntityCrewMember
 from entities.item import Item
 from entities.station_map import StationMap
 
@@ -143,6 +143,9 @@ class CrewMember:
         
         return " ".join(desc)
 
+# Ensure the engine uses the primary CrewMember implementation from entities
+CrewMember = EntityCrewMember
+
 class GameState:
     @property
     def paranoia_level(self):
@@ -158,18 +161,20 @@ class GameState:
             return
 
         # 0. PRIORITY: Lynch Mob Hunting (Agent 2)
-        if game_state.lynch_mob.active_mob and game_state.lynch_mob.target:
-            target = game_state.lynch_mob.target
+        if hasattr(self, "lynch_mob") and self.lynch_mob.active_mob and self.lynch_mob.target:
+            target = self.lynch_mob.target
             if target != self and target.is_alive:
                 # Move toward the lynch target
                 tx, ty = target.location
-                self._pathfind_step(tx, ty, game_state.station_map)
+                self._pathfind_step(tx, ty, self.station_map)
                 return
 
         # 1. Check Schedule
         # Schedule entries: {"start": 8, "end": 20, "room": "Rec Room"}
         # Fix: TimeSystem lacks 'hour' property, calculate manually (Start 08:00)
-        current_hour = (game_state.time_system.turn_count + 8) % 24
+        if not hasattr(self, "schedule"):
+            return
+        current_hour = (self.time_system.turn_count + 8) % 24
         destination = None
         for entry in self.schedule:
             start = entry.get("start", 0)
@@ -188,10 +193,10 @@ class GameState:
         
         if destination:
             # Move towards destination room
-            target_pos = game_state.station_map.rooms.get(destination)
+            target_pos = self.station_map.rooms.get(destination)
             if target_pos:
                 tx, ty, _, _ = target_pos
-                self._pathfind_step(tx, ty, game_state.station_map)
+                self._pathfind_step(tx, ty, self.station_map)
                 return
 
         # 2. Idling / Wandering
@@ -330,6 +335,8 @@ class GameState:
         self.helicopter_status = "BROKEN"
         self.rescue_signal_active = False
         self.rescue_turns_remaining = None 
+        self.alert_status = "calm"
+        self.alert_turns_remaining = 0
         self.journal = []
         self.evidence_log = EvidenceLog()
         self.forensic_db = ForensicDatabase()
@@ -591,6 +598,10 @@ class GameState:
 
     def to_dict(self):
         """Serialize game state to dictionary for saving."""
+        if hasattr(self, "alert_system") and self.alert_system:
+            # Mirror alert system fields for save visibility
+            self.alert_status = "alert" if self.alert_system.is_active else "calm"
+            self.alert_turns_remaining = self.alert_system.turns_remaining
         return {
             "difficulty": self.difficulty.value,
             "power_on": self.power_on,
@@ -638,6 +649,7 @@ class GameState:
         game.helicopter_status = data.get("helicopter_status", "BROKEN")
         game.rescue_signal_active = data.get("rescue_signal_active", False)
         game.rescue_turns_remaining = data.get("rescue_turns_remaining")
+        game.alert_status = data.get("alert_status", "calm")
         game.alert_status = data.get("alert_status", "CALM")
         game.alert_turns_remaining = data.get("alert_turns_remaining", 0)
 
@@ -678,6 +690,13 @@ class GameState:
         game.room_states = RoomStateManager(list(game.station_map.rooms.keys()))
         game.crafting = CraftingSystem.from_dict(data.get("crafting"), game)
 
+        # Restore alert system/state
+        alert_data = data.get("alert_system", {})
+        if hasattr(game, "alert_system") and game.alert_system:
+            game.alert_system.cleanup()
+        game.alert_system = AlertSystem.from_dict(alert_data, game)
+        game.alert_status = data.get("alert_status", game.alert_status)
+        game.alert_turns_remaining = data.get("alert_turns_remaining", game.alert_turns_remaining)
         if hasattr(game, "alert_system") and game.alert_system:
             game.alert_system.cleanup()
         game.alert_system = AlertSystem.from_dict(data.get("alert_system"), game)
