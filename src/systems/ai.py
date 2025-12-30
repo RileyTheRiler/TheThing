@@ -764,6 +764,7 @@ class AISystem:
         duration = max(1, payload.get("linger_turns", 2))
         source = payload.get("source", "noise")
         intensity = payload.get("intensity", 1)
+        is_vent_noise = str(source).startswith("vent")
 
         for npc in game_state.crew:
             if npc == game_state.player or not npc.is_alive:
@@ -777,6 +778,9 @@ class AISystem:
                 npc.investigation_expires = game_state.turn + duration
                 npc.investigation_source = source
 
+        if is_vent_noise:
+            self._handle_vent_threat(game_state, target_loc, intensity, priority, source)
+
         event_bus.emit(GameEvent(EventType.DIAGNOSTIC, {
             "type": "AI_INVESTIGATION_PING",
             "room": target_room,
@@ -784,6 +788,48 @@ class AISystem:
             "intensity": intensity,
             "priority": priority
         }))
+
+    def _handle_vent_threat(self, game_state: 'GameState', target_loc: Tuple[int, int], intensity: int, priority: int, source: str):
+        """Escalate close-quarters vent noise into high-priority infected responses."""
+        station_map = getattr(game_state, "station_map", None)
+        if not station_map:
+            return
+        vent_neighbors = station_map.get_vent_neighbors(*target_loc) if hasattr(station_map, "get_vent_neighbors") else []
+        vent_node = station_map.get_vent_node(*target_loc) if hasattr(station_map, "get_vent_node") else None
+        expires_after = max(3, min(6, (intensity // 3) + 2))
+
+        for npc in game_state.crew:
+            if npc == game_state.player or not npc.is_alive or not getattr(npc, "is_infected", False):
+                continue
+
+            # Manhattan proximity plus vent graph adjacency gives "close-quarters" classification
+            distance = abs(npc.location[0] - target_loc[0]) + abs(npc.location[1] - target_loc[1])
+            shares_vent_branch = False
+            if hasattr(station_map, "is_at_vent") and station_map.is_at_vent(*npc.location):
+                shares_vent_branch = npc.location == target_loc or npc.location in vent_neighbors
+
+            if distance <= 1 or shares_vent_branch:
+                npc.investigating = True
+                npc.investigation_goal = target_loc
+                npc.last_known_player_location = target_loc
+                npc.investigation_priority = max(getattr(npc, "investigation_priority", 0), max(priority, 3))
+                npc.investigation_source = "vent_threat"
+                npc.investigation_expires = max(getattr(npc, "investigation_expires", 0), game_state.turn + expires_after)
+                npc.vent_close_quarters_alert = True
+                npc.vent_alert_turn = game_state.turn
+                if hasattr(npc, "suspicion_level"):
+                    npc.suspicion_level = max(getattr(npc, "suspicion_level", 0), 4)
+                self._apply_suspicion(npc, 1, game_state, reason="vent_noise")
+
+                event_bus.emit(GameEvent(EventType.DIAGNOSTIC, {
+                    "type": "AI_VENT_THREAT",
+                    "npc": npc.name,
+                    "source": source,
+                    "target": target_loc,
+                    "room": station_map.get_room_name(*target_loc),
+                    "close_quarters": True,
+                    "vent_room": vent_node.get("room") if vent_node else station_map.get_room_name(*target_loc)
+                }))
 
     def _expire_investigation(self, member: 'CrewMember', game_state: 'GameState'):
         """Clear investigation goals once their timer elapses."""

@@ -130,12 +130,27 @@ class StationMap:
         node = self.vent_graph.get((x, y))
         return bool(node and node.get("type") == "entry_exit")
 
+    def get_vent_node(self, x: int, y: int) -> Dict:
+        """Return vent graph metadata for a node or None if not a vent."""
+        return self.vent_graph.get((x, y))
+
     def get_vent_neighbors(self, x: int, y: int):
         """Return neighbor vent coordinates reachable from the given vent node."""
         node = self.vent_graph.get((x, y))
         if not node:
             return []
         return node.get("neighbors", [])
+
+    def get_vent_neighbors_with_rooms(self, x: int, y: int):
+        """Return neighbor vent coordinates with cached room metadata for sound spread."""
+        neighbors = []
+        for nx, ny in self.get_vent_neighbors(x, y):
+            node = self.get_vent_node(nx, ny)
+            neighbors.append({
+                "coord": (nx, ny),
+                "room": node.get("room") if node else self.get_room_name(nx, ny)
+            })
+        return neighbors
 
     def get_vent_neighbor_in_direction(self, x: int, y: int, direction: str):
         """Return a neighbor coordinate that best matches a cardinal direction."""

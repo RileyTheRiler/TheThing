@@ -404,9 +404,9 @@ class StealthSystem:
         }
 
     # === VENT MECHANICS CONFIGURATION ===
-    VENT_BASE_NOISE = 10        # Echoing noise in metal ducts
-    VENT_ENCOUNTER_CHANCE = 0.20  # 20% chance to encounter Thing in vents
-    VENT_CRAWL_TURNS = 2        # Takes 2 turns per vent tile movement
+    VENT_BASE_NOISE = 14        # Louder echoing noise in metal ducts
+    VENT_ENCOUNTER_CHANCE = 0.20  # 20% chance to encounter Thing in vents (configurable)
+    VENT_CRAWL_TURNS = 4        # Takes 4 turns per vent tile movement (slower, riskier)
 
     def _trigger_explain_away(self, observer, intruder, game_state):
         """Route detection into the Explain Away dialogue node."""
@@ -462,21 +462,37 @@ class StealthSystem:
             "source": "vent",
             "room": room,
             "location": destination,
+            "target_location": destination,
             "noise_level": noise_level,
+            "intensity": noise_level,
+            "priority_override": 2,
+            "linger_turns": 3,
+            "threat": "vent_close_quarters",
             "game_state": game_state
         }))
 
         # Sound propagates to adjacent vent nodes (echoing effect)
-        adjacent_vents = station_map.get_vent_neighbors(*destination)
-        for adj_x, adj_y in adjacent_vents:
-            adj_room = station_map.get_room_name(adj_x, adj_y)
+        adjacent_vents = []
+        if hasattr(station_map, "get_vent_neighbors_with_rooms"):
+            adjacent_vents = station_map.get_vent_neighbors_with_rooms(*destination)
+        else:
+            adjacent_vents = [{"coord": coord, "room": station_map.get_room_name(*coord)} for coord in station_map.get_vent_neighbors(*destination)]
+
+        for neighbor in adjacent_vents:
+            adj_x, adj_y = neighbor["coord"]
+            adj_room = neighbor["room"]
             # Reduced noise at adjacent nodes (echo falloff)
             echo_noise = max(noise_level - 3, 5)
             event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, {
                 "source": "vent_echo",
                 "room": adj_room,
                 "location": (adj_x, adj_y),
+                "target_location": (adj_x, adj_y),
                 "noise_level": echo_noise,
+                "intensity": echo_noise,
+                "priority_override": 1,
+                "linger_turns": 2,
+                "threat": "vent_close_quarters",
                 "game_state": game_state
             }))
 
