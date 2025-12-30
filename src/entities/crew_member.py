@@ -1,9 +1,9 @@
 """CrewMember entity class for The Thing game."""
 
+from typing import List, Optional
 from core.resolution import Attribute, Skill, ResolutionSystem
 from core.event_system import event_bus, EventType, GameEvent
 from systems.forensics import BiologicalSlipGenerator
-from systems.pathfinding import pathfinder
 from entities.item import Item
 from enum import Enum, auto
 
@@ -13,6 +13,8 @@ class StealthPosture(Enum):
     CROUCHING = auto()
     CRAWLING = auto()
     HIDING = auto()
+    HIDDEN = auto()
+    EXPOSED = auto()
 
 
 class CrewMember:
@@ -669,11 +671,6 @@ class CrewMember:
         system = DialogueSystem()
         result = system._behavioral_reaction(self, trigger_type)
         return result
-        # Simple deterministic choice based on name length for now to act as RNG
-        # (Since we don't have easy access to RNG here without passing it in, 
-        # and simple consistent variation is fine)
-        idx = len(self.name) % len(lines)
-        return lines[idx]
 
     # === Suspicion helpers ===
     def increase_suspicion(self, amount: int, turn: int = None):
