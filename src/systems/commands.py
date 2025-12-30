@@ -1347,6 +1347,7 @@ class AccuseCommand(Command):
 class ThrowCommand(Command):
     name = "THROW"
     aliases = ["TOSS"]
+    description = "Throw an item toward a target tile. Usage: THROW <ITEM> <TARGET>"
     description = "Throw an item to create a distraction. Usage: THROW <ITEM> <TARGET>"
 
     def execute(self, context: GameContext, args: List[str]) -> None:
@@ -1354,6 +1355,12 @@ class ThrowCommand(Command):
 
         if len(args) < 2:
             event_bus.emit(GameEvent(EventType.ERROR, {
+                "text": "Usage: THROW <ITEM> <TARGET>\nTARGET can be coordinates (X Y) or a room name."
+            }))
+            return
+
+        item, target = self._parse_item_and_target(args, game_state)
+        if not item or not target:
                 "text": "Usage: THROW <ITEM> <TARGET>\nTargets: direction (N/S/E/W/NE/NW/SE/SW) or coordinates (X,Y)"
             }))
             return
@@ -1380,16 +1387,10 @@ class ThrowCommand(Command):
                 }))
             return
 
-        if not getattr(item, 'throwable', False):
-            event_bus.emit(GameEvent(EventType.WARNING, {
-                "text": f"The {item.name} can't be thrown."
-            }))
-            return
-
-        # Initialize distraction system if needed
-        if not hasattr(game_state, 'distraction_system'):
+        if not hasattr(game_state, "distraction_system"):
             game_state.distraction_system = DistractionSystem()
 
+        success, message = game_state.distraction_system.throw_toward(
         # Attempt to throw the item
         success, message = game_state.distraction_system.throw_item(
             game_state.player, item, target, game_state
@@ -1400,6 +1401,71 @@ class ThrowCommand(Command):
             game_state.advance_turn()
         else:
             event_bus.emit(GameEvent(EventType.WARNING, {"text": message}))
+
+    def _parse_item_and_target(self, args: List[str], game_state: "GameState"):
+        """Split args into (item, target) supporting multi-word names."""
+        inventory_names = [i.name.upper() for i in game_state.player.inventory]
+        split_index = None
+
+        # Coordinate target: last two args numeric
+        if len(args) >= 3 and args[-2].lstrip("+-").isdigit() and args[-1].lstrip("+-").isdigit():
+            split_index = len(args) - 2
+
+        if split_index is None:
+            for i in range(len(args) - 1, 0, -1):
+                cand = " ".join(args[:i]).upper()
+                if cand in inventory_names:
+                    split_index = i
+                    break
+
+        if split_index is None:
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": "Couldn't find a matching item to throw in your inventory."
+            }))
+            return None, None
+
+        item_name = " ".join(args[:split_index]).upper()
+        item = next((i for i in game_state.player.inventory if i.name.upper() == item_name), None)
+        if not item:
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": f"You don't have '{item_name}'."
+            }))
+            return None, None
+        if not getattr(item, "throwable", False):
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": f"The {item.name} can't be thrown."
+            }))
+            return None, None
+
+        target_tokens = args[split_index:]
+        target_location = self._resolve_target(target_tokens, game_state)
+        if not target_location:
+            return item, None
+        return item, target_location
+
+    def _resolve_target(self, tokens: List[str], game_state: "GameState"):
+        """Resolve target tokens into map coordinates."""
+        # Numeric coordinates
+        if len(tokens) == 2 and all(t.lstrip("+-").isdigit() for t in tokens):
+            x, y = int(tokens[0]), int(tokens[1])
+            if not game_state.station_map.is_walkable(x, y):
+                event_bus.emit(GameEvent(EventType.WARNING, {"text": "That throw target is outside the station."}))
+                return None
+            return (x, y)
+
+        room_name = " ".join(tokens)
+        room_center = game_state.station_map.get_room_center(room_name)
+        if room_center:
+            return room_center
+        # Case-insensitive room lookup
+        for known_name in game_state.station_map.rooms.keys():
+            if known_name.lower() == room_name.lower():
+                return game_state.station_map.get_room_center(known_name)
+
+        event_bus.emit(GameEvent(EventType.WARNING, {
+            "text": f"Unknown target '{room_name}'. Provide coordinates or a room name."
+        }))
+        return None
 
 
 class SettingsCommand(Command):
