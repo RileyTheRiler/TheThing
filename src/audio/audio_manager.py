@@ -54,7 +54,7 @@ class Sound(Enum):
     THRUM = "thrum"           # Low, constant generator hum
     WIND = "wind"             # Antarctic wind howling
     STATIC = "static"         # Radio/equipment static
-    
+
     # Event Sounds
     SCREECH = "screech"       # The Thing reveal
     DOOR = "door"             # Door opening/closing
@@ -63,7 +63,10 @@ class Sound(Enum):
     SHUFFLE = "shuffle"       # Crawling/Sneaking
     POWER_DOWN = "power_down" # Generator failure
     POWER_UP = "power_up"     # Generator restored
-    
+    TENSION = "tension"       # Detected/suspicion sting
+    SUSPICION = "suspicion"   # Low suspicion whisper
+    IMPACT = "impact"         # Combat hit
+
     # UI Sounds
     BEEP = "beep"             # Command confirmation
     ERROR = "error"           # Invalid command
@@ -95,6 +98,9 @@ class AudioManager:
         Sound.ALERT: (880, 880),        # High beep (A5)
         Sound.CLICK: (1200, 1200),      # High click
         Sound.SUCCESS: (440, 880),      # Ascending
+        Sound.TENSION: (600, 900),      # Tense rising sting
+        Sound.SUSPICION: (250, 350),    # Low whisper-like tone
+        Sound.IMPACT: (150, 100),       # Combat thud
     }
     
     # Duration in milliseconds
@@ -114,6 +120,9 @@ class AudioManager:
         Sound.ALERT: 150,
         Sound.CLICK: 50,
         Sound.SUCCESS: 400,
+        Sound.TENSION: 300,
+        Sound.SUSPICION: 250,
+        Sound.IMPACT: 100,
     }
     
     # Tier 6.4: Audio feedback alignment map
@@ -122,27 +131,34 @@ class AudioManager:
         EventType.WARNING: Sound.ALERT,
         EventType.ERROR: Sound.ERROR,
         EventType.POWER_FAILURE: Sound.POWER_DOWN,
-        
+
         # Combat / Action
         EventType.ATTACK_RESULT: Sound.BEEP,
         EventType.LYNCH_MOB_TRIGGER: Sound.SCREECH,
-        
+        EventType.COMBAT_LOG: Sound.IMPACT,  # Combat hit sounds
+
+        # Stealth / Detection
+        EventType.STEALTH_REPORT: Sound.TENSION,  # Detection tension sting
+
+        # Trust / Suspicion
+        EventType.TRUST_THRESHOLD_CROSSED: Sound.SUSPICION,  # Suspicion whisper
+
         # Discoveries / Success
         EventType.COMMUNION_SUCCESS: Sound.SUCCESS, # Dramatic success
         EventType.TEST_RESULT: Sound.BEEP,
         EventType.SOS_EMITTED: Sound.BEEP,
         EventType.ESCAPE_SUCCESS: Sound.SUCCESS,
-        
+
         # Movement handled dynamically now
         EventType.MOVEMENT: Sound.FOOTSTEPS,
-        
+
         # Items
         EventType.ITEM_PICKUP: Sound.CLICK,
         EventType.ITEM_DROP: Sound.CLICK,
-        
+
         # Room
         EventType.BARRICADE_ACTION: Sound.DOOR,
-        
+
         # Dialogue
         EventType.DIALOGUE: Sound.BEEP # Simple chirp for text
     }

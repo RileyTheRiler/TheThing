@@ -495,7 +495,7 @@ class DossierCommand(Command):
 class TestCommand(Command):
     name = "TEST"
     aliases = []
-    description = "Perform a blood test."
+    description = "Perform a blood test. Requires scalpel + wire OR a Portable Blood Test Kit."
 
     def execute(self, context: GameContext, args: List[str]) -> None:
         game_state = context.game
@@ -509,41 +509,84 @@ class TestCommand(Command):
 
         if not target:
             event_bus.emit(GameEvent(EventType.WARNING, {"text": f"Unknown target: {target_name}"}))
-        elif game_state.station_map.get_room_name(*target.location) != player_room:
+            return
+
+        if game_state.station_map.get_room_name(*target.location) != player_room:
             event_bus.emit(GameEvent(EventType.WARNING, {"text": f"{target.name} is not here."}))
+            return
+
+        # Check for Portable Blood Test Kit first (allows testing anywhere)
+        portable_kit = next(
+            (i for i in game_state.player.inventory
+             if getattr(i, 'effect', None) == 'portable_test' and getattr(i, 'uses', 0) != 0),
+            None
+        )
+
+        if portable_kit:
+            # Use the portable kit
+            self._perform_test_with_kit(game_state, target, portable_kit)
         else:
-            # Check for required items
+            # Fall back to requiring scalpel + wire
             scalpel = next((i for i in game_state.player.inventory if "SCALPEL" in i.name.upper()), None)
             wire = next((i for i in game_state.player.inventory if "WIRE" in i.name.upper()), None)
 
             if not scalpel:
-                event_bus.emit(GameEvent(EventType.WARNING, {"text": "You need a SCALPEL to draw a blood sample."}))
+                event_bus.emit(GameEvent(EventType.WARNING, {"text": "You need a SCALPEL to draw a blood sample, or a Portable Blood Test Kit."}))
             elif not wire:
-                event_bus.emit(GameEvent(EventType.WARNING, {"text": "You need COPPER WIRE for the test."}))
+                event_bus.emit(GameEvent(EventType.WARNING, {"text": "You need COPPER WIRE for the test, or a Portable Blood Test Kit."}))
             else:
-                sim = _get_blood_test_sim(game_state)
-                event_bus.emit(GameEvent(EventType.MESSAGE, {
-                    "text": f"Drawing blood from {target.name}..."
-                }))
-                event_bus.emit(GameEvent(EventType.MESSAGE, {
-                    "text": sim.start_test(target.name)
-                }))
+                self._perform_test(game_state, target)
 
-                # Rapid heating and application to keep legacy behavior
-                for _ in range(4):
-                    event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
-                        "text": sim.heat_wire(game_state.rng)
-                    }))
+    def _perform_test_with_kit(self, game_state, target, kit):
+        """Perform blood test using a Portable Blood Test Kit."""
+        # Consume one use of the kit
+        if hasattr(kit, 'consume'):
+            kit.consume()
 
-                result = sim.apply_wire(target.is_infected, game_state.rng)
-                event_bus.emit(GameEvent(EventType.TEST_RESULT, {
-                    "subject": target.name,
-                    "result": result,
-                    "infected": target.is_infected
-                }))
+        event_bus.emit(GameEvent(EventType.MESSAGE, {
+            "text": f"Using {kit.name} to test {target.name}..."
+        }))
 
-                if target.is_infected:
-                    game_state.missionary_system.trigger_reveal(target, "Blood Test Exposure")
+        # Check remaining uses
+        remaining = getattr(kit, 'uses', 0)
+        if remaining > 0:
+            event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+                "text": f"{kit.name}: {remaining} uses remaining."
+            }))
+        elif remaining == 0:
+            # Remove depleted kit from inventory
+            game_state.player.inventory.remove(kit)
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": f"Your {kit.name} is depleted and discarded."
+            }))
+
+        self._perform_test(game_state, target)
+
+    def _perform_test(self, game_state, target):
+        """Common test execution logic."""
+        sim = _get_blood_test_sim(game_state)
+        event_bus.emit(GameEvent(EventType.MESSAGE, {
+            "text": f"Drawing blood from {target.name}..."
+        }))
+        event_bus.emit(GameEvent(EventType.MESSAGE, {
+            "text": sim.start_test(target.name)
+        }))
+
+        # Rapid heating and application to keep legacy behavior
+        for _ in range(4):
+            event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+                "text": sim.heat_wire(game_state.rng)
+            }))
+
+        result = sim.apply_wire(target.is_infected, game_state.rng)
+        event_bus.emit(GameEvent(EventType.TEST_RESULT, {
+            "subject": target.name,
+            "result": result,
+            "infected": target.is_infected
+        }))
+
+        if target.is_infected:
+            game_state.missionary_system.trigger_reveal(target, "Blood Test Exposure")
 
 
 class HeatCommand(Command):

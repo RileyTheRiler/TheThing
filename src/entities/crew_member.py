@@ -82,6 +82,9 @@ class CrewMember:
         self.search_targets = []
         self.current_search_target = None
         self.search_turns_remaining = 0
+        self.search_history = set()  # Tracks checked locations during search
+        self.search_anchor = None  # Center point of current search pattern
+        self.search_spiral_radius = 1  # Current expansion radius for spiral search
         self.last_location_hint_turn = -1  # Cooldown for ambient warnings
 
         # Infected coordination (pincer movement)
@@ -296,7 +299,13 @@ class CrewMember:
             "stealth_level": getattr(self, 'stealth_level', 0),
             "silent_takedown_unlocked": getattr(self, 'silent_takedown_unlocked', False),
             "schedule_slip_flag": getattr(self, 'schedule_slip_flag', False),
-            "schedule_slip_reason": getattr(self, 'schedule_slip_reason', None)
+            "schedule_slip_reason": getattr(self, 'schedule_slip_reason', None),
+            # Enhanced search memory
+            "search_history": list(getattr(self, 'search_history', set())),
+            "search_anchor": getattr(self, 'search_anchor', None),
+            "search_spiral_radius": getattr(self, 'search_spiral_radius', 1),
+            "search_targets": getattr(self, 'search_targets', []),
+            "search_turns_remaining": getattr(self, 'search_turns_remaining', 0)
         }
 
     @classmethod
@@ -379,6 +388,14 @@ class CrewMember:
         m.stealth_xp = data.get("stealth_xp", 0)
         m.stealth_level = data.get("stealth_level", 0)
         m.silent_takedown_unlocked = data.get("silent_takedown_unlocked", False)
+
+        # Enhanced search memory
+        m.search_history = set(data.get("search_history", []))
+        search_anchor = data.get("search_anchor")
+        m.search_anchor = tuple(search_anchor) if search_anchor else None
+        m.search_spiral_radius = data.get("search_spiral_radius", 1)
+        m.search_targets = [tuple(t) if isinstance(t, list) else t for t in data.get("search_targets", [])]
+        m.search_turns_remaining = data.get("search_turns_remaining", 0)
 
         # Items hydration
         m.inventory = []
