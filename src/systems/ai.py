@@ -133,6 +133,9 @@ class AISystem:
 
     def _update_suspicion_state(self, observer: 'CrewMember', player: 'CrewMember', game_state: 'GameState', reason: str = ""):
         """Evaluate suspicion thresholds and trigger dialogue prompts."""
+        # Coordinating infected remain locked to that behavior until cleared.
+        if getattr(observer, "suspicion_state", "idle") == "coordinating":
+            return
         # Coordination overrides standard suspicion transitions to keep focus on the ambush
         if getattr(observer, "coordinating_ambush", False) and getattr(observer, "is_infected", False):
             observer.suspicion_state = "coordinating"
@@ -218,6 +221,9 @@ class AISystem:
         if not infected_allies:
             return  # No allies to coordinate with
 
+        # Calculate flanking positions for each ally using pathfinding to ensure reachability
+        flank_positions = self._calculate_flanking_positions(
+            player_location, alerter.location, infected_allies, station_map, getattr(game_state, "turn", 0)
         # Calculate flanking positions for each ally using the pathfinder to ensure opposite approach vectors
         flank_positions = self._calculate_flanking_positions(
             player_location, alerter.location, infected_allies, station_map, current_turn=game_state.turn
@@ -256,6 +262,8 @@ class AISystem:
             }))
 
     def _calculate_flanking_positions(self, target: Tuple[int, int], leader_pos: Tuple[int, int],
+                                       flankers: List['CrewMember'], station_map: 'StationMap',
+                                       current_turn: int = 0) -> List[Tuple[int, int]]:
                                        allies: List['CrewMember'], station_map: 'StationMap', current_turn: int = 0) -> List[Tuple[int, int]]:
         """Calculate optimal flanking positions around a target for pincer movement.
 
@@ -269,6 +277,54 @@ class AISystem:
         dx = tx - lx
         dy = ty - ly
 
+        # Flanking positions are perpendicular and opposite to leader's approach
+        flank_offsets = [
+            (-dy, dx),   # 90 degrees left
+            (dy, -dx),   # 90 degrees right
+            (-dx, -dy),  # Opposite (behind target from leader's perspective)
+            (-dy - 1, dx + 1),
+            (dy + 1, -dx - 1),
+        ]
+
+        # Normalize offsets to reasonable distance (2-4 tiles from target)
+        normalized_offsets = []
+        for offset_x, offset_y in flank_offsets:
+            if offset_x != 0:
+                offset_x = 3 if offset_x > 0 else -3
+            if offset_y != 0:
+                offset_y = 3 if offset_y > 0 else -3
+            normalized_offsets.append((offset_x, offset_y))
+
+        used_positions = set()
+        positions: List[Tuple[int, int]] = []
+        for ally in flankers:
+            best_pos = None
+            best_len = None
+
+            for offset_x, offset_y in normalized_offsets:
+                flank_x = tx + offset_x
+                flank_y = ty + offset_y
+
+                if not station_map.is_walkable(flank_x, flank_y):
+                    continue
+                if (flank_x, flank_y) in used_positions:
+                    continue
+
+                path = pathfinder.find_path(ally.location, (flank_x, flank_y), station_map, current_turn)
+                if not path:
+                    continue
+
+                path_len = len(path)
+                if best_pos is None or path_len < best_len:
+                    best_pos = (flank_x, flank_y)
+                    best_len = path_len
+
+            if best_pos:
+                used_positions.add(best_pos)
+                positions.append(best_pos)
+            else:
+                # Fallback: converge directly on target if no flank is reachable
+                positions.append(target)
         def _normalize(val: int) -> int:
             if val > 0:
                 return 1
@@ -340,6 +396,8 @@ class AISystem:
 
         Returns True if the NPC took a coordination action this turn.
         """
+        if getattr(member, "suspicion_state", "idle") != "coordinating":
+            member.suspicion_state = "coordinating"
         member.suspicion_state = "coordinating"
 
         # Decay coordination timer
@@ -370,6 +428,7 @@ class AISystem:
                             break
                     if leader:
                         flank_positions = self._calculate_flanking_positions(
+                            player_loc, leader.location, [member], game_state.station_map, getattr(game_state, "turn", 0)
                             player_loc, leader.location, [member], game_state.station_map, current_turn=game_state.turn
                         )
                         if flank_positions:
@@ -418,6 +477,8 @@ class AISystem:
         member.flank_position = None
         member.coordination_leader = None
         member.coordination_turns_remaining = 0
+        if getattr(member, "suspicion_state", "idle") == "coordinating":
+            member.suspicion_state = "idle"
         if getattr(member, "suspicion_state", None) == "coordinating":
             member.suspicion_state = "idle"
 
