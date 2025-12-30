@@ -152,10 +152,19 @@ class StealthSystem:
         stealth = player.skills.get(Skill.STEALTH, 0) if hasattr(player, "skills") else 0
         subject_pool = prowess + stealth
 
+        # Stealth level progression bonus (levels 2 and 4 add +1 each)
+        if hasattr(player, 'get_stealth_level_pool_bonus'):
+            subject_pool += player.get_stealth_level_pool_bonus()
+
         # 2. Observer Pool (Infected NPC Perception)
         logic = opponent.attributes.get(Attribute.LOGIC, 1)
         observation = opponent.skills.get(Skill.OBSERVATION, 0)
         observer_pool = logic + observation
+
+        # Station Alert Bonus (all NPCs more vigilant during alert)
+        alert_system = getattr(game_state, 'alert_system', None)
+        if alert_system and alert_system.is_active:
+            observer_pool += alert_system.get_observation_bonus()
 
         # 3. Modifiers (Posture and Environment)
         posture = getattr(player, "stealth_posture", StealthPosture.STANDING)
@@ -234,11 +243,20 @@ class StealthSystem:
              event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, payload))
 
         
+        # Check for reverse thermal detection (Thing sensing player heat in darkness)
+        if player_evaded:
+            # Even if visually evaded, Thing might detect by heat
+            if self.check_reverse_thermal_detection(opponent, player, game_state):
+                player_evaded = False  # Override evasion
+                payload["outcome"] = "thermal_detected"
+                payload["thermal_detection"] = True
+
         if not player_evaded:
             # If detected, opponent might attack or reveal
             opponent.detected_player = True  # Set for visual indicator
+            thermal_msg = " by heat signature" if payload.get("thermal_detection") else ""
             event_bus.emit(GameEvent(EventType.WARNING, {
-                "text": f"{opponent.name} spots you in {room}!"
+                "text": f"{opponent.name} spots you{thermal_msg} in {room}!"
             }))
             
             self._trigger_explain_away(opponent, player, game_state)
@@ -271,13 +289,30 @@ class StealthSystem:
 
         visual_detected = observer_score >= subject_result['success_count']
 
-        # Heat-based detection when power is off and the room is not frozen
+        # Heat-based detection when room is dark and not frozen
         thermal_detected = False
-        if ctx["env_effects"] and ctx["env_effects"].heat_detection_enabled and not ctx["is_frozen"]:
-            thermal_pool = observer.attributes.get(Attribute.THERMAL, 1) + ctx["env_effects"].thermal_detection_bonus
+        if ctx["is_dark"] and not ctx["is_frozen"]:
+            # Get observer's thermal detection pool (includes thermal goggles bonus)
+            if hasattr(observer, 'get_thermal_detection_pool'):
+                thermal_pool = observer.get_thermal_detection_pool()
+            else:
+                thermal_pool = observer.attributes.get(Attribute.THERMAL, 2)
+
+            # Environmental thermal bonus (power off gives equipment bonus)
+            if ctx["env_effects"] and ctx["env_effects"].heat_detection_enabled:
+                thermal_pool += ctx["env_effects"].thermal_detection_bonus
+
+            # Subject's thermal signature (Things run hotter)
+            if hasattr(subject, 'get_thermal_signature'):
+                subject_thermal = subject.get_thermal_signature()
+            else:
+                subject_thermal = 2  # Default human thermal
+
             thermal_pool = max(1, thermal_pool)
             thermal_result = res.roll_check(thermal_pool, game_state.rng)
-            thermal_detected = thermal_result['success_count'] >= subject_result['success_count']
+            # Thermal detection is easier against higher thermal signatures
+            thermal_threshold = max(0, subject_result['success_count'] - (subject_thermal - 2))
+            thermal_detected = thermal_result['success_count'] >= thermal_threshold
 
         return visual_detected or thermal_detected
 
@@ -297,6 +332,11 @@ class StealthSystem:
         logic = observer.attributes.get(Attribute.LOGIC, 1)
         observation = observer.skills.get(Skill.OBSERVATION, 0)
         observer_pool = logic + observation
+
+        # Station Alert Bonus (all NPCs more vigilant during alert)
+        alert_system = getattr(game_state, 'alert_system', None)
+        if alert_system and alert_system.is_active:
+            observer_pool += alert_system.get_observation_bonus()
 
         prowess = subject.attributes.get(Attribute.PROWESS, 1)
         stealth = subject.skills.get(Skill.STEALTH, 0)
@@ -331,17 +371,26 @@ class StealthSystem:
         hiding_spot, cover_bonus, blocks_los = self._hiding_spot_modifiers(getattr(game_state, "station_map", None), subject)
         if cover_bonus and getattr(subject, "stealth_posture", StealthPosture.STANDING) == StealthPosture.HIDING:
             subject_pool += cover_bonus
-            observer_result_penalty = cover_bonus + (1 if blocks_los else 0)
-        else:
-            observer_result_penalty = 0
-        
-        subject_result = res.roll_check(subject_pool, game_state.rng)
-        
-        if observer_result_penalty:
-            observer_result['success_count'] = max(0, observer_result['success_count'] - observer_result_penalty)
-        
-        # Detected if observer wins
-        return observer_result['success_count'] >= subject_result['success_count']
+
+        # Noise acts as penalty to observer pool as well (harder to spot in loud environments)
+        noise_penalty = noise_level // 3
+        observer_pool = ResolutionSystem.adjust_pool(observer_pool, -noise_penalty)
+
+        return {
+            "observer_pool": max(1, observer_pool),
+            "subject_pool": max(1, subject_pool),
+            "env_effects": env_effects,
+            "is_dark": is_dark,
+            "is_frozen": is_frozen,
+            "room_name": room_name,
+            "cover_bonus": cover_bonus,
+            "blocks_los": blocks_los,
+        }
+
+    # === VENT MECHANICS CONFIGURATION ===
+    VENT_BASE_NOISE = 10        # Echoing noise in metal ducts
+    VENT_ENCOUNTER_CHANCE = 0.20  # 20% chance to encounter Thing in vents
+    VENT_CRAWL_TURNS = 2        # Takes 2 turns per vent tile movement
 
     def _trigger_explain_away(self, observer, intruder, game_state):
         """Route detection into the Explain Away dialogue node."""
@@ -372,54 +421,121 @@ class StealthSystem:
                 "text": f"{observer.name} grows hostile and keeps eyes on you!"
             }))
     def handle_vent_movement(self, game_state, actor, destination):
-        """High-noise vent crawling with a small chance of running into The Thing."""
+        """Enhanced vent crawling with echoing noise, Thing encounters, and danger.
+
+        Features:
+        - High base noise (echoes in metal ducts)
+        - Sound propagates to adjacent vent nodes
+        - Chance to encounter The Thing in confined space
+        - Limited escape options when encountered
+        """
         rng = getattr(game_state, "rng", None)
         station_map = getattr(game_state, "station_map", None)
         crew = getattr(game_state, "crew", [])
         if not rng or not station_map or not actor:
-            return
+            return {"encounter": False}
 
         room = station_map.get_room_name(*destination)
-        noise_level = max(actor.get_noise_level(), 8)
 
-        # Broadcast perception event so AI can react to vent noise
+        # Vent noise is louder due to echoing in metal ducts
+        base_noise = self.config.get("vent_base_noise", self.VENT_BASE_NOISE) if self.config else self.VENT_BASE_NOISE
+        noise_level = max(actor.get_noise_level(), base_noise)
+
+        # Broadcast perception event at current location
         event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, {
             "source": "vent",
             "room": room,
+            "location": destination,
             "noise_level": noise_level,
             "game_state": game_state
         }))
 
-        # Limited chance to bump into an infected creature while crawling
-        encounter_chance = self.config.get("vent_encounter_chance", 0.15) if self.config else 0.15
-        if rng.random_float() < encounter_chance:
-            opponent = rng.choose(self._detect_candidates(crew)) or None
-            opponent_name = opponent.name if opponent else "something skittering in the vents"
-            event_bus.emit(GameEvent(EventType.WARNING, {
-                "text": f"You feel the duct vibrate—{opponent_name} is close!"
+        # Sound propagates to adjacent vent nodes (echoing effect)
+        adjacent_vents = station_map.get_vent_neighbors(*destination)
+        for adj_x, adj_y in adjacent_vents:
+            adj_room = station_map.get_room_name(adj_x, adj_y)
+            # Reduced noise at adjacent nodes (echo falloff)
+            echo_noise = max(noise_level - 3, 5)
+            event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, {
+                "source": "vent_echo",
+                "room": adj_room,
+                "location": (adj_x, adj_y),
+                "noise_level": echo_noise,
+                "game_state": game_state
             }))
-            payload = {
-                "room": room,
-                "opponent": opponent_name,
-                "opponent_ref": opponent,
-                "player_ref": actor,
-                "game_state": game_state,
-                "outcome": "detected",
-                "player_successes": 0,
-                "opponent_successes": 0,
-                "subject_pool": 0,
-                "observer_pool": 0
-            }
-            event_bus.emit(GameEvent(EventType.STEALTH_REPORT, payload))
-        observer_pool = ResolutionSystem.adjust_pool(observer_pool, noise_penalty)
 
-        return {
-            "observer_pool": observer_pool,
-            "subject_pool": subject_pool,
-            "env_effects": env_effects,
-            "is_frozen": is_frozen,
-            "room_name": room_name,
-        }
+        # Check for Thing encounter in the vents
+        encounter_chance = self.config.get("vent_encounter_chance", self.VENT_ENCOUNTER_CHANCE) if self.config else self.VENT_ENCOUNTER_CHANCE
+        encounter_result = {"encounter": False, "escaped": False, "damage": 0}
+
+        if rng.random_float() < encounter_chance:
+            candidates = self._detect_candidates(crew)
+            if candidates:
+                opponent = rng.choose(candidates)
+                encounter_result["encounter"] = True
+                encounter_result["opponent"] = opponent
+
+                # Vent encounter is extremely dangerous - limited escape options
+                event_bus.emit(GameEvent(EventType.WARNING, {
+                    "text": f"DANGER! You come face-to-face with {opponent.name} in the cramped vent!"
+                }))
+
+                # Contested roll: Player tries to escape, Thing tries to grab
+                res = ResolutionSystem()
+                prowess = actor.attributes.get(Attribute.PROWESS, 1) if hasattr(actor, "attributes") else 2
+                player_pool = max(1, prowess - 1)  # Cramped space penalty
+
+                thing_prowess = opponent.attributes.get(Attribute.PROWESS, 3) if hasattr(opponent, "attributes") else 3
+                thing_pool = thing_prowess + 2  # Advantage in confined space
+
+                player_result = res.roll_check(player_pool, rng)
+                thing_result = res.roll_check(thing_pool, rng)
+
+                if player_result['success_count'] > thing_result['success_count']:
+                    # Escaped but injured
+                    encounter_result["escaped"] = True
+                    encounter_result["damage"] = 1
+                    event_bus.emit(GameEvent(EventType.MESSAGE, {
+                        "text": "You scramble backward, scraping yourself on the duct walls!"
+                    }))
+                    if hasattr(actor, "take_damage"):
+                        actor.take_damage(1)
+                else:
+                    # Caught - serious damage
+                    encounter_result["escaped"] = False
+                    encounter_result["damage"] = 3
+                    event_bus.emit(GameEvent(EventType.WARNING, {
+                        "text": f"{opponent.name} grabs you in the confined space! You take serious wounds!"
+                    }))
+                    if hasattr(actor, "take_damage"):
+                        actor.take_damage(3, game_state=game_state)
+
+                # Emit stealth report for encounter
+                payload = {
+                    "room": room,
+                    "opponent": opponent.name,
+                    "opponent_ref": opponent,
+                    "player_ref": actor,
+                    "game_state": game_state,
+                    "outcome": "escaped" if encounter_result["escaped"] else "caught",
+                    "vent_encounter": True,
+                    "player_successes": player_result['success_count'],
+                    "opponent_successes": thing_result['success_count'],
+                    "subject_pool": player_pool,
+                    "observer_pool": thing_pool
+                }
+                event_bus.emit(GameEvent(EventType.STEALTH_REPORT, payload))
+            else:
+                # No infected nearby, just eerie sounds
+                event_bus.emit(GameEvent(EventType.MESSAGE, {
+                    "text": "You hear something skittering in a distant duct..."
+                }))
+
+        return encounter_result
+
+    def get_vent_crawl_turns(self) -> int:
+        """Return the number of turns required per vent tile movement."""
+        return self.config.get("vent_crawl_turns", self.VENT_CRAWL_TURNS) if self.config else self.VENT_CRAWL_TURNS
 
     def get_detection_chance(self, observer, subject, game_state, noise_level=0) -> float:
         """Return an estimated probability of detection for diagnostics/tests."""
@@ -440,3 +556,73 @@ class StealthSystem:
     def set_posture(self, subject, posture: StealthPosture):
         """Helper to set stealth posture on a member without requiring imports in tests."""
         subject.stealth_posture = posture
+
+    def check_reverse_thermal_detection(self, infected_npc, player, game_state) -> bool:
+        """Check if an infected NPC (The Thing) can detect the player by heat.
+
+        Reverse thermal detection: Things have heightened thermal senses and can
+        detect human heat signatures in darkness. Frozen rooms block this.
+
+        Args:
+            infected_npc: The infected NPC doing the detecting
+            player: The player being detected
+            game_state: Current game state
+
+        Returns:
+            True if the Thing detects the player's heat signature
+        """
+        if not getattr(infected_npc, 'is_infected', False):
+            return False
+
+        station_map = getattr(game_state, 'station_map', None)
+        room_states = getattr(game_state, 'room_states', None)
+
+        if not station_map or not player:
+            return False
+
+        # Must be in same location
+        if getattr(infected_npc, 'location', None) != getattr(player, 'location', None):
+            return False
+
+        room_name = station_map.get_room_name(*player.location)
+
+        # Check room states
+        is_dark = room_states.has_state(room_name, RoomState.DARK) if room_states and room_name else False
+        is_frozen = room_states.has_state(room_name, RoomState.FROZEN) if room_states and room_name else False
+
+        # Thermal detection only works in darkness, NOT in frozen rooms
+        if not is_dark or is_frozen:
+            return False
+
+        # The Thing has enhanced thermal senses (+2 base, +3 from infection)
+        thing_thermal_pool = 5  # Enhanced Thing senses
+
+        # Human's thermal signature (standard human warmth)
+        if hasattr(player, 'get_thermal_signature'):
+            human_thermal = player.get_thermal_signature()
+        else:
+            human_thermal = 2
+
+        # Roll detection
+        res = ResolutionSystem()
+        rng = getattr(game_state, 'rng', None)
+        if not rng:
+            return False
+
+        # Player's stealth provides defense
+        prowess = player.attributes.get(Attribute.PROWESS, 1) if hasattr(player, 'attributes') else 2
+        stealth = player.skills.get(Skill.STEALTH, 0) if hasattr(player, 'skills') else 0
+        defense_pool = max(1, prowess + stealth)
+
+        thing_result = res.roll_check(thing_thermal_pool, rng)
+        player_result = res.roll_check(defense_pool, rng)
+
+        # Thing needs more successes to detect by heat
+        detected = thing_result['success_count'] > player_result['success_count']
+
+        if detected:
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": f"{infected_npc.name} senses your body heat in the darkness!"
+            }))
+
+        return detected

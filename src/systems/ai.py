@@ -169,18 +169,216 @@ class AISystem:
     def _broadcast_alert(self, alerter: 'CrewMember', player_location: Tuple[int, int], game_state: 'GameState'):
         """Broadcast alert to nearby NPCs about player location."""
         alerter_room = game_state.station_map.get_room_name(*alerter.location)
-        
+
         # Find NPCs in same or adjacent rooms
         for npc in game_state.crew:
             if npc == alerter or npc == game_state.player or not npc.is_alive:
                 continue
-            
+
             npc_room = game_state.station_map.get_room_name(*npc.location)
-            
+
             # Alert NPCs in same room
             if npc_room == alerter_room:
                 npc.alerted_to_player = True
                 npc.last_known_player_location = player_location
+
+        # If alerter is infected, also broadcast to other infected for coordination
+        if getattr(alerter, 'is_infected', False) and not getattr(alerter, 'is_revealed', False):
+            self._broadcast_infected_alert(alerter, player_location, game_state)
+
+    def _broadcast_infected_alert(self, alerter: 'CrewMember', player_location: Tuple[int, int], game_state: 'GameState'):
+        """Broadcast coordination signal to other infected NPCs for pincer movement."""
+        station_map = game_state.station_map
+        alerter_room = station_map.get_room_name(*alerter.location)
+
+        # Find other infected NPCs that can coordinate
+        infected_allies = []
+        for npc in game_state.crew:
+            if npc == alerter or npc == game_state.player or not npc.is_alive:
+                continue
+            if not getattr(npc, 'is_infected', False):
+                continue
+            if getattr(npc, 'is_revealed', False):
+                continue  # Revealed Things act independently
+
+            # Check proximity - must be in same room or adjacent rooms
+            npc_room = station_map.get_room_name(*npc.location)
+            adjacent_rooms = station_map.get_connections(alerter_room)
+
+            if npc_room == alerter_room or npc_room in adjacent_rooms:
+                infected_allies.append(npc)
+
+        if not infected_allies:
+            return  # No allies to coordinate with
+
+        # Calculate flanking positions for each ally
+        flank_positions = self._calculate_flanking_positions(
+            player_location, alerter.location, len(infected_allies), station_map
+        )
+
+        # Assign flanking positions to allies
+        for i, ally in enumerate(infected_allies):
+            flank_pos = flank_positions[i] if i < len(flank_positions) else player_location
+            ally.coordinating_ambush = True
+            ally.ambush_target_location = player_location
+            ally.flank_position = flank_pos
+            ally.coordination_leader = alerter.name
+            ally.coordination_turns_remaining = 5  # Coordination expires after 5 turns
+
+        # Alerter also enters coordination mode (approaches directly)
+        alerter.coordinating_ambush = True
+        alerter.ambush_target_location = player_location
+        alerter.flank_position = None  # Leader approaches directly
+        alerter.coordination_leader = alerter.name
+        alerter.coordination_turns_remaining = 5
+
+        # Emit coordination event
+        event_bus.emit(GameEvent(EventType.INFECTED_COORDINATION, {
+            "leader": alerter.name,
+            "allies": [a.name for a in infected_allies],
+            "target_location": player_location,
+            "room": alerter_room
+        }))
+
+        # Subtle hint to player (something feels wrong)
+        if len(infected_allies) >= 1:
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": "You sense movement in the shadows... multiple presences converging."
+            }))
+
+    def _calculate_flanking_positions(self, target: Tuple[int, int], leader_pos: Tuple[int, int],
+                                       num_flankers: int, station_map: 'StationMap') -> List[Tuple[int, int]]:
+        """Calculate optimal flanking positions around a target for pincer movement.
+
+        Positions allies on opposite sides of the target from the leader.
+        """
+        tx, ty = target
+        lx, ly = leader_pos
+
+        # Calculate direction from leader to target
+        dx = tx - lx
+        dy = ty - ly
+
+        # Flanking positions are perpendicular and opposite to leader's approach
+        flank_offsets = [
+            # Perpendicular positions (left and right of approach vector)
+            (-dy, dx),   # 90 degrees left
+            (dy, -dx),   # 90 degrees right
+            # Opposite position (behind target from leader's perspective)
+            (-dx, -dy),
+            # Diagonal flanking positions
+            (-dy - 1, dx + 1),
+            (dy + 1, -dx - 1),
+        ]
+
+        positions = []
+        for offset_x, offset_y in flank_offsets:
+            if len(positions) >= num_flankers:
+                break
+
+            # Normalize offset to reasonable distance (2-4 tiles from target)
+            if offset_x != 0:
+                offset_x = 3 if offset_x > 0 else -3
+            if offset_y != 0:
+                offset_y = 3 if offset_y > 0 else -3
+
+            flank_x = tx + offset_x
+            flank_y = ty + offset_y
+
+            # Ensure position is walkable
+            if station_map.is_walkable(flank_x, flank_y):
+                positions.append((flank_x, flank_y))
+            else:
+                # Try adjacent tiles if primary position is blocked
+                for adj_x, adj_y in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+                    alt_x, alt_y = flank_x + adj_x, flank_y + adj_y
+                    if station_map.is_walkable(alt_x, alt_y):
+                        positions.append((alt_x, alt_y))
+                        break
+
+        return positions
+
+    def _execute_coordinated_ambush(self, member: 'CrewMember', game_state: 'GameState') -> bool:
+        """Execute coordinated pincer movement for infected NPCs.
+
+        Returns True if the NPC took a coordination action this turn.
+        """
+        # Decay coordination timer
+        if member.coordination_turns_remaining > 0:
+            member.coordination_turns_remaining -= 1
+
+        # Check if coordination has expired
+        if member.coordination_turns_remaining <= 0:
+            self._clear_coordination(member)
+            return False
+
+        player = game_state.player
+        player_loc = player.location
+
+        # Update target location if player has moved significantly
+        if member.ambush_target_location:
+            old_target = member.ambush_target_location
+            dist_to_old = abs(player_loc[0] - old_target[0]) + abs(player_loc[1] - old_target[1])
+            if dist_to_old > 3:
+                # Player moved too far, update ambush target
+                member.ambush_target_location = player_loc
+                # Recalculate flank position if this is not the leader
+                if member.flank_position and member.coordination_leader != member.name:
+                    leader = None
+                    for npc in game_state.crew:
+                        if npc.name == member.coordination_leader and npc.is_alive:
+                            leader = npc
+                            break
+                    if leader:
+                        flank_positions = self._calculate_flanking_positions(
+                            player_loc, leader.location, 1, game_state.station_map
+                        )
+                        if flank_positions:
+                            member.flank_position = flank_positions[0]
+
+        # Determine movement target
+        if member.flank_position:
+            # Move to flanking position first
+            target_pos = member.flank_position
+            dist_to_flank = abs(member.location[0] - target_pos[0]) + abs(member.location[1] - target_pos[1])
+
+            if dist_to_flank <= 1:
+                # Reached flank position, now approach player
+                target_pos = player_loc
+        else:
+            # Leader approaches directly
+            target_pos = player_loc
+
+        # Check if in position to attack (same location as player)
+        if member.location == player_loc:
+            # Close enough - coordination complete, attack!
+            self._clear_coordination(member)
+            # Trigger a stealth detection (the infected has cornered the player)
+            event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, {
+                "room": game_state.station_map.get_room_name(*player_loc),
+                "opponent": member.name,
+                "opponent_ref": member,
+                "player_ref": player,
+                "game_state": game_state,
+                "outcome": "detected",
+                "player_successes": 0,
+                "opponent_successes": 3,
+                "subject_pool": 0,
+                "observer_pool": 3
+            }))
+            return True
+
+        # Move toward target
+        self._pathfind_step(member, target_pos[0], target_pos[1], game_state)
+        return True
+
+    def _clear_coordination(self, member: 'CrewMember'):
+        """Clear coordination state from a crew member."""
+        member.coordinating_ambush = False
+        member.ambush_target_location = None
+        member.flank_position = None
+        member.coordination_leader = None
+        member.coordination_turns_remaining = 0
 
     def update(self, game_state: 'GameState'):
         """Updates AI for all crew members with per-turn caching and action budget."""
@@ -229,6 +427,11 @@ class AISystem:
         if getattr(member, 'is_revealed', False):
             self._update_thing_ai(member, game_state)
             return
+
+        # 0.5. PRIORITY: Infected Coordination - Hidden infected executing pincer movement
+        if getattr(member, 'coordinating_ambush', False) and getattr(member, 'is_infected', False):
+            if self._execute_coordinated_ambush(member, game_state):
+                return
 
         # Suspicion-driven behaviors (question or follow the player)
         if getattr(member, "suspicion_state", "idle") == "follow":

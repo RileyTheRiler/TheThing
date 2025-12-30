@@ -15,6 +15,9 @@ from entities.item import Item
 from entities.station_map import StationMap
 
 from systems.ai import AISystem
+from systems.alert import AlertSystem
+from systems.security import SecuritySystem
+from systems.architect import RandomnessEngine, GameMode, TimeSystem, Difficulty, DifficultySettings, Verbosity
 from systems.architect import RandomnessEngine, GameMode, TimeSystem, Difficulty, DifficultySettings
 from systems.commands import CommandDispatcher, GameContext
 from systems.combat import CombatSystem, CoverType
@@ -29,6 +32,7 @@ from systems.room_state import RoomState, RoomStateManager
 from systems.sabotage import SabotageManager
 from systems.social import DialogueManager, LynchMobSystem, TrustMatrix, SocialThresholds, bucket_for_thresholds, bucket_label
 from systems.stealth import StealthSystem
+from systems.progression import ProgressionSystem
 from systems.weather import WeatherSystem
 from systems.environmental_coordinator import EnvironmentalCoordinator
 from systems.dialogue import DialogueSystem
@@ -323,6 +327,9 @@ class GameState:
         self.dialogue_system = DialogueSystem(rng=self.rng)
         self.stealth = StealthSystem()
         self.stealth_system = self.stealth  # Alias for systems expecting stealth_system attr
+        self.alert_system = AlertSystem(self)
+        self.security_system = SecuritySystem(self)
+        self.progression = ProgressionSystem(self)
         self.crafting = CraftingSystem()
         self.endgame = EndgameSystem(self.design_registry) # Agent 8
         self.combat = CombatSystem(self.rng, self.room_states)
@@ -539,6 +546,12 @@ class GameState:
             self.missionary.cleanup()
         if hasattr(self, 'ai_system') and self.ai_system:
             self.ai_system.cleanup()
+        if hasattr(self, 'alert_system') and self.alert_system:
+            self.alert_system.cleanup()
+        if hasattr(self, 'security_system') and self.security_system:
+            self.security_system.cleanup()
+        if hasattr(self, 'progression') and self.progression:
+            self.progression.cleanup()
         if hasattr(self, 'audio') and self.audio:
             self.audio.cleanup()
         if hasattr(self, 'reporter') and self.reporter:
@@ -612,7 +625,9 @@ class GameState:
             "crew": [m.to_dict() for m in self.crew],
             "journal": self.journal,
             "trust": self.trust_system.matrix if hasattr(self, "trust_system") else {},
-            "crafting": self.crafting.to_dict() if hasattr(self.crafting, "to_dict") else {}
+            "crafting": self.crafting.to_dict() if hasattr(self.crafting, "to_dict") else {},
+            "alert_system": self.alert_system.to_dict() if hasattr(self, "alert_system") else {},
+            "security_system": self.security_system.to_dict() if hasattr(self, "security_system") else {}
         }
 
     @classmethod
@@ -767,6 +782,17 @@ def main():
         game.parser.set_known_names([m.name for m in game.crew])
         game.room_states = RoomStateManager(list(game.station_map.rooms.keys()))
         game.crafting = CraftingSystem.from_dict(data.get("crafting"), game)
+
+        # Restore alert system state
+        if hasattr(game, 'alert_system') and game.alert_system:
+            game.alert_system.cleanup()
+        game.alert_system = AlertSystem.from_dict(data.get("alert_system", {}), game)
+
+        # Restore security system state
+        if hasattr(game, 'security_system') and game.security_system:
+            game.security_system.cleanup()
+        game.security_system = SecuritySystem.from_dict(data.get("security_system", {}), game)
+
         
         # --- FORENSIC COMMANDS ---
         elif action == "HEAT":
