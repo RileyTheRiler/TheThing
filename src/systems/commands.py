@@ -1742,6 +1742,310 @@ class ThermalCommand(Command):
         game_state.advance_turn()
 
 
+class HistoryCommand(Command):
+    name = "HISTORY"
+    aliases = ["LOG", "EVENTS"]
+    description = "Show recent game events. Usage: HISTORY [count]"
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+        count = 10  # Default
+        if args:
+            try:
+                count = min(50, max(1, int(args[0])))
+            except ValueError:
+                pass
+
+        # Get journal entries if available
+        if hasattr(game_state, 'journal') and game_state.journal:
+            entries = game_state.journal[-count:]
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": f"--- RECENT EVENTS (Last {len(entries)} entries) ---"
+            }))
+            for entry in entries:
+                turn = entry.get('turn', '?')
+                text = entry.get('text', str(entry))
+                event_bus.emit(GameEvent(EventType.MESSAGE, {
+                    "text": f"  [Turn {turn}] {text}"
+                }))
+        else:
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": "No events recorded yet."
+            }))
+
+
+class TimeCommand(Command):
+    name = "TIME"
+    aliases = ["CLOCK", "HOUR"]
+    description = "Show current in-game time and weather."
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+
+        # Calculate time from turn
+        turn = game_state.turn
+        start_hour = getattr(game_state.time_system, 'start_hour', 19)
+        current_hour = (start_hour + turn - 1) % 24
+
+        # Determine time of day
+        if 6 <= current_hour < 12:
+            period = "Morning"
+        elif 12 <= current_hour < 18:
+            period = "Afternoon"
+        elif 18 <= current_hour < 22:
+            period = "Evening"
+        else:
+            period = "Night"
+
+        # Get temperature
+        temp = getattr(game_state, 'temperature', -40)
+
+        # Get weather if available
+        weather_desc = "Unknown"
+        if hasattr(game_state, 'weather'):
+            intensity = getattr(game_state.weather, 'storm_intensity', 0)
+            if intensity >= 8:
+                weather_desc = "Blizzard conditions"
+            elif intensity >= 5:
+                weather_desc = "Heavy snowfall"
+            elif intensity >= 3:
+                weather_desc = "Light snow"
+            else:
+                weather_desc = "Clear, cold"
+
+        event_bus.emit(GameEvent(EventType.MESSAGE, {
+            "text": f"--- TIME & WEATHER ---\n"
+                    f"  Turn: {turn}\n"
+                    f"  Time: {current_hour:02d}:00 ({period})\n"
+                    f"  Temperature: {temp}°C\n"
+                    f"  Conditions: {weather_desc}"
+        }))
+
+
+class ParanoiaCommand(Command):
+    name = "PARANOIA"
+    aliases = ["FEAR", "TENSION"]
+    description = "Show current station paranoia level."
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+        paranoia = game_state.paranoia_level
+
+        # Determine severity
+        if paranoia >= 80:
+            severity = "CRITICAL - Station on edge of collapse"
+            indicator = "████████████████████"
+        elif paranoia >= 60:
+            severity = "HIGH - Crew is extremely tense"
+            indicator = "████████████████░░░░"
+        elif paranoia >= 40:
+            severity = "ELEVATED - Growing distrust"
+            indicator = "████████████░░░░░░░░"
+        elif paranoia >= 20:
+            severity = "MODERATE - Some unease"
+            indicator = "████████░░░░░░░░░░░░"
+        else:
+            severity = "LOW - Relative calm"
+            indicator = "████░░░░░░░░░░░░░░░░"
+
+        # Check alert status
+        alert_msg = ""
+        if hasattr(game_state, 'alert_system') and game_state.alert_system.is_active:
+            remaining = game_state.alert_system.turns_remaining
+            alert_msg = f"\n  ⚠️  STATION ALERT ACTIVE ({remaining} turns remaining)"
+
+        event_bus.emit(GameEvent(EventType.MESSAGE, {
+            "text": f"--- PARANOIA STATUS ---\n"
+                    f"  Level: {paranoia}/100\n"
+                    f"  [{indicator}]\n"
+                    f"  Status: {severity}{alert_msg}"
+        }))
+
+
+class SkillsCommand(Command):
+    name = "SKILLS"
+    aliases = ["XP", "ABILITIES"]
+    description = "Show player skills and progression."
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+        player = game_state.player
+
+        # Get progression system info
+        stealth_level = 0
+        stealth_xp = 0
+        next_threshold = 100
+
+        if hasattr(game_state, 'progression_system'):
+            progress = game_state.progression_system.get_stealth_progress(player)
+            stealth_level = progress.get('level', 0)
+            stealth_xp = progress.get('xp', 0)
+            next_threshold = progress.get('next_level_xp', 100)
+        else:
+            # Check player attributes directly
+            stealth_xp = getattr(player, 'stealth_xp', 0)
+            stealth_level = getattr(player, 'stealth_level', 0)
+
+        # Calculate progress bar
+        if stealth_level < 4 and next_threshold > 0:
+            prev_threshold = [0, 100, 300, 600, 1000][stealth_level]
+            progress_pct = min(100, int((stealth_xp - prev_threshold) / (next_threshold - prev_threshold) * 100))
+            filled = progress_pct // 5
+            progress_bar = "█" * filled + "░" * (20 - filled)
+        else:
+            progress_bar = "████████████████████"
+            progress_pct = 100
+
+        # Level benefits
+        benefits = []
+        if stealth_level >= 1:
+            benefits.append("-1 base noise")
+        if stealth_level >= 2:
+            benefits.append("+1 stealth pool")
+        if stealth_level >= 3:
+            benefits.append("-1 base noise (cumulative)")
+        if stealth_level >= 4:
+            benefits.append("+1 stealth pool, Silent Takedown")
+
+        benefits_str = ", ".join(benefits) if benefits else "None yet"
+
+        # Get player attributes
+        attrs = []
+        for attr_name in ['PROWESS', 'RESOLVE', 'LOGIC', 'INFLUENCE']:
+            val = player.attributes.get(getattr(Attribute, attr_name, None), 0)
+            attrs.append(f"{attr_name}: {val}")
+
+        event_bus.emit(GameEvent(EventType.MESSAGE, {
+            "text": f"--- PLAYER SKILLS ---\n"
+                    f"  Stealth Level: {stealth_level}/4\n"
+                    f"  Stealth XP: {stealth_xp} (next: {next_threshold})\n"
+                    f"  [{progress_bar}] {progress_pct}%\n"
+                    f"  Bonuses: {benefits_str}\n"
+                    f"\n  Attributes: {', '.join(attrs)}"
+        }))
+
+
+class MapCommand(Command):
+    name = "MAP"
+    aliases = ["ROOMS", "LAYOUT"]
+    description = "Show station map overview with room status."
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+        station_map = game_state.station_map
+        player_room = station_map.get_room_name(*game_state.player.location)
+
+        # Get all rooms and their status
+        room_info = []
+        for room_name, room_data in station_map.rooms.items():
+            # Count crew in room
+            crew_in_room = [c for c in game_state.crew if c.is_alive and
+                           station_map.get_room_name(*c.location) == room_name]
+            crew_count = len(crew_in_room)
+
+            # Check room state
+            state_flags = []
+            if hasattr(game_state, 'room_states'):
+                rsm = game_state.room_states
+                # RoomStateManager uses has_state() method
+                if hasattr(rsm, 'has_state'):
+                    from systems.room_state import RoomState
+                    if rsm.has_state(room_name, RoomState.DARK):
+                        state_flags.append("DARK")
+                    if rsm.has_state(room_name, RoomState.FROZEN):
+                        state_flags.append("FROZEN")
+                    if rsm.has_state(room_name, RoomState.BARRICADED):
+                        state_flags.append("BARRICADED")
+
+            # Mark player location
+            marker = ">> " if room_name == player_room else "   "
+            state_str = f" [{', '.join(state_flags)}]" if state_flags else ""
+            crew_str = f" ({crew_count} crew)" if crew_count > 0 else ""
+
+            room_info.append(f"{marker}{room_name}{crew_str}{state_str}")
+
+        event_bus.emit(GameEvent(EventType.MESSAGE, {
+            "text": f"--- STATION MAP ---\n" + "\n".join(room_info)
+        }))
+
+
+class MissionsCommand(Command):
+    name = "MISSIONS"
+    aliases = ["OBJECTIVES", "GOALS"]
+    description = "Show current missions and objectives."
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+
+        # Initialize mission system if needed
+        if not hasattr(game_state, 'mission_system'):
+            from systems.missions import MissionSystem
+            game_state.mission_system = MissionSystem(game_state)
+
+        summary = game_state.mission_system.get_mission_summary()
+        event_bus.emit(GameEvent(EventType.MESSAGE, {"text": summary}))
+
+
+class DashboardCommand(Command):
+    name = "DASHBOARD"
+    aliases = ["DASH", "OVERVIEW"]
+    description = "Show unified game state overview."
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+        player = game_state.player
+        station_map = game_state.station_map
+        player_room = station_map.get_room_name(*player.location)
+
+        # Time info
+        turn = game_state.turn
+        start_hour = getattr(game_state.time_system, 'start_hour', 19)
+        current_hour = (start_hour + turn - 1) % 24
+
+        # Paranoia
+        paranoia = game_state.paranoia_level
+        if paranoia >= 60:
+            paranoia_desc = "HIGH"
+        elif paranoia >= 30:
+            paranoia_desc = "MODERATE"
+        else:
+            paranoia_desc = "LOW"
+
+        # Crew in current room
+        crew_here = [c for c in game_state.crew if c.is_alive and c != player and
+                     station_map.get_room_name(*c.location) == player_room]
+        crew_list = ", ".join([c.name for c in crew_here]) if crew_here else "None"
+
+        # Inventory summary
+        inv_count = len(player.inventory)
+        weapons = [i for i in player.inventory if getattr(i, 'category', '') == 'weapon']
+        weapon_str = weapons[0].name if weapons else "None"
+
+        # Alert status
+        alert_str = ""
+        if hasattr(game_state, 'alert_system') and game_state.alert_system.is_active:
+            alert_str = f"\n  ⚠️  ALERT: {game_state.alert_system.turns_remaining} turns"
+
+        # Living crew count
+        alive_count = len([c for c in game_state.crew if c.is_alive])
+
+        # Build dashboard
+        event_bus.emit(GameEvent(EventType.MESSAGE, {
+            "text": f"╔══════════════════════════════════════╗\n"
+                    f"║          STATION DASHBOARD           ║\n"
+                    f"╠══════════════════════════════════════╣\n"
+                    f"║  Turn: {turn:3}    Time: {current_hour:02d}:00           ║\n"
+                    f"║  Location: {player_room:<20}     ║\n"
+                    f"║  Paranoia: {paranoia_desc:<10} ({paranoia}/100)    ║{alert_str}\n"
+                    f"╠══════════════════════════════════════╣\n"
+                    f"║  Crew Alive: {alive_count}/12                    ║\n"
+                    f"║  Nearby: {crew_list:<22}     ║\n"
+                    f"╠══════════════════════════════════════╣\n"
+                    f"║  Items: {inv_count}  Weapon: {weapon_str:<15}  ║\n"
+                    f"╚══════════════════════════════════════╝"
+        }))
+
+
 class CommandDispatcher:
     """Manages command registration and dispatching."""
 
@@ -1796,6 +2100,14 @@ class CommandDispatcher:
         self.register(ThermalCommand())
         self.register(SettingsCommand())
         self.register(DeployCommand())
+        # Quick-win commands for better UX
+        self.register(HistoryCommand())
+        self.register(TimeCommand())
+        self.register(ParanoiaCommand())
+        self.register(SkillsCommand())
+        self.register(MapCommand())
+        self.register(DashboardCommand())
+        self.register(MissionsCommand())
 
     def register(self, command: Command):
         """Register a command and its aliases."""
