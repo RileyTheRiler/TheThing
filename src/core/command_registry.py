@@ -231,7 +231,41 @@ COMMAND_REGISTRY: List[CommandMetadata] = [
         description="Craft an item.",
         category="CRAFTING",
         usage="CRAFT <recipe>",
-        help_text="Combine items to create a new item."
+        help_text="Combine items to create a new item. Use CRAFT LIST to see available recipes."
+    ),
+    CommandMetadata(
+        name="RECIPES",
+        aliases=["CRAFTLIST"],
+        description="List crafting recipes.",
+        category="CRAFTING",
+        usage="RECIPES",
+        help_text="Show all available crafting recipes and their required ingredients."
+    ),
+
+    # ESCAPE & ENDINGS
+    CommandMetadata(
+        name="REPAIR",
+        aliases=["FIX"],
+        description="Repair equipment.",
+        category="ESCAPE",
+        usage="REPAIR <target>",
+        help_text="Attempt to repair damaged equipment (helicopter, radio, generator). Requires tools and repair skill."
+    ),
+    CommandMetadata(
+        name="FLY",
+        aliases=["PILOT", "ESCAPE"],
+        description="Pilot the helicopter.",
+        category="ESCAPE",
+        usage="FLY",
+        help_text="Attempt to pilot the helicopter and escape. Helicopter must be repaired and you must be at the helipad."
+    ),
+    CommandMetadata(
+        name="RADIO",
+        aliases=["SOS", "TRANSMIT"],
+        description="Use the radio.",
+        category="ESCAPE",
+        usage="RADIO <message>",
+        help_text="Send a distress signal via radio. Radio must be functional. Rescue arrives in 20 turns."
     ),
 
     # SYSTEM

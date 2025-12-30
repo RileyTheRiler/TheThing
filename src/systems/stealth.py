@@ -200,8 +200,8 @@ class StealthSystem:
         # 4. Resolution
         res = ResolutionSystem()
         
-        subject_result = res.roll_check(subject_pool, rng)
-        observer_result = res.roll_check(observer_pool, rng)
+        subject_result = ResolutionSystem.roll_check(subject_pool, rng)
+        observer_result = ResolutionSystem.roll_check(observer_pool, rng)
         
         player_evaded = subject_result['success_count'] > observer_result['success_count']
         current_turn = event.payload.get("turn") or getattr(game_state, "turn", None)
@@ -279,10 +279,10 @@ class StealthSystem:
         ctx = self._prepare_detection_context(observer, subject, game_state, noise_level)
 
         res = ResolutionSystem()
-        subject_result = res.roll_check(ctx["subject_pool"], game_state.rng)
+        subject_result = ResolutionSystem.roll_check(ctx["subject_pool"], game_state.rng)
 
         # Visual detection
-        observer_result = res.roll_check(ctx["observer_pool"], game_state.rng)
+        observer_result = ResolutionSystem.roll_check(ctx["observer_pool"], game_state.rng)
         observer_score = observer_result['success_count']
         if ctx["env_effects"]:
             observer_score = max(0, observer_score + ctx["env_effects"].stealth_detection_modifier)
@@ -309,6 +309,8 @@ class StealthSystem:
                 subject_thermal = 2  # Default human thermal
 
             thermal_pool = max(1, thermal_pool)
+            thermal_result = ResolutionSystem.roll_check(thermal_pool, game_state.rng)
+            thermal_detected = thermal_result['success_count'] >= subject_result['success_count']
             thermal_result = res.roll_check(thermal_pool, game_state.rng)
             # Thermal detection is easier against higher thermal signatures
             thermal_threshold = max(0, subject_result['success_count'] - (subject_thermal - 2))
@@ -371,6 +373,20 @@ class StealthSystem:
         hiding_spot, cover_bonus, blocks_los = self._hiding_spot_modifiers(getattr(game_state, "station_map", None), subject)
         if cover_bonus and getattr(subject, "stealth_posture", StealthPosture.STANDING) == StealthPosture.HIDING:
             subject_pool += cover_bonus
+            observer_result_penalty = cover_bonus + (1 if blocks_los else 0)
+        else:
+            observer_result_penalty = 0
+
+        # Return context dict for use by detection methods
+        return {
+            "subject_pool": subject_pool,
+            "observer_pool": observer_pool,
+            "is_dark": is_dark,
+            "is_frozen": is_frozen,
+            "env_effects": env_effects,
+            "observer_result_penalty": observer_result_penalty,
+            "room_name": room_name
+        }
 
         # Noise acts as penalty to observer pool as well (harder to spot in loud environments)
         noise_penalty = noise_level // 3

@@ -43,28 +43,6 @@ from ui.command_parser import CommandParser
 from ui.message_reporter import MessageReporter
 from audio.audio_manager import AudioManager, Sound
 
-    @classmethod
-    def from_dict(cls, data):
-        skill = None
-        if data.get("weapon_skill"):
-             try:
-                 skill = Skill[data["weapon_skill"]]
-             except KeyError:
-                 skill = None
-                 
-        item = cls(
-            name=data["name"],
-            description=data["description"],
-            is_evidence=data["is_evidence"],
-            weapon_skill=skill,
-            damage=data["damage"],
-            uses=data.get("uses", -1),
-            effect=data.get("effect"),
-            effect_value=data.get("effect_value", 0),
-            category=data.get("category", "misc")
-        )
-        item.history = data.get("history", [])
-        return item
 
 class CrewMember:
     def __init__(self, name, role, behavior_type, attributes=None, skills=None, schedule=None, invariants=None):
@@ -643,51 +621,23 @@ class GameState:
             difficulty = Difficulty.NORMAL
 
         game = cls(difficulty=difficulty)
-        
+
         game.power_on = data.get("power_on", True)
         game.paranoia_level = data.get("paranoia_level", 0)
-        
+
         mode_val = data.get("mode", GameMode.INVESTIGATIVE.value)
         try:
             game.mode = GameMode(mode_val)
         except ValueError:
             game.mode = GameMode.INVESTIGATIVE
 
-# --- Game Loop ---
-def main():
-    """Main game loop - can be called from launcher or run directly"""
-    game = GameState(seed=None)
-    
-    # Agent 5 Boot Sequence
-    game.crt.boot_sequence()
-    game.audio.ambient_loop(Sound.THRUM)
-
-    # PALETTE UX: Situation Report (One-time)
-    game.crt.output("\n--- SITUATION REPORT ---")
-    game.crt.output("MISSION: Survive the winter. Trust no one.")
-    game.crt.output("OBJECTIVE: Identify the infected. Do not let them escape.")
-    game.crt.output("HINT: Type 'HELP' for a list of commands. Start by looking around.")
-    game.crt.output("------------------------\n")
-
-    while True:
-        # Update CRT glitch based on paranoia
-        game.crt.set_glitch_level(game.paranoia_level)
-        
-        player_room = game.station_map.get_room_name(*game.player.location)
-        weather_status = game.weather.get_status()
-        room_icons = game.room_states.get_status_icons(player_room)
         game.helicopter_status = data.get("helicopter_status", "BROKEN")
         game.rescue_signal_active = data.get("rescue_signal_active", False)
         game.rescue_turns_remaining = data.get("rescue_turns_remaining")
 
         if "rng" in data:
             game.rng.from_dict(data["rng"])
-        
-        # Fix: TimeSystem lacks 'hour' property, calculate manually (Start 08:00)
-        current_hour = (game.time_system.turn_count + 8) % 24
-        game.crt.output(f"\n[TURN {game.turn}] MODE: {game.mode.value} | TIME: {current_hour:02}:00 | TEMP: {game.temperature:.1f}C | POWER: {'ON' if game.power_on else 'OFF'}")
-        game.crt.output(f"[LOC: {player_room}] {room_icons}")
-        game.crt.output(f"[{weather_status}]")
+
         if "time_system" in data:
             game.time_system = TimeSystem.from_dict(data["time_system"])
         else:
@@ -703,19 +653,63 @@ def main():
                 member = CrewMember.from_dict(m_data)
                 if member:
                     game.crew.append(member)
-        
+
         game.player = next((m for m in game.crew if m.name == "MacReady"), None)
         if not game.player and game.crew:
             game.player = game.crew[0]
 
         game.journal = data.get("journal", [])
-        
+
+        if hasattr(game, "trust_system") and game.trust_system:
+            game.trust_system.cleanup()
+        game.trust_system = TrustMatrix(game.crew, thresholds=game.social_thresholds)
+        trust_data = data.get("trust")
+        if trust_data and isinstance(trust_data, dict):
+            game.trust_system.matrix.update(trust_data)
+
+        game.renderer.map = game.station_map
+        game.parser.set_known_names([m.name for m in game.crew])
+        game.room_states = RoomStateManager(list(game.station_map.rooms.keys()))
+        game.crafting = CraftingSystem.from_dict(data.get("crafting"), game)
+
+        return game
+
+# --- Game Loop ---
+def main():
+    """Main game loop - can be called from launcher or run directly"""
+    game = GameState(seed=None)
+
+    # Agent 5 Boot Sequence
+    game.crt.boot_sequence()
+    game.audio.ambient_loop(Sound.THRUM)
+
+    # PALETTE UX: Situation Report (One-time)
+    game.crt.output("\n--- SITUATION REPORT ---")
+    game.crt.output("MISSION: Survive the winter. Trust no one.")
+    game.crt.output("OBJECTIVE: Identify the infected. Do not let them escape.")
+    game.crt.output("HINT: Type 'HELP' for a list of commands. Start by looking around.")
+    game.crt.output("------------------------\n")
+
+    while True:
+        # Update CRT glitch based on paranoia
+        game.crt.set_glitch_level(game.paranoia_level)
+
+        player_room = game.station_map.get_room_name(*game.player.location)
+        weather_status = game.weather.get_status()
+        room_icons = game.room_states.get_status_icons(player_room)
+
+        # Fix: TimeSystem lacks 'hour' property, calculate manually (Start 08:00)
+        current_hour = (game.time_system.turn_count + 8) % 24
+        game.crt.output(f"\n[TURN {game.turn}] MODE: {game.mode.value} | TIME: {current_hour:02}:00 | TEMP: {game.temperature:.1f}C | POWER: {'ON' if game.power_on else 'OFF'}")
+        game.crt.output(f"[LOC: {player_room}] {room_icons}")
+        game.crt.output(f"[{weather_status}]")
+
         try:
             prompt = game.crt.prompt("CMD")
             user_input = input(prompt).strip()
             if not user_input:
                 continue
-            
+
             # Use CommandParser
             parsed = game.parser.parse(user_input)
             if not parsed:
@@ -732,19 +726,13 @@ def main():
             if target: cmd.append(target)
             if parsed.get('args'):
                 cmd.extend(parsed['args'])
-                
+
             game.audio.trigger_event('success')
         except EOFError:
             break
-            
+
         action = cmd[0]
-        if hasattr(game, "trust_system") and game.trust_system:
-            game.trust_system.cleanup()
-        game.trust_system = TrustMatrix(game.crew, thresholds=game.social_thresholds)
-        trust_data = data.get("trust")
-        if trust_data and isinstance(trust_data, dict):
-            game.trust_system.matrix.update(trust_data)
-        
+
         if action == "EXIT":
             break
         elif action == "HELP":
@@ -767,7 +755,6 @@ def main():
                 avg_trust = game.trust_system.get_average_trust(m.name)
                 msg += f" | Trust: {avg_trust:.1f}"
                 print(msg)
-        # ... REST OF COMMANDS SAME AS BEFORE ...
         elif action == "TRUST":
             if len(cmd) < 2:
                 print("Usage: TRUST <NAME>")
@@ -797,22 +784,40 @@ def main():
         # --- FORENSIC COMMANDS ---
         elif action == "HEAT":
             print(game.forensics.blood_test.heat_wire())
-            
         elif action == "TEST":
             if len(cmd) < 2:
                 print("Usage: TEST <NAME>")
             else:
                 target_name = cmd[1]
-                # Check if we have wire? For now assume yes or check inventory later
                 target = next((m for m in game.crew if m.name.upper() == target_name.upper()), None)
-                if target:
-                    if game.station_map.get_room_name(*target.location) == player_room:
-                        print(game.forensics.blood_test.start_test(target.name))
-                    else:
-                        print(f"{target.name} is not here.")
-                else:
+                if not target:
                     print(f"Unknown target: {target_name}")
+                elif game.station_map.get_room_name(*target.location) != player_room:
+                    print(f"{target.name} is not here.")
+                else:
+                    # Check for required items
+                    scalpel = next((i for i in game.player.inventory if "SCALPEL" in i.name.upper()), None)
+                    wire = next((i for i in game.player.inventory if "WIRE" in i.name.upper()), None)
 
+                    if not scalpel:
+                        print("You need a SCALPEL to draw a blood sample.")
+                    elif not wire:
+                        print("You need COPPER WIRE for the test.")
+                    else:
+                        print(f"Drawing blood from {target.name}...")
+                        print(game.blood_test_sim.start_test(target.name))
+                        # Rapid heating and application
+                        print(game.blood_test_sim.heat_wire())
+                        print(game.blood_test_sim.heat_wire())
+                        print(game.blood_test_sim.heat_wire())
+                        print(game.blood_test_sim.heat_wire())
+
+                        result = game.blood_test_sim.apply_wire(target.is_infected)
+                        print(result)
+
+                        if target.is_infected:
+                            # Reveal infection!
+                            game.missionary_system.trigger_reveal(target, "Blood Test Exposure")
         elif action == "APPLY":
             if not game.forensics.blood_test.active:
                 print("No test in progress.")
@@ -822,57 +827,8 @@ def main():
                 subject = next((m for m in game.crew if m.name == sample_name), None)
                 if subject:
                     print(game.forensics.blood_test.apply_wire(subject.is_infected))
-                    
         elif action == "CANCEL":
-             print(game.forensics.blood_test.cancel())
-             
-        elif action == "TAG":
-            if len(cmd) < 3:
-                print("Usage: TAG <NAME> <CATEGORY> <NOTE...>")
-            else:
-                target_name = cmd[1]
-                category = cmd[2]
-                note = " ".join(cmd[3:])
-                target = next((m for m in game.crew if m.name.upper() == target_name.upper()), None)
-                if target:
-                    game.forensic_db.add_tag(target.name, category, note, game.turn)
-                    print(f"Logged forensic tag for {target.name}.")
-                else:
-                    print(f"Unknown target: {target_name}")
-                    
-        elif action == "LOG":
-            if len(cmd) < 2:
-                print("Usage: LOG <ITEM NAME>")
-            else:
-                item_name = " ".join(cmd[1:])
-                print(game.evidence_log.get_history(item_name))
-
-        elif action == "DOSSIER":
-            if len(cmd) < 2:
-                print("Usage: DOSSIER <NAME>")
-            else:
-                target_name = cmd[1]
-                print(game.forensic_db.get_report(target_name))
-        # -------------------------
-
-        elif action == "TALK":
-             for m in game.crew:
-                room = game.station_map.get_room_name(*m.location)
-                if room == player_room: # Only talk to people in the same room
-                    print(f"{m.name}: {m.get_dialogue(game)}")
-        elif action == "LOOK":
-            if len(cmd) < 2:
-                print("Usage: LOOK <NAME>")
-            else:
-                target_name = cmd[1]
-                target = next((m for m in game.crew if m.name.upper() == target_name), None)
-                if target:
-                    if game.station_map.get_room_name(*target.location) == player_room:
-                        print(target.get_description(game))
-                    else:
-                        print(f"There is no {target_name} here.")
-                else:
-                    print(f"Unknown crew member: {target_name}")
+            print(game.forensics.blood_test.cancel())
         elif action == "TAG":
             if len(cmd) < 3:
                 print("Usage: TAG <NAME> <CATEGORY> <NOTE...>")
@@ -889,21 +845,36 @@ def main():
                     print(f"Logged forensic tag for {target.name} [{category}].")
                 else:
                     print(f"Unknown target: {target_name}")
-
         elif action == "LOG":
             if len(cmd) < 2:
                 print("Usage: LOG <ITEM NAME>")
             else:
                 item_name = " ".join(cmd[1:])
                 print(game.evidence_log.get_history(item_name))
-
         elif action == "DOSSIER":
             if len(cmd) < 2:
                 print("Usage: DOSSIER <NAME>")
             else:
                 target_name = cmd[1]
                 print(game.forensic_db.get_report(target_name))
-
+        elif action == "TALK":
+            for m in game.crew:
+                room = game.station_map.get_room_name(*m.location)
+                if room == player_room:
+                    print(f"{m.name}: {m.get_dialogue(game)}")
+        elif action == "LOOK":
+            if len(cmd) < 2:
+                print("Usage: LOOK <NAME>")
+            else:
+                target_name = cmd[1]
+                target = next((m for m in game.crew if m.name.upper() == target_name), None)
+                if target:
+                    if game.station_map.get_room_name(*target.location) == player_room:
+                        print(target.get_description(game))
+                    else:
+                        print(f"There is no {target_name} here.")
+                else:
+                    print(f"Unknown crew member: {target_name}")
         elif action == "JOURNAL":
             print("\n--- MACREADY'S JOURNAL ---")
             if not game.journal:
@@ -977,18 +948,18 @@ def main():
                     w_name = weapon.name if weapon else "Fists"
                     w_skill = weapon.weapon_skill if weapon else Skill.MELEE
                     w_dmg = weapon.damage if weapon else 0
-                    
+
                     print(f"Attacking {target.name} with {w_name}...")
                     att_attr = Skill.get_attribute(w_skill)
                     att_res = game.player.roll_check(att_attr, w_skill, game.rng, game.resolution)
-                    
+
                     def_skill = Skill.MELEE
-                    def_attr = Attribute.PROWESS 
+                    def_attr = Attribute.PROWESS
 
                     def_res = target.roll_check(def_attr, def_skill, game.rng, game.resolution)
-                    
+
                     print(f"Attack: {att_res['success_count']} vs Defense: {def_res['success_count']}")
-                    
+
                     if att_res['success_count'] > def_res['success_count']:
                         net_hits = att_res['success_count'] - def_res['success_count']
                         total_dmg = w_dmg + net_hits
@@ -1008,50 +979,14 @@ def main():
                 elif direction in ["SOUTH", "S"]: dy = 1
                 elif direction in ["EAST", "E"]: dx = 1
                 elif direction in ["WEST", "W"]: dx = -1
-                
+
                 if game.player.move(dx, dy, game.station_map):
                     print(f"You moved {direction}.")
-                    game.advance_turn() 
+                    game.advance_turn()
                 else:
                     print("Blocked.")
         elif action == "BARRICADE":
             result = game.room_states.barricade_room(player_room)
             print(result)
-        elif action == "TEST":
-            # Simplified Heated Wire Test flow
-            if len(cmd) < 2:
-                print("Usage: TEST <NAME>")
-            else:
-                target_name = cmd[1]
-                target = next((m for m in game.crew if m.name.upper() == target_name.upper()), None)
-                if not target:
-                    print(f"Unknown target: {target_name}")
-                elif game.station_map.get_room_name(*target.location) != player_room:
-                    print(f"{target.name} is not here.")
-                else:
-                    # Check for required items
-                    scalpel = next((i for i in game.player.inventory if "SCALPEL" in i.name.upper()), None)
-                    wire = next((i for i in game.player.inventory if "WIRE" in i.name.upper()), None)
-                    
-                    if not scalpel:
-                        print("You need a SCALPEL to draw a blood sample.")
-                    elif not wire:
-                        print("You need COPPER WIRE for the test.")
-                    else:
-                        print(f"Drawing blood from {target.name}...")
-                        print(game.blood_test_sim.start_test(target.name))
-                        # Rapid heating and application
-                        print(game.blood_test_sim.heat_wire())
-                        print(game.blood_test_sim.heat_wire())
-                        print(game.blood_test_sim.heat_wire())
-                        print(game.blood_test_sim.heat_wire())
-                        
-                        result = game.blood_test_sim.apply_wire(target.is_infected)
-                        print(result)
-                        
-                        if target.is_infected:
-                            # Reveal infection!
-                            game.missionary_system.trigger_reveal(target, "Blood Test Exposure")
         else:
             print("Unknown command. Try: MOVE, LOOK, GET, DROP, USE, INV, TAG, TEST, HEAT, APPLY, ATTACK, STATUS, SAVE, LOAD, EXIT")
-        return game
