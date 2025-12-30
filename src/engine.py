@@ -25,7 +25,7 @@ from systems.crafting import CraftingSystem
 from systems.endgame import EndgameSystem
 from systems.forensics import BiologicalSlipGenerator, BloodTestSim, ForensicDatabase, EvidenceLog, ForensicsSystem
 from systems.missionary import MissionarySystem
-from systems.persistence import SaveManager
+from systems.persistence import SaveManager, CURRENT_SAVE_VERSION
 from systems.psychology import PsychologySystem
 from systems.random_events import RandomEventSystem
 from systems.room_state import RoomState, RoomStateManager
@@ -161,6 +161,23 @@ class GameState:
         if not hasattr(self, "social_thresholds"):
             return
 
+        if previous_value is None:
+            self._paranoia_bucket = bucket_for_thresholds(clamped, self.social_thresholds.paranoia_thresholds)
+            return
+
+        new_bucket = bucket_for_thresholds(clamped, self.social_thresholds.paranoia_thresholds)
+        previous_bucket = getattr(self, "_paranoia_bucket", new_bucket)
+        if new_bucket != previous_bucket:
+            self._paranoia_bucket = new_bucket
+            direction = "UP" if clamped > previous_value else "DOWN"
+            event_bus.emit(GameEvent(EventType.PARANOIA_THRESHOLD_CROSSED, {
+                "value": clamped,
+                "previous_value": previous_value,
+                "bucket": bucket_label(new_bucket),
+                "thresholds": list(self.social_thresholds.paranoia_thresholds),
+                "direction": direction,
+                "threshold": self.social_thresholds.paranoia_thresholds[new_bucket-1] if direction == "UP" else self.social_thresholds.paranoia_thresholds[new_bucket]
+            }))
         if not hasattr(self, "schedule"):
             return
 
@@ -725,6 +742,9 @@ class GameState:
             self.alert_status = "alert" if self.alert_system.is_active else "calm"
             self.alert_turns_remaining = self.alert_system.turns_remaining
         return {
+            "_save_version": CURRENT_SAVE_VERSION,
+            "save_version": CURRENT_SAVE_VERSION,
+            "turn": self.turn,
             "difficulty": self.difficulty.value,
             "power_on": self.power_on,
             "paranoia_level": self.paranoia_level,
@@ -743,6 +763,7 @@ class GameState:
             "time_system": self.time_system.to_dict(),
             "station_map": self.station_map.to_dict(),
             "crew": [m.to_dict() for m in self.crew],
+            "player_location": self.player.location if self.player else (0, 0),
             "journal": self.journal,
             "trust": self.trust_system.matrix if hasattr(self, "trust_system") else {},
             "crafting": self.crafting.to_dict() if hasattr(self.crafting, "to_dict") else {},
@@ -756,6 +777,8 @@ class GameState:
         """Deserialize game state from dictionary with defensive defaults and validation."""
         if not data or not isinstance(data, dict):
             return None
+
+        save_version = data.get("save_version", data.get("_save_version", 0))
 
         difficulty_value = data.get("difficulty", Difficulty.NORMAL.value)
         try:
@@ -781,6 +804,7 @@ class GameState:
         game.overland_escape_turns = data.get("overland_escape_turns")
         game.rescue_signal_active = data.get("rescue_signal_active", False)
         game.rescue_turns_remaining = data.get("rescue_turns_remaining")
+        game.turn = data.get("turn", getattr(game, "turn", 1))
         game.rescue_eta_turns = data.get("rescue_eta_turns", game.rescue_eta_turns)
         game.alert_status = data.get("alert_status", "calm")
         game.alert_status = data.get("alert_status", "CALM")
@@ -796,18 +820,33 @@ class GameState:
 
         if "station_map" in data:
             game.station_map = StationMap.from_dict(data["station_map"])
+        else:
+            game.station_map = StationMap()
 
         crew_data = data.get("crew", [])
         if crew_data:
             game.crew = []
             for m_data in crew_data:
-                member = CrewMember.from_dict(m_data)
+                try:
+                    member = CrewMember.from_dict(m_data)
+                except Exception:
+                    name = m_data.get("name", "Unknown") if isinstance(m_data, dict) else "Unknown"
+                    member = CrewMember(name, m_data.get("role", "None") if isinstance(m_data, dict) else "None", m_data.get("behavior_type", "Neutral") if isinstance(m_data, dict) else "Neutral")
                 if member:
                     game.crew.append(member)
+        else:
+            game.crew = []
 
         game.player = next((m for m in game.crew if m.name == "MacReady"), None)
-        if not game.player and game.crew:
-            game.player = game.crew[0]
+        if not game.player:
+            fallback_player = CrewMember("MacReady", "Pilot", "Neutral")
+            game.crew.insert(0, fallback_player)
+            game.player = fallback_player
+
+        if "player_location" in data and game.player:
+            loc = data.get("player_location")
+            if isinstance(loc, (list, tuple)) and len(loc) == 2:
+                game.player.location = (loc[0], loc[1])
 
         game.journal = data.get("journal", [])
 
