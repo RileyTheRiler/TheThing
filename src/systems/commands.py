@@ -1706,7 +1706,7 @@ class SabotageSecurityCommand(Command):
             return
 
         # Attempt sabotage
-        success, message = security_sys.sabotage_device(device_pos, game_state)
+        success, message = security_sys.sabotage_device(device_pos, game_state, saboteur=game_state.player)
 
         if success:
             event_bus.emit(GameEvent(EventType.MESSAGE, {"text": message}))

@@ -16,7 +16,7 @@ from entities.station_map import StationMap
 
 from systems.ai import AISystem
 from systems.alert import AlertSystem
-from systems.security import SecuritySystem
+from systems.security import SecuritySystem, SecurityLog
 from systems.architect import RandomnessEngine, GameMode, TimeSystem, Difficulty, DifficultySettings, Verbosity
 from systems.architect import RandomnessEngine, GameMode, TimeSystem, Difficulty, DifficultySettings
 from systems.commands import CommandDispatcher, GameContext
@@ -277,6 +277,7 @@ class GameState:
         self.blood_bank_destroyed = False
         self.paranoia_level = self.difficulty_settings["starting_paranoia"]
         self.mode = GameMode.INVESTIGATIVE
+        self.security_log = SecurityLog()
         # self.verbosity = Verbosity.STANDARD
 
         # 5. Core Simulation Systems
@@ -605,7 +606,8 @@ class GameState:
             "trust": self.trust_system.matrix if hasattr(self, "trust_system") else {},
             "crafting": self.crafting.to_dict() if hasattr(self.crafting, "to_dict") else {},
             "alert_system": self.alert_system.to_dict() if hasattr(self, "alert_system") else {},
-            "security_system": self.security_system.to_dict() if hasattr(self, "security_system") else {}
+            "security_system": self.security_system.to_dict() if hasattr(self, "security_system") else {},
+            "security_log": self.security_log.to_dict() if hasattr(self, "security_log") else {}
         }
 
     @classmethod
@@ -671,6 +673,19 @@ class GameState:
         game.parser.set_known_names([m.name for m in game.crew])
         game.room_states = RoomStateManager(list(game.station_map.rooms.keys()))
         game.crafting = CraftingSystem.from_dict(data.get("crafting"), game)
+        game.security_log = SecurityLog.from_dict(data.get("security_log", {}))
+
+        # Rehydrate security system state
+        security_data = data.get("security_system")
+        if security_data:
+            if hasattr(game, "security_system") and game.security_system:
+                game.security_system = SecuritySystem.from_dict(
+                    security_data,
+                    game_state=game,
+                    existing_system=game.security_system
+                )
+            else:
+                game.security_system = SecuritySystem.from_dict(security_data, game_state=game)
 
         return game
 
