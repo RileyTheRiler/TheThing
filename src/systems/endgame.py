@@ -14,6 +14,7 @@ class EndgameSystem:
         self.design_registry = design_registry or DesignBriefRegistry()
         self.config = self.design_registry.get_brief("endings")
         self.states = self.config.get("states", {})
+        self.ending_definitions = {e.get("id"): e for e in self.config.get("endings", []) if e.get("id")}
         self.resolved = False
         
         # Subscribe to triggers
@@ -21,6 +22,7 @@ class EndgameSystem:
         event_bus.subscribe(EventType.CREW_DEATH, self.on_crew_death)
         event_bus.subscribe(EventType.HELICOPTER_REPAIRED, self.on_helicopter_repaired)
         event_bus.subscribe(EventType.SOS_EMITTED, self.on_sos_emitted)
+        event_bus.subscribe(EventType.SOS_SENT, self.on_rescue_arrival)
         event_bus.subscribe(EventType.ESCAPE_SUCCESS, self.on_escape_success)
 
     def cleanup(self):
@@ -28,6 +30,7 @@ class EndgameSystem:
         event_bus.unsubscribe(EventType.CREW_DEATH, self.on_crew_death)
         event_bus.unsubscribe(EventType.HELICOPTER_REPAIRED, self.on_helicopter_repaired)
         event_bus.unsubscribe(EventType.SOS_EMITTED, self.on_sos_emitted)
+        event_bus.unsubscribe(EventType.SOS_SENT, self.on_rescue_arrival)
         event_bus.unsubscribe(EventType.ESCAPE_SUCCESS, self.on_escape_success)
 
     def on_turn_advance(self, event: GameEvent):
@@ -40,6 +43,17 @@ class EndgameSystem:
             return
 
         self._check_escape_routes(game_state)
+        if getattr(game_state, "escape_route", None) == "overland" and getattr(game_state, "overland_escape_turns", 1) == 0:
+            self._resolve_ending("PYRRHIC_VICTORY", game_state, ending_id="pyrrhic_victory")
+            return
+
+        # Check for Rescue Arrival
+        if getattr(game_state, "rescue_signal_active", False) and getattr(game_state, "rescue_turns_remaining", None) is not None:
+            if game_state.rescue_turns_remaining <= 0:
+                self._resolve_ending("RESCUE", game_state, ending_id="radio_rescue")
+                return
+
+        # Periodic check for Extermination or Consumption
         self._check_population_endings(game_state)
 
     def on_crew_death(self, event: GameEvent):
@@ -55,6 +69,7 @@ class EndgameSystem:
         victim_name = event.payload.get("name")
         if victim_name == "MacReady":
             self._resolve_ending("DEATH", game_state, ending_id="death")
+            self._resolve_ending("DEATH", game_state, ending_id="macready_death")
             return
 
         self._check_population_endings(game_state)
@@ -74,10 +89,23 @@ class EndgameSystem:
         game_state = event.payload.get("game_state")
         if game_state:
             game_state.rescue_signal_active = True
-            game_state.rescue_turns_remaining = 20 # 20 turns until rescue
+            eta = getattr(game_state, "rescue_eta_turns", 20)
+            game_state.rescue_turns_remaining = eta  # 20 turns until rescue
             event_bus.emit(GameEvent(EventType.MESSAGE, {
-                "text": "SOS signal verified. Rescue team ETA: 20 hours."
+                "text": f"SOS signal verified. Rescue team ETA: {eta} hours."
             }))
+
+    def on_rescue_arrival(self, event: GameEvent):
+        """Triggered when the rescue team actually arrives."""
+        if self.resolved:
+            return
+
+        if not event.payload.get("arrived"):
+            return
+
+        game_state = event.payload.get("game_state")
+        if game_state:
+            self._resolve_ending("RESCUE", game_state, ending_id="radio_rescue")
 
     def on_escape_success(self, event: GameEvent):
         """Triggered when player successfully flies away."""
@@ -88,6 +116,23 @@ class EndgameSystem:
         if game_state:
             game_state.helicopter_status = "ESCAPED"
             self._resolve_escape(game_state)
+            # Check if player is infected?
+            if game_state.player.is_infected:
+                 # It's a win for the Thing, but technically an "Escape" ending structure
+                 # depending on how we want to flavor it. The config separates them?
+                 # Config has ESCAPE.
+                 pass
+            
+            route = event.payload.get("route") or getattr(game_state, "escape_route", None)
+            if route:
+                game_state.escape_route = route
+            game_state.helicopter_status = "ESCAPED"
+            ending_key = "ESCAPE"
+            ending_id = "helicopter_escape"
+            if route == "overland" or getattr(game_state, "escape_route", None) == "overland":
+                ending_key = "PYRRHIC_VICTORY" if not getattr(game_state, "power_on", True) else "ESCAPE"
+                ending_id = "pyrrhic_victory" if ending_key == "PYRRHIC_VICTORY" else "overland_escape"
+            self._resolve_ending(ending_key, game_state, ending_id=ending_id)
 
     def _check_population_endings(self, game_state):
         """Check for Sole Survivor, Extermination, or Consumption."""
@@ -146,12 +191,15 @@ class EndgameSystem:
     def _resolve_ending(self, ending_key: str, game_state, ending_id: Optional[str] = None):
         """Emit the ending report and mark as resolved."""
         state_data = self.states.get(ending_key, {})
+        ending_meta = self.ending_definitions.get(ending_id)
         
         payload = {
             "result": "win" if ending_key in ["ESCAPE", "RESCUE", "EXTERMINATION", "SOLE_SURVIVOR", "PYRRHIC"] else "loss",
+            "result": "win" if ending_key in ["ESCAPE", "RESCUE", "EXTERMINATION", "SOLE_SURVIVOR", "PYRRHIC_VICTORY"] else "loss",
             "ending_type": ending_key,
+            "ending_id": ending_id or ending_key.lower(),
             "name": state_data.get("name", ending_key),
-            "message": state_data.get("message", "Game Over"),
+            "message": (ending_meta.get("message") if ending_meta else None) or state_data.get("message", "Game Over"),
             "turn": getattr(game_state, "turn", None),
             "ending_id": ending_id or state_data.get("id") or ending_key.lower(),
         }

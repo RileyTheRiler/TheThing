@@ -1,6 +1,7 @@
 """StationMap entity class for The Thing game."""
 
-from typing import List, Dict
+from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple
 from entities.item import Item
 
 
@@ -44,6 +45,9 @@ class StationMap:
         # Designated hiding spots with metadata for stealth/combat interactions.
         # Each entry: (x, y): {"room": name, "cover_bonus": int, "blocks_los": bool, "label": str}
         self.hiding_spots = self._build_hiding_spots()
+        # Fixed security device placements for cameras and motion sensors
+        # Mirrors hiding_spots structure for quick lookup
+        self.security_cameras, self.motion_sensors = self._build_security_devices()
         # Lightweight vent graph for network traversal + entry/exit metadata
         self.vent_graph = self._build_vent_graph()
 
@@ -115,6 +119,53 @@ class StationMap:
         """Check if a position is within map bounds."""
         return 0 <= x < self.width and 0 <= y < self.height
 
+    def project_toward(self, start: Tuple[int, int], target: Tuple[int, int],
+                       min_distance: int = 3, max_distance: int = 5) -> Optional[Tuple[int, int]]:
+        """Project a straight-line path toward a target, clamped to a distance band.
+
+        Returns the furthest walkable tile between ``min_distance`` and ``max_distance``
+        away from ``start`` in the direction of ``target``. If no tile exists in that
+        band, the closest valid tile along the path is returned, or ``None`` if blocked.
+        """
+        if not start or not target:
+            return None
+
+        sx, sy = start
+        tx, ty = target
+        dx = tx - sx
+        dy = ty - sy
+
+        step_x = 0 if dx == 0 else (1 if dx > 0 else -1)
+        step_y = 0 if dy == 0 else (1 if dy > 0 else -1)
+
+        # No movement if the target is the same tile
+        if step_x == 0 and step_y == 0:
+            return None
+
+        path = []
+        x, y = sx, sy
+        for _ in range(max_distance):
+            x += step_x
+            y += step_y
+            if not self.is_walkable(x, y):
+                break
+            path.append((x, y))
+
+        if not path:
+            return None
+
+        if len(path) >= min_distance:
+            return path[min_distance - 1]
+        return path[-1]
+
+    def get_room_center(self, room_name: str) -> Optional[Tuple[int, int]]:
+        """Return the center coordinate of a named room, if known."""
+        bounds = self.rooms.get(room_name)
+        if not bounds:
+            return None
+        x1, y1, x2, y2 = bounds
+        return ((x1 + x2) // 2, (y1 + y2) // 2)
+
     def get_room_name(self, x, y):
         """Get the name of the room at the given coordinates."""
         # Fast O(1) lookup using precomputed grid map (see _build_room_lookup).
@@ -130,12 +181,27 @@ class StationMap:
         node = self.vent_graph.get((x, y))
         return bool(node and node.get("type") == "entry_exit")
 
+    def get_vent_node(self, x: int, y: int) -> Dict:
+        """Return vent graph metadata for a node or None if not a vent."""
+        return self.vent_graph.get((x, y))
+
     def get_vent_neighbors(self, x: int, y: int):
         """Return neighbor vent coordinates reachable from the given vent node."""
         node = self.vent_graph.get((x, y))
         if not node:
             return []
         return node.get("neighbors", [])
+
+    def get_vent_neighbors_with_rooms(self, x: int, y: int):
+        """Return neighbor vent coordinates with cached room metadata for sound spread."""
+        neighbors = []
+        for nx, ny in self.get_vent_neighbors(x, y):
+            node = self.get_vent_node(nx, ny)
+            neighbors.append({
+                "coord": (nx, ny),
+                "room": node.get("room") if node else self.get_room_name(nx, ny)
+            })
+        return neighbors
 
     def get_vent_neighbor_in_direction(self, x: int, y: int, direction: str):
         """Return a neighbor coordinate that best matches a cardinal direction."""
@@ -179,6 +245,34 @@ class StationMap:
         """Get names of rooms adjacent to the current position."""
         current_room = self.get_room_name(x, y)
         return self.get_connections(current_room)
+
+    def get_walkable_neighbors(self, x: int, y: int, include_diagonal: bool = False) -> List[Tuple[int, int]]:
+        """Return walkable neighbor tiles for a coordinate."""
+        deltas = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+        if include_diagonal:
+            deltas.extend([(-1, -1), (-1, 1), (1, -1), (1, 1)])
+        neighbors = []
+        for dx, dy in deltas:
+            nx, ny = x + dx, y + dy
+            if self.is_walkable(nx, ny):
+                neighbors.append((nx, ny))
+        return neighbors
+
+    def get_throw_landing_tiles(self, start: Tuple[int, int], direction: Tuple[int, int],
+                                min_distance: int = 3, max_distance: int = 5) -> List[Tuple[int, int]]:
+        """Return candidate landing tiles for a thrown item along a direction."""
+        if not direction or direction == (0, 0):
+            return []
+        dx, dy = direction
+        x, y = start
+        candidates: List[Tuple[int, int]] = []
+        for step in range(1, max_distance + 1):
+            nx, ny = x + (dx * step), y + (dy * step)
+            if not self.is_walkable(nx, ny):
+                break
+            if step >= min_distance:
+                candidates.append((nx, ny))
+        return candidates
 
     def render(self, crew):
         """Render the map with crew member positions."""
@@ -264,34 +358,31 @@ class StationMap:
         Motion sensors have: room
         """
         cameras = {
-            (6, 6): {"room": "Rec Room", "facing": "S", "range": 3},
-            (12, 2): {"room": "Radio Room", "facing": "E", "range": 3},
-            (17, 2): {"room": "Storage", "facing": "W", "range": 3},
-            (7, 17): {"room": "Hangar", "facing": "N", "range": 3},
-            (12, 12): {"room": "Lab", "facing": "S", "range": 3},
+            (6, 6): {"room": "Rec Room", "facing": "S", "range": 3, "label": "Rec Room camera"},
+            (12, 2): {"room": "Radio Room", "facing": "E", "range": 3, "label": "Radio booth camera"},
+            (17, 2): {"room": "Storage", "facing": "W", "range": 3, "label": "Storage camera"},
+            (7, 17): {"room": "Hangar", "facing": "N", "range": 3, "label": "Hangar door camera"},
+            (12, 12): {"room": "Lab", "facing": "S", "range": 3, "label": "Lab camera"},
         }
         motion_sensors = {
-            (13, 3): {"room": "Radio Room"},
-            (16, 17): {"room": "Generator"},
-            (1, 17): {"room": "Kennel"},
+            (13, 3): {"room": "Radio Room", "label": "Radio Room motion sensor"},
+            (16, 17): {"room": "Generator", "label": "Generator motion sensor"},
+            (1, 17): {"room": "Kennel", "label": "Kennel motion sensor"},
         }
         return cameras, motion_sensors
 
     def is_camera_location(self, x: int, y: int) -> bool:
         """Return True if there is a camera at this position."""
-        cameras, _ = self._build_security_devices()
-        return (x, y) in cameras
+        return (x, y) in self.security_cameras
 
     def is_sensor_location(self, x: int, y: int) -> bool:
         """Return True if there is a motion sensor at this position."""
-        _, sensors = self._build_security_devices()
-        return (x, y) in sensors
+        return (x, y) in self.motion_sensors
 
     def get_security_device_info(self, x: int, y: int) -> Dict:
         """Return security device metadata for the coordinate or None."""
-        cameras, sensors = self._build_security_devices()
-        if (x, y) in cameras:
-            return {"type": "camera", **cameras[(x, y)]}
-        if (x, y) in sensors:
-            return {"type": "motion_sensor", **sensors[(x, y)]}
+        if (x, y) in self.security_cameras:
+            return {"type": "camera", **self.security_cameras[(x, y)]}
+        if (x, y) in self.motion_sensors:
+            return {"type": "motion_sensor", **self.motion_sensors[(x, y)]}
         return None

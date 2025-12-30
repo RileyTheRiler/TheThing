@@ -1,9 +1,22 @@
 import random
-from src.core.event_system import event_bus, EventType, GameEvent
 from src.core.logger import hidden_logger
 from core.event_system import event_bus, EventType, GameEvent
 
 class MissionarySystem:
+    ROLE_HABITATS = {
+        "Mechanic": ["Generator"],
+        "Assistant Mechanic": ["Generator"],
+        "Radio Op": ["Radio Room"],
+        "Pilot": ["Hangar"],
+        "Commander": ["Radio Room", "Rec Room"],
+        "Dog Handler": ["Kennel"],
+        "Doctor": ["Infirmary"],
+        "Biologist": ["Lab", "Infirmary"],
+        "Geologist": ["Lab"],
+        "Cook": ["Mess Hall", "Kitchen", "Rec Room"],
+        "Meteorologist": ["Radio Room", "Storage"],
+    }
+
     def __init__(self):
         self.communion_range = 1 # Adjacent for corridors
         self.base_decay = 2.0     # Mask decay per turn
@@ -35,10 +48,12 @@ class MissionarySystem:
         for member in game_state.crew:
             if not member.is_alive:
                 continue
+
+            # Habitat/schedule dissonance applies to all crew
+            self.process_habit_checks(member, game_state)
             
             if member.is_infected and not member.is_revealed:
                 self.process_decay(member, game_state)
-                self.process_habit_checks(member, game_state)
                 self.check_reveal_triggers(member, game_state)
                 
                 # Simple AI: Try to infect others
@@ -54,14 +69,46 @@ class MissionarySystem:
         """
         current_room = game_state.station_map.get_room_name(*member.location)
         preferred = self._extract_preferred_rooms(member)
-        
-        # If the room name contains any of the preferred room strings
-        at_station = any(p in current_room for p in preferred)
-        
-        if not at_station:
+        habitat_rooms = self.ROLE_HABITATS.get(member.role, [])
+
+        # Reset out-of-place flags; will be set below if any dissonance detected
+        member.out_of_place = False
+        member.out_of_place_reason = None
+
+        # Start with schedule awareness (also sets out_of_place flag/reason)
+        schedule_out = False
+        if hasattr(member, "is_out_of_schedule"):
+            schedule_out = member.is_out_of_schedule(game_state)
+
+        expected_rooms = set(preferred + habitat_rooms)
+        if not expected_rooms:
+            expected_rooms.add("Corridor")
+
+        # Corridors are neutral safe space
+        corridor_ok = current_room.startswith("Corridor")
+
+        at_expected = corridor_ok or any(
+            room in current_room or current_room in room for room in expected_rooms
+        )
+
+        if not at_expected:
             # DIRECT DISSONANCE: Being in the wrong place is taxing for the organism
             dissonance_penalty = 5.0
-            member.mask_integrity -= dissonance_penalty
+            if member.is_infected and not getattr(member, "is_revealed", False):
+                member.mask_integrity -= dissonance_penalty
+            member.out_of_place = True
+            expected_str = ", ".join(sorted(expected_rooms))
+            member.out_of_place_reason = (
+                member.out_of_place_reason
+                or f"{member.role} expected near {expected_str}; currently in {current_room}."
+            )
+        else:
+            # Preserve schedule-based flag if it was set
+            member.out_of_place = getattr(member, "out_of_place", False) or schedule_out
+
+        # If schedule marked them out of place but habitat check did not, keep the reason
+        if schedule_out and not member.out_of_place_reason:
+            member.out_of_place_reason = getattr(member, "out_of_place_reason", None)
 
     def _extract_preferred_rooms(self, member):
         """

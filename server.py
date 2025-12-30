@@ -169,7 +169,9 @@ def serialize_game_state(game):
             'stress': m.stress if hasattr(m, 'stress') else 0,
             'mask_integrity': m.mask_integrity if hasattr(m, 'mask_integrity') else 100,
             'stealth_posture': m.stealth_posture.name if hasattr(m, 'stealth_posture') else 'STANDING',
-            'detected_player': getattr(m, 'detected_player', False)
+            'detected_player': getattr(m, 'detected_player', False),
+            'out_of_place': getattr(m, 'out_of_place', False),
+            'out_of_place_reason': getattr(m, 'out_of_place_reason', None)
         })
 
     # Get player inventory

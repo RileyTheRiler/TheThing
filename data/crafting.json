@@ -125,6 +125,8 @@
             "name": "Noise Maker",
             "description": "Rattling device that creates loud distracting sounds when thrown.",
             "category": "throwable",
+            "effect": "noise",
+            "effect_value": 8,
             "ingredients": [
                 "Empty Can",
                 "Wire"
@@ -146,6 +148,7 @@
             "craft_time": 2,
             "deployable": true,
             "effect": "alerts_on_trigger",
+            "effect_value": 6,
             "uses": 1
         },
         {
@@ -177,6 +180,21 @@
             "effect": "portable_test",
             "effect_desc": "Allows blood testing without returning to the Infirmary.",
             "uses": 3
+        },
+        {
+            "id": "barricade_kit",
+            "name": "Barricade Kit",
+            "description": "Boards, nails, and a mallet bundled for a quick room barricade.",
+            "category": "tool",
+            "ingredients": [
+                "Wooden Plank",
+                "Metal Scrap"
+            ],
+            "craft_time": 1,
+            "effect": "instant_barricade",
+            "effect_value": 1,
+            "deployable": true,
+            "uses": 1
         }
     ]
 }

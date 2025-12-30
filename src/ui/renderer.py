@@ -49,6 +49,7 @@ class TerminalRenderer:
     CHAR_ITEM = '*'
     CHAR_CORPSE = '%'
     CHAR_UNKNOWN = ' '
+    CHAR_OUT_OF_PLACE = '!'
     
     def __init__(self, station_map, viewport_size=20):
         self.map = station_map
@@ -61,6 +62,8 @@ class TerminalRenderer:
         Generate the ASCII display for the current game state.
         Returns a list of strings (one per row).
         """
+        schedule_flags = self._compute_out_of_schedule(game_state)
+
         if player:
             self.camera.follow(
                 player.location[0], 
@@ -83,7 +86,7 @@ class TerminalRenderer:
             
             for screen_x in range(self.camera.viewport_width):
                 world_x = screen_x + self.camera.x
-                char = self._get_char_at(world_x, world_y, game_state, player)
+                char = self._get_char_at(world_x, world_y, game_state, player, schedule_flags)
                 row_chars.append(char)
             
             # Add row with border
@@ -92,7 +95,7 @@ class TerminalRenderer:
         display.append("+" + "-" * (self.camera.viewport_width * 2 - 1) + "+")
         
         # Legend
-        display.append(self._render_legend(game_state, player))
+        display.append(self._render_legend(game_state, player, schedule_flags))
         
         return "\n".join(display)
     
@@ -108,7 +111,21 @@ class TerminalRenderer:
                 nums.append(" ")
         return " " + " ".join(nums) + " "
     
-    def _get_char_at(self, x, y, game_state, player):
+    def _compute_out_of_schedule(self, game_state):
+        """Cache out-of-schedule flags for crew to align UI with interrogation bonus logic."""
+        flags = {}
+        if not game_state or not getattr(game_state, "crew", None):
+            return flags
+
+        for member in game_state.crew:
+            if hasattr(member, "is_out_of_schedule"):
+                try:
+                    flags[member.name] = member.is_out_of_schedule(game_state)
+                except Exception:
+                    flags[member.name] = False
+        return flags
+
+    def _get_char_at(self, x, y, game_state, player, schedule_flags=None):
         """Determine what character to display at this position."""
         # Bounds check
         if not (0 <= x < self.map.width and 0 <= y < self.map.height):
@@ -123,6 +140,8 @@ class TerminalRenderer:
             if member.location == (x, y) and member != player:
                 if not member.is_alive:
                     return self.CHAR_CORPSE
+                if schedule_flags and schedule_flags.get(member.name):
+                    return self.CHAR_OUT_OF_PLACE
                 return member.name[0].upper()
         
         # Layer 3: Items
@@ -166,7 +185,7 @@ class TerminalRenderer:
         
         return self.CHAR_FLOOR
     
-    def _render_legend(self, game_state, player=None):
+    def _render_legend(self, game_state, player=None, schedule_flags=None):
         """Render the character legend with context-aware hints."""
         legend_items = []
 
@@ -194,15 +213,39 @@ class TerminalRenderer:
 
         # Priority 1: NPCs in current viewport
         visible_npcs = []
+        out_of_place_visible = []
         for member in game_state.crew:
             if self.camera.is_visible(*member.location) and member != player:
                 status = "" if member.is_alive else " (DEAD)"
                 # Use % for corpse in legend if dead to match map
-                symbol = "%" if not member.is_alive else member.name[0]
+                out_of_place = schedule_flags.get(member.name) if schedule_flags else False
+                symbol = "%" if not member.is_alive else (self.CHAR_OUT_OF_PLACE if out_of_place else member.name[0])
                 visible_npcs.append(f"{symbol}={member.name}{status}")
+                if out_of_place and member.is_alive:
+                    out_of_place_visible.append(member)
         
         if visible_npcs:
             legend_items.append(f"[{'] ['.join(visible_npcs[:3])}]")
+
+        if out_of_place_visible:
+            try:
+                from systems.interrogation import InterrogationSystem
+                bonus = getattr(InterrogationSystem, "WHEREABOUTS_BONUS", 0)
+            except Exception:
+                bonus = 0
+
+            details = []
+            for member in out_of_place_visible[:2]:
+                if hasattr(member, "get_schedule_info"):
+                    info = member.get_schedule_info(game_state)
+                    expected = info.get("expected_room") or "?"
+                    details.append(f"{member.name}->{expected}")
+                else:
+                    details.append(member.name)
+            if len(out_of_place_visible) > 2:
+                details.append("...")
+            bonus_hint = f"+{bonus}" if bonus else "+?"
+            legend_items.append(f"[{self.CHAR_OUT_OF_PLACE}=Out of place ({bonus_hint} INTERROGATE): {', '.join(details)}]")
 
         # Priority 2: Items in current viewport (if not already covered by local context)
         visible_items = []
@@ -214,8 +257,8 @@ class TerminalRenderer:
             # Check if * marker is visible
             origin_x, origin_y = room_bounds[0], room_bounds[1]
             if self.camera.is_visible(origin_x, origin_y):
-                 # List items only if we are NOT in that room (otherwise covered by context)
-                 if player and self.map.get_room_name(*player.location) != room_name:
+                # List items only if we are NOT in that room (otherwise covered by context)
+                if player and self.map.get_room_name(*player.location) != room_name:
                     for item in items:
                         if item.name not in visible_items:
                             visible_items.append(item.name)

@@ -10,6 +10,8 @@ class ResolutionModifiers:
     attack_pool: int = 0
     observation_pool: int = 0
     stealth_detection: float = 0.0
+    thermal_detection_bonus: int = 0
+    heat_detection_enabled: bool = False
 
 class Attribute(Enum):
     PROWESS = "Prowess"

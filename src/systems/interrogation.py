@@ -31,13 +31,14 @@ class InterrogationResult:
     """Result of an interrogation attempt."""
 
     def __init__(self, response_type, dialogue, tells=None, trust_change=0,
-                 out_of_schedule=False, schedule_message=None):
+                 out_of_schedule=False, schedule_message=None, schedule_reveal=None):
         self.response_type = response_type
         self.dialogue = dialogue
         self.tells = tells or []  # Behavioral tells that might indicate infection
         self.trust_change = trust_change
         self.out_of_schedule = out_of_schedule
         self.schedule_message = schedule_message
+        self.schedule_reveal = schedule_reveal or {}
 
 
 class AccusationResult:
@@ -161,6 +162,7 @@ class InterrogationSystem:
 
         Returns InterrogationResult with the subject's response and any tells.
         """
+        schedule_reveal = None
         # Track interrogation count
         if subject.name not in self.interrogation_count:
             self.interrogation_count[subject.name] = 0
@@ -262,6 +264,21 @@ class InterrogationSystem:
                 if self.rng.random_float() < 0.5:
                     tells.append(self.rng.choose(self.HUMAN_TELLS))
 
+            # Successful read while subject is off-schedule reveals schedule/movements
+            if out_of_schedule:
+                schedule_reveal = {
+                    "schedule": getattr(subject, "schedule", []),
+                    "expected_room": schedule_info.get("expected_room") if schedule_info else None,
+                    "current_room": schedule_info.get("current_room") if schedule_info else None,
+                    "movement_history": list(getattr(subject, "movement_history", []))
+                }
+                schedule_text = self._format_schedule(getattr(subject, "schedule", []))
+                movement_text = self._format_movement_history(getattr(subject, "movement_history", []))
+                if schedule_text:
+                    tells.append(f"Schedule: {schedule_text}")
+                if movement_text:
+                    tells.append(f"Recent movement: {movement_text}")
+
         # Calculate trust change
         trust_change = 0
         if response_type == ResponseType.DEFENSIVE:
@@ -294,7 +311,8 @@ class InterrogationSystem:
             tells=tells,
             trust_change=trust_change,
             out_of_schedule=out_of_schedule,
-            schedule_message=schedule_message
+            schedule_message=schedule_message,
+            schedule_reveal=schedule_reveal
         )
 
         # Emit event for UI/message reporter
@@ -307,7 +325,8 @@ class InterrogationSystem:
             "tells": tells,
             "trust_change": trust_change,
             "out_of_schedule": out_of_schedule,
-            "schedule_message": schedule_message
+            "schedule_message": schedule_message,
+            "schedule_reveal": schedule_reveal
         }))
 
         return result
@@ -463,3 +482,28 @@ class InterrogationSystem:
     def get_interrogation_topics(self):
         """Return available interrogation topics."""
         return list(InterrogationTopic)
+
+    def _format_schedule(self, schedule):
+        """Return a concise human-readable schedule string."""
+        if not schedule:
+            return ""
+        parts = []
+        for entry in schedule:
+            start = entry.get("start")
+            end = entry.get("end")
+            room = entry.get("room", "Unknown")
+            if not isinstance(start, (int, float)) or not isinstance(end, (int, float)):
+                parts.append(room)
+            else:
+                parts.append(f"{int(start):02d}-{int(end):02d} {room}")
+        return "; ".join(parts)
+
+    def _format_movement_history(self, history):
+        """Summarize the last few movement entries."""
+        if not history:
+            return ""
+        recent = history[-3:]
+        return ", ".join(
+            f"T{entry.get('turn', '?')}: {entry.get('room', 'Unknown')}"
+            for entry in recent
+        )

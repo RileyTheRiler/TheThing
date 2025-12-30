@@ -356,6 +356,34 @@ class Renderer3D {
                     group.position.z += (Math.random() - 0.5) * shakeIntensity;
                 }
 
+                // Out-of-place marker: purple ring pulse
+                if (member.out_of_place && !group.userData.outOfPlaceMarker) {
+                    const oopGeo = new THREE.RingGeometry(0.7, 0.95, 32);
+                    const oopMat = new THREE.MeshBasicMaterial({
+                        color: 0xbb55ff,
+                        side: THREE.DoubleSide,
+                        transparent: true,
+                        opacity: 0.7
+                    });
+                    const oopRing = new THREE.Mesh(oopGeo, oopMat);
+                    oopRing.rotation.x = -Math.PI / 2;
+                    oopRing.position.y = 0.08;
+                    group.add(oopRing);
+                    group.userData.outOfPlaceMarker = oopRing;
+
+                    const oopInterval = setInterval(() => {
+                        if (oopRing.parent) {
+                            const scale = 0.9 + Math.sin(Date.now() * 0.006) * 0.1;
+                            oopRing.scale.set(scale, scale, 1);
+                        } else {
+                            clearInterval(oopInterval);
+                        }
+                    }, 60);
+                } else if (!member.out_of_place && group.userData.outOfPlaceMarker) {
+                    group.remove(group.userData.outOfPlaceMarker);
+                    delete group.userData.outOfPlaceMarker;
+                }
+
                 // Trust Indicator: Add colored ring for low trust
                 if (member.trust < 30 && !group.userData.trustIndicator) {
                     const ringGeo = new THREE.RingGeometry(0.8, 1.0, 32);

@@ -7,6 +7,7 @@ and stealth pool bonuses.
 
 from typing import Dict, List, Optional, TYPE_CHECKING
 from core.event_system import event_bus, EventType, GameEvent
+from entities.crew_member import CrewMember
 
 if TYPE_CHECKING:
     from engine import GameState
@@ -20,7 +21,7 @@ class ProgressionSystem:
     """
 
     # XP thresholds for each stealth level (cumulative)
-    STEALTH_LEVEL_THRESHOLDS = [100, 300, 600, 1000]
+    STEALTH_LEVEL_THRESHOLDS = CrewMember.STEALTH_LEVEL_THRESHOLDS
 
     # Level benefit descriptions for feedback
     LEVEL_BENEFITS = {

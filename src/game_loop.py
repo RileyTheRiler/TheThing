@@ -324,6 +324,7 @@ def main():
     print(f"\nStarting game on {difficulty.value} difficulty...")
 
     game = GameState(seed=None, difficulty=difficulty)
+    ending_state = {"resolved": False}
 
     # Start statistics tracking (Tier 6.4)
     stats.start_session(difficulty.value)
@@ -335,7 +336,27 @@ def main():
     game.crt.boot_sequence()
     game.audio.ambient_loop(Sound.THRUM)
 
+    def _handle_ending(event: GameEvent):
+        ending_type = event.payload.get("ending_type")
+        default_message = event.payload.get("message", "Game Over.")
+        bespoke = {
+            "ESCAPE": "Rotor wash whips the snow away. Outpost 31 shrinks to a smoldering dot behind you.",
+            "RESCUE": "Searchlights slice through the whiteout. Hands pull you aboard the rescue chopper.",
+            "SOLE_SURVIVOR": "Silence presses in. Only your footprints remain in the drifting snow.",
+            "PYRRHIC_VICTORY": "Outpost 31 is lost. The storm swallows you whole, but the Thing burns with it.",
+            "CONSUMPTION": "No human voices answer. The Thing inherits the ice.",
+            "DEATH": "Your story ends here, frozen in the dark."
+        }
+        ending_state["resolved"] = True
+        ending_state["message"] = bespoke.get(ending_type, default_message)
+        ending_state["result"] = event.payload.get("result")
+        game.game_over = True
+
+    event_bus.subscribe(EventType.ENDING_REPORT, _handle_ending)
+
     while True:
+        if ending_state["resolved"]:
+            break
         # Check for game over conditions
         game_over, won, message = game.check_game_over()
         if game_over:
@@ -353,6 +374,11 @@ def main():
         # Execute the command
         if not _execute_command(game, cmd):
             break
+
+    if ending_state["resolved"]:
+        _handle_game_over(game, ending_state.get("result") == "win", ending_state.get("message", "Game Over."))
+
+    event_bus.unsubscribe(EventType.ENDING_REPORT, _handle_ending)
 
 
 def _handle_game_over(game, won, message):
@@ -975,12 +1001,37 @@ def _execute_command(game, cmd):
     elif action == "SIGNAL":
         print(game.attempt_radio_signal())
         if getattr(game, "_last_action_successful", False):
+        target_text = " ".join(cmd[1:]).upper() if cmd[1:] else ""
+        if "RADIO" in target_text:
+            success, message, evt_type = game.attempt_repair_radio()
+        else:
+            # Default behavior if specific object not mentioned, try to infer context or fail
+            success, message, evt_type = game.attempt_repair_helicopter()
+        if evt_type == EventType.WARNING:
+            game.crt.warning(message)
+        else:
+            print(message)
+        if success:
+            game.advance_turn()
+
+    elif action == "SIGNAL":
+        success, message, evt_type = game.attempt_radio_signal()
+        if evt_type == EventType.WARNING:
+            game.crt.warning(message)
+        else:
+            print(message)
+        if success:
             game.advance_turn()
 
     elif action == "ESCAPE":
-        print(game.attempt_escape())
+        success, message, evt_type = game.attempt_escape()
+        if evt_type == EventType.WARNING:
+            game.crt.warning(message)
+        else:
+            print(message)
         # The win condition check in main loop will catch the status change
         if getattr(game, "_last_action_successful", False):
+        if success:
             game.advance_turn()
 
     # --- BLOOD TEST ---
