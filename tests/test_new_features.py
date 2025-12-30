@@ -373,10 +373,10 @@ class TestEnhancedSearchMemory:
         assert npc.search_anchor == (5, 5)
 
     def test_search_turns_extended(self):
-        """Search turns should be extended to 8."""
+        """Search turns should be extended to 12."""
         from systems.ai import AISystem
 
-        assert AISystem.SEARCH_TURNS == 8
+        assert AISystem.SEARCH_TURNS == 12
 
     def test_search_spiral_radius(self):
         """Search should have spiral radius configuration."""

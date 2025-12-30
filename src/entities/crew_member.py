@@ -416,6 +416,9 @@ class CrewMember:
         m.movement_history = data.get("movement_history", [])
         m.last_logged_location = data.get("last_logged_location")
 
+        if m.search_history is None:
+            m.search_history = set()
+
         # Items hydration
         m.inventory = []
         for i_data in data.get("inventory", []):
@@ -427,6 +430,21 @@ class CrewMember:
         
         return m
 
+    # --- Search utilities -------------------------------------------------
+
+    def clear_search_history(self):
+        """Reset stored search locations/rooms so a new sweep can begin fresh."""
+        self.search_history = set()
+
+    def record_search_checkpoint(self, location, station_map):
+        """Add a visited coordinate (and its room) to search history to avoid repeats."""
+        if not hasattr(self, "search_history") or self.search_history is None:
+            self.search_history = set()
+
+        self.search_history.add(tuple(location))
+        if station_map:
+            room_name = station_map.get_room_name(*location)
+            self.search_history.add(room_name)
     def record_movement(self, game_state=None):
         """Record the current room and turn to movement history."""
         if not game_state:
