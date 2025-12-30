@@ -10,7 +10,7 @@ from core.event_system import event_bus, EventType, GameEvent
 from core.resolution import Attribute, Skill, ResolutionSystem
 from core.design_briefs import DesignBriefRegistry
 
-from entities.crew_member import CrewMember as EntityCrewMember
+from entities.crew_member import CrewMember
 from entities.item import Item
 from entities.station_map import StationMap
 
@@ -18,7 +18,6 @@ from systems.ai import AISystem
 from systems.alert import AlertSystem
 from systems.security import SecuritySystem, SecurityLog
 from systems.architect import RandomnessEngine, GameMode, TimeSystem, Difficulty, DifficultySettings, Verbosity
-from systems.architect import RandomnessEngine, GameMode, TimeSystem, Difficulty, DifficultySettings
 from systems.commands import CommandDispatcher, GameContext
 from systems.combat import CombatSystem, CoverType
 from systems.crafting import CraftingSystem
@@ -45,109 +44,8 @@ from ui.message_reporter import MessageReporter
 from audio.audio_manager import AudioManager, Sound
 
 
-class CrewMember:
-    def __init__(self, name, role, behavior_type, attributes=None, skills=None, schedule=None, invariants=None):
-        self.name = name
-        self.role = role
-        self.behavior_type = behavior_type
-        self.is_infected = False  # The "Truth" hidden from the player
-        self.trust_score = 50      # 0 to 100
-        self.location = (0, 0)
-        self.is_alive = True
-        
-        # Stats
-        self.attributes = attributes if attributes else {}
-        self.skills = skills if skills else {}
-        self.schedule = schedule if schedule else []
-        self.invariants = invariants if invariants else []
-        self.forbidden_rooms = [] # Hydrated from JSON
-        self.stress = 0
-        self.inventory = []
-        self.health = 3 # Base health
-        self.mask_integrity = 100.0 # Agent 3: Mask Tracking
-        self.is_revealed = False    # Agent 3: Violent Reveal
-        self.slipped_vapor = False  # Hook: Biological Slip flag
-        self.security_role = False
-        self.next_security_check_turn = 0
 
-    def take_damage(self, amount):
-        self.health -= amount
-        if self.health <= 0:
-            self.health = 0
-            self.is_alive = False
-            return True # Died
-        return False
 
-    def add_item(self, item, turn=0):
-        self.inventory.append(item)
-        item.add_history(turn, f"Picked up by {self.name}")
-    
-    def remove_item(self, item_name):
-        for i, item in enumerate(self.inventory):
-            if item.name.upper() == item_name.upper():
-                return self.inventory.pop(i)
-        return None
-
-    def roll_check(self, attribute, skill=None, rng=None, resolution_system=None):
-        attr_val = self.attributes.get(attribute, 1) 
-        skill_val = self.skills.get(skill, 0)
-        pool_size = attr_val + skill_val
-        
-        # Use provided ResolutionSystem or fallback to static class method
-        if resolution_system:
-            return resolution_system.roll_check(pool_size, rng)
-        return ResolutionSystem.roll_check(pool_size, rng)
-
-    def move(self, dx, dy, station_map):
-        new_x = self.location[0] + dx
-        new_y = self.location[1] + dy
-        if station_map.is_walkable(new_x, new_y):
-            self.location = (new_x, new_y)
-            return True
-        return False
-
-    def get_description(self, game_state):
-        rng = game_state.rng
-        desc = [f"This is {self.name}, the {self.role}."]
-        
-        # 1. Spatial Slip Check
-        current_room = game_state.station_map.get_room_name(*self.location)
-        if hasattr(self, 'forbidden_rooms') and current_room in self.forbidden_rooms:
-            desc.append(f"Something is wrong. {self.name} shouldn't be in the {current_room}. They look out of place, almost defensive.")
-
-        # 2. Invariant Visual Slips (Base Behavioral Patterns)
-        for inv in [i for i in self.invariants if i.get('type') == 'visual']:
-            if self.is_infected and rng.random_float() < inv.get('slip_chance', 0.5):
-                desc.append(inv['slip_desc'])
-            else:
-                desc.append(inv['baseline'])
-
-        # 3. Agent 3/4 biological slips and sensory tells
-        if self.is_infected and not self.is_revealed:
-            # Chance to show a sensory tell increases as mask integrity drops
-            if self.mask_integrity < 80:
-                slip_chance = (80 - self.mask_integrity) / 80.0
-                if rng.random_float() < slip_chance:
-                    slip = BiologicalSlipGenerator.get_visual_slip(rng)
-                    desc.append(f"You notice they are {slip}.")
-            
-            # Specific hint for infected NPCs
-            if self.mask_integrity < 50 and rng.random_float() < 0.3:
-                 desc.append("Their eyes seem strange... almost like lusterless black spheres.")
-        
-        # 4. State based on stress and environment
-        state = "shivering in the cold"
-        if self.stress > 3:
-            state = "visibly shaking and hyperventilating"
-        elif self.is_infected and self.mask_integrity < 40:
-             state = "unnaturally still, staring through you"
-             
-        desc.append(f"State: {state.capitalize()}.")
-        
-        return " ".join(desc)
-
-# Ensure the engine uses the primary CrewMember implementation from entities
-CrewMember = EntityCrewMember
 
 class GameState:
     @property
@@ -180,86 +78,6 @@ class GameState:
                 "direction": direction,
                 "threshold": self.social_thresholds.paranoia_thresholds[new_bucket-1] if direction == "UP" else self.social_thresholds.paranoia_thresholds[new_bucket]
             }))
-        if not hasattr(self, "schedule"):
-            return
-
-        # 0. PRIORITY: Lynch Mob Hunting (Agent 2)
-        if hasattr(self, "lynch_mob") and hasattr(self, "station_map") and self.lynch_mob.active_mob and self.lynch_mob.target:
-        if hasattr(self, "lynch_mob") and self.lynch_mob.active_mob and self.lynch_mob.target:
-            target = self.lynch_mob.target
-            if target != self and target.is_alive:
-                # Move toward the lynch target
-                tx, ty = target.location
-                self._pathfind_step(tx, ty, self.station_map)
-                return
-
-        # 1. Check Schedule
-        # Schedule entries: {"start": 8, "end": 20, "room": "Rec Room"}
-        # Fix: TimeSystem lacks 'hour' property, calculate manually (Start 08:00)
-        if not hasattr(self, "schedule"):
-            return
-        current_hour = (self.time_system.turn_count + 8) % 24
-        destination = None
-        for entry in self.schedule:
-            start = entry.get("start", 0)
-            end = entry.get("end", 24)
-            room = entry.get("room")
-            
-            # Handle wrap-around schedules (e.g., 20:00 to 08:00)
-            if start < end:
-                if start <= current_hour < end:
-                    destination = room
-                    break
-            else: # Wrap around midnight
-                if current_hour >= start or current_hour < end:
-                    destination = room
-                    break
-        
-        if destination:
-            # Move towards destination room
-            target_pos = self.station_map.rooms.get(destination)
-            if target_pos:
-                tx, ty, _, _ = target_pos
-                self._pathfind_step(tx, ty, self.station_map)
-                return
-
-        # 2. Idling / Wandering
-        if self.rng.random_float() < 0.3:
-            dx = self.rng.choose([-1, 0, 1])
-            dy = self.rng.choose([-1, 0, 1])
-            self.move(dx, dy, self.station_map)
-
-    def _pathfind_step(self, target_x, target_y, station_map):
-        """Simple greedy step towards target."""
-        dx = 1 if target_x > self.location[0] else -1 if target_x < self.location[0] else 0
-        dy = 1 if target_y > self.location[1] else -1 if target_y < self.location[1] else 0
-        self.move(dx, dy, station_map)
-
-    def get_dialogue(self, game_state):
-        rng = game_state.rng
-        
-        # Dialogue Invariants
-        dialogue_invariants = [i for i in self.invariants if i.get('type') == 'dialogue']
-        if dialogue_invariants:
-            inv = rng.choose(dialogue_invariants) if hasattr(rng, 'choose') else random.choice(dialogue_invariants)
-            if self.is_infected and rng.random_float() < inv.get('slip_chance', 0.5):
-                base_dialogue = f"Speaking {inv['slip_desc']}."
-            else:
-                base_dialogue = f"Wait, {inv['baseline']}." # Simple flavor
-        else:
-            base_dialogue = f"I'm {self.behavior_type}."
-        
-        if game_state.time_system.temperature < 0:
-            show_vapor = True
-            # BIOLOGICAL SLIP HOOK
-            if self.is_infected and self.slipped_vapor:
-                show_vapor = False
-            
-            if show_vapor:
-                base_dialogue += " [VAPOR]"
-            else:
-                base_dialogue += " [NO VAPOR]"
-        return base_dialogue
 
     @property
     def temperature(self):

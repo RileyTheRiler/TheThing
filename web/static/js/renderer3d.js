@@ -178,6 +178,7 @@ class Renderer3D {
     updateMap(gameState) {
         if (gameState.ascii_map) {
             this.parseAsciiMap(gameState.ascii_map);
+            this.renderRoomLabels();
         }
     }
 
@@ -254,6 +255,59 @@ class Renderer3D {
                 }
             }
         });
+    }
+
+    renderRoomLabels() {
+        if (this.labelsGroup) {
+            this.scene.remove(this.labelsGroup);
+        }
+        this.labelsGroup = new THREE.Group();
+        this.scene.add(this.labelsGroup);
+
+        const rooms = {
+            "Rec Room": [7.5, 7.5],
+            "Infirmary": [2, 2],
+            "Generator": [17, 17],
+            "Kennel": [2, 17],
+            "Radio Room": [12.5, 2],
+            "Storage": [17, 2],
+            "Lab": [12.5, 12.5],
+            "Sleeping Quarters": [2, 8],
+            "Mess Hall": [7, 2],
+            "Hangar": [7.5, 17]
+        };
+
+        for (const [name, pos] of Object.entries(rooms)) {
+            const sprite = this.createTextLabel(name);
+            sprite.position.set(pos[0] * this.gridScale, 4, pos[1] * this.gridScale);
+            this.labelsGroup.add(sprite);
+        }
+    }
+
+    createTextLabel(text) {
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.width = 256;
+        canvas.height = 64;
+
+        context.fillStyle = 'rgba(0,0,0,0)';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+
+        context.font = 'Bold 24px Courier New';
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+
+        // Glow effect
+        context.shadowColor = 'rgba(0, 255, 136, 0.8)';
+        context.shadowBlur = 4;
+        context.fillStyle = '#00ff88';
+        context.fillText(text.toUpperCase(), canvas.width / 2, canvas.height / 2);
+
+        const texture = new THREE.CanvasTexture(canvas);
+        const spriteMaterial = new THREE.SpriteMaterial({ map: texture, transparent: true });
+        const sprite = new THREE.Sprite(spriteMaterial);
+        sprite.scale.set(8, 2, 1);
+        return sprite;
     }
     // ... updateMap and parseAsciiMap methods ...
 

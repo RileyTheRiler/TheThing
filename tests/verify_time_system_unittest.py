@@ -66,14 +66,14 @@ class TestTimeSystem(unittest.TestCase):
         # Mock event with power ON
         event_on = GameEvent(EventType.TURN_ADVANCE, {"game_state": MockGameState(power_on=True)})
         event_bus.emit(event_on)
-        # 10 + 2 = 12
-        self.assertEqual(ts.temperature, 12)
+        # 10 + 0.05 * (15 - 10) = 10.25
+        self.assertEqual(ts.temperature, 10.25)
         
         # Power OFF -> Temperature drops drastically
         event_off = GameEvent(EventType.TURN_ADVANCE, {"game_state": MockGameState(power_on=False)})
         event_bus.emit(event_off)
-        # 12 - 5 = 7
-        self.assertEqual(ts.temperature, 7)
+        # 10.25 - 0.5 * (10.25 - (-60)) = 10.25 - 0.5 * 70.25 = 10.25 - 35.125 = -24.875
+        self.assertEqual(ts.temperature, -24.875)
         
         ts.cleanup()
 
