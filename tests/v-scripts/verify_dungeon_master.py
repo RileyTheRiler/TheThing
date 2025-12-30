@@ -54,7 +54,7 @@ def test_sabotage_system():
     
     print(f"✓ SabotageManager initialized")
     print(f"  Radio: {sabotage.radio_operational}")
-    print(f"  Chopper: {sabotage.chopper_operational}")
+    print(f"  Chopper: {sabotage.helicopter_operational}")
     
     # Test power outage
     result = sabotage.trigger_power_outage(game)
@@ -66,7 +66,7 @@ def test_sabotage_system():
     
     # Test chopper destruction
     result = sabotage.trigger_chopper_destruction(game)
-    print(f"✓ Chopper Destruction: {sabotage.chopper_operational == False}")
+    print(f"✓ Chopper Destruction: {sabotage.helicopter_operational == False}")
     
     print(f"  Status: {sabotage.get_status()}")
     print("✓ Sabotage System: PASSED")

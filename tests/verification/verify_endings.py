@@ -76,7 +76,7 @@ def verify_helicopter_escape():
     game.random_events.events = []
     
     # 1. Sabotage Chopper
-    game.sabotage.chopper_operational = False
+    game.helicopter_operational = False
     game.helicopter_status = "BROKEN"
     print("Helicopter sabotaged.")
     

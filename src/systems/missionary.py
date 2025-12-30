@@ -324,14 +324,14 @@ class MissionarySystem:
         current_room = game_state.station_map.get_room_name(*agent.location)
         
         # Radio Room: Destroy radio
-        if "Radio" in current_room and game_state.sabotage.radio_operational:
+        if "Radio" in current_room and game_state.radio_operational:
             if game_state.rng.random_float() < 0.15:  # 15% chance per turn
                 msg = game_state.sabotage.trigger_radio_smashing(game_state, agent.name)
                 if msg:
                     print(f">>> OFF-CAMERA: {agent.name} smashes the radio equipment.")
                     
         # Hangar: Destroy helicopter
-        elif "Hangar" in current_room and game_state.sabotage.chopper_operational:
+        elif "Hangar" in current_room and game_state.helicopter_operational:
             if game_state.rng.random_float() < 0.10:  # 10% chance per turn
                 msg = game_state.sabotage.trigger_chopper_destruction(game_state, agent.name)
                 if msg:

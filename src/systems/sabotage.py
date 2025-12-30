@@ -16,7 +16,7 @@ class SabotageManager:
     def __init__(self, difficulty_settings=None):
         # Operational status of critical systems
         self.radio_operational = True
-        self.chopper_operational = True
+        self.helicopter_operational = True
         
         # Event tracking
         self.events_triggered = {
@@ -100,14 +100,20 @@ class SabotageManager:
             return None 
         
         self.radio_operational = False
+        if hasattr(game_state, "radio_operational"):
+            game_state.radio_operational = False
         self.events_triggered[SabotageEvent.RADIO_SMASHING] = True
         return "SABOTAGE: RADIO DESTROYED"
     
     def trigger_chopper_destruction(self, game_state, perpetrator=None):
-        if not self.chopper_operational:
+        if not self.helicopter_operational:
             return None 
         
-        self.chopper_operational = False
+        self.helicopter_operational = False
+        if hasattr(game_state, "helicopter_status"):
+            game_state.helicopter_status = "BROKEN"
+        if hasattr(game_state, "helicopter_operational"):
+            game_state.helicopter_operational = False
         self.events_triggered[SabotageEvent.CHOPPER_DESTRUCTION] = True
         return "SABOTAGE: HELICOPTER DESTROYED"
     
@@ -129,11 +135,20 @@ class SabotageManager:
     
     def get_status(self):
         radio = "OK" if self.radio_operational else "DESTROYED"
-        chopper = "OK" if self.chopper_operational else "DESTROYED"
-        return f"RADIO: {radio} | CHOPPER: {chopper}"
+        chopper = "OK" if self.helicopter_operational else "DESTROYED"
+        return f"RADIO: {radio} | HELICOPTER: {chopper}"
     
     def can_call_for_help(self):
         return self.radio_operational
     
     def can_escape_by_air(self):
-        return self.chopper_operational
+        return self.helicopter_operational
+
+    # Backwards-compatible alias for legacy references
+    @property
+    def chopper_operational(self):
+        return self.helicopter_operational
+
+    @chopper_operational.setter
+    def chopper_operational(self, value):
+        self.helicopter_operational = value
