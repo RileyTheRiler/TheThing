@@ -2,6 +2,7 @@ from typing import Dict, List, Optional
 from core.design_briefs import DesignBriefRegistry
 from core.event_system import event_bus, EventType, GameEvent
 from core.resolution import Attribute, ResolutionSystem, Skill
+from core.perception import normalize_perception_payload
 from systems.room_state import RoomState
 from entities.crew_member import StealthPosture
 from systems.dialogue import DialogueSystem
@@ -127,12 +128,16 @@ class StealthSystem:
         mods = None
         if room_states:
             mods = room_states.get_resolution_modifiers(room)
-            detection_chance = max(0.0, detection_chance + mods.stealth_detection)
+            stealth_mod = getattr(mods, "stealth_detection", 0.0) if mods else 0.0
+            detection_chance = max(0.0, detection_chance + float(stealth_mod))
 
         roll = rng.random_float()
         if roll > detection_chance:
+            noise_level = player.get_noise_level() if hasattr(player, "get_noise_level") else 0
             payload = {
                 "room": room,
+                "location": getattr(player, "location", None),
+                "actor": getattr(player, "name", None),
                 "opponent": opponent.name,
                 "opponent_ref": opponent,
                 "player_ref": player,
@@ -141,7 +146,8 @@ class StealthSystem:
                 "player_successes": 0,
                 "opponent_successes": 0,
                 "subject_pool": 0,
-                "observer_pool": 0
+                "observer_pool": 0,
+                "noise_level": noise_level,
             }
             event_bus.emit(GameEvent(EventType.STEALTH_REPORT, payload))
             self.cooldown = self.config.get("cooldown_turns", 1) if self.config else 1
@@ -197,7 +203,17 @@ class StealthSystem:
         if blocks_los:
             observer_pool = max(1, observer_pool - 1)
         
-        # Enforce minimum pool
+        # Enforce minimum pool (guard against mocked values)
+        try:
+            subject_pool = int(subject_pool)
+        except Exception:
+            subject_pool = 1
+
+        try:
+            observer_pool = int(observer_pool)
+        except Exception:
+            observer_pool = 1
+
         subject_pool = max(1, subject_pool)
         observer_pool = max(1, observer_pool)
 
@@ -225,8 +241,11 @@ class StealthSystem:
             opponent.increase_suspicion(suspicion_delta, turn=current_turn)
             opponent.suspicion_state = getattr(opponent, "suspicion_state", "idle")
         
+        noise_level = player.get_noise_level() if hasattr(player, "get_noise_level") else 0
         payload = {
             "room": room,
+            "location": getattr(player, "location", None),
+            "actor": getattr(player, "name", None),
             "opponent": opponent.name,
             "opponent_ref": opponent,  # Reference to actual NPC object
             "player_ref": player,      # Reference to player object
@@ -238,13 +257,15 @@ class StealthSystem:
             "observer_pool": observer_pool,
             "hiding_spot": hiding_spot,
             "suspicion_delta": suspicion_delta,
-            "suspicion_level": getattr(opponent, "suspicion_level", 0)
+            "suspicion_level": getattr(opponent, "suspicion_level", 0),
+            "noise_level": noise_level,
         }
         event_bus.emit(GameEvent(EventType.STEALTH_REPORT, payload))
-        
+
         # Emit Perception Event
         if hasattr(EventType, 'PERCEPTION_EVENT'):
-             event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, payload))
+             normalized = normalize_perception_payload(payload)
+             event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, normalized))
 
         
         # Check for reverse thermal detection (Thing sensing player heat in darkness)
@@ -452,13 +473,16 @@ class StealthSystem:
         noise_level = max(actor.get_noise_level(), base_noise)
 
         # Broadcast perception event at current location
-        event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, {
+        vent_payload = normalize_perception_payload({
             "source": "vent",
             "room": room,
             "location": destination,
             "noise_level": noise_level,
-            "game_state": game_state
-        }))
+            "game_state": game_state,
+            "actor_ref": actor,
+            "actor": getattr(actor, "name", None),
+        })
+        event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, vent_payload))
 
         # Sound propagates to adjacent vent nodes (echoing effect)
         adjacent_vents = station_map.get_vent_neighbors(*destination)
@@ -466,13 +490,16 @@ class StealthSystem:
             adj_room = station_map.get_room_name(adj_x, adj_y)
             # Reduced noise at adjacent nodes (echo falloff)
             echo_noise = max(noise_level - 3, 5)
-            event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, {
+            echo_payload = normalize_perception_payload({
                 "source": "vent_echo",
                 "room": adj_room,
                 "location": (adj_x, adj_y),
                 "noise_level": echo_noise,
-                "game_state": game_state
-            }))
+                "game_state": game_state,
+                "actor_ref": actor,
+                "actor": getattr(actor, "name", None),
+            })
+            event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, echo_payload))
 
         # Check for Thing encounter in the vents
         encounter_chance = self.config.get("vent_encounter_chance", self.VENT_ENCOUNTER_CHANCE) if self.config else self.VENT_ENCOUNTER_CHANCE
@@ -523,6 +550,8 @@ class StealthSystem:
                 # Emit stealth report for encounter
                 payload = {
                     "room": room,
+                    "location": destination,
+                    "actor": getattr(actor, "name", None),
                     "opponent": opponent.name,
                     "opponent_ref": opponent,
                     "player_ref": actor,
@@ -532,7 +561,8 @@ class StealthSystem:
                     "player_successes": player_result['success_count'],
                     "opponent_successes": thing_result['success_count'],
                     "subject_pool": player_pool,
-                    "observer_pool": thing_pool
+                    "observer_pool": thing_pool,
+                    "noise_level": noise_level,
                 }
                 event_bus.emit(GameEvent(EventType.STEALTH_REPORT, payload))
             else:

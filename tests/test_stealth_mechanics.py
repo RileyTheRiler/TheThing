@@ -20,14 +20,21 @@ def game_state():
     npc.is_alive = True
     npc.attributes = {Attribute.LOGIC: 3}
     npc.skills = {Skill.OBSERVATION: 1}
+    npc.get_noise_level = lambda: 0
+    npc.get_thermal_detection_pool = lambda: 1
     
     gs.crew = [gs.player, npc]
     
     gs.station_map = MagicMock()
     gs.station_map.get_room_name.return_value = "Rec Room"
+    gs.station_map.get_hiding_spot.return_value = None
     
     gs.room_states = MagicMock()
     gs.room_states.has_state.return_value = False # Light by default
+    mod = MagicMock()
+    mod.stealth_detection = 0.0
+    gs.room_states.get_resolution_modifiers.return_value = mod
+    gs.room_states.adjust_pool = lambda base, mod: base + (mod or 0)
     
     gs.rng = RandomnessEngine(seed=42)
     return gs
@@ -85,6 +92,9 @@ def test_stealth_crouching_dark(game_state):
 def test_perception_event_emitted(game_state):
     """Verify PERCEPTION_EVENT is emitted."""
     system = StealthSystem()
+
+    # Force detection branch
+    game_state.rng.random_float = lambda: 0.0
     
     perception_events = []
     def on_perception(event):
@@ -96,6 +106,8 @@ def test_perception_event_emitted(game_state):
     system.on_turn_advance(event)
     
     assert len(perception_events) == 1
-    assert "player_successes" in perception_events[0].payload
+    payload = perception_events[0].payload
+    assert "player_successes" in payload
+    assert payload.get("observer_pool") is not None
     
     event_bus.unsubscribe(EventType.PERCEPTION_EVENT, on_perception)

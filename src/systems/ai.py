@@ -1,6 +1,7 @@
 from typing import TYPE_CHECKING, Tuple, Optional, List, Dict, Any
 from core.resolution import Attribute, Skill
 from core.event_system import event_bus, EventType, GameEvent
+from core.perception import normalize_perception_payload
 from systems.pathfinding import pathfinder
 from systems.ai_cache import AICache
 
@@ -41,7 +42,7 @@ class AISystem:
 
     def on_perception_event(self, event):
         """React to PERCEPTION_EVENT emissions from StealthSystem."""
-        payload = event.payload
+        payload = normalize_perception_payload(event.payload)
         if not payload:
             return
 
@@ -63,8 +64,11 @@ class AISystem:
         event_bus.emit(GameEvent(EventType.DIAGNOSTIC, {
             "type": "AI_PERCEPTION_HOOK",
             "room": payload.get("room"),
+            "location": payload.get("location"),
             "observer": observer.name if hasattr(observer, 'name') else "Unknown",
+            "actor": payload.get("actor"),
             "outcome": outcome,
+            "severity": payload.get("severity"),
             "margin": abs(player_successes - opponent_successes)
         }))
         
@@ -458,18 +462,20 @@ class AISystem:
             # Close enough - coordination complete, attack!
             self._clear_coordination(member)
             # Trigger a stealth detection (the infected has cornered the player)
-            event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, {
-                "room": game_state.station_map.get_room_name(*player_loc),
-                "opponent": member.name,
-                "opponent_ref": member,
-                "player_ref": player,
-                "game_state": game_state,
-                "outcome": "detected",
-                "player_successes": 0,
-                "opponent_successes": 3,
-                "subject_pool": 0,
-                "observer_pool": 3
-            }))
+        event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, normalize_perception_payload({
+            "room": game_state.station_map.get_room_name(*player_loc),
+            "location": player_loc,
+            "opponent": member.name,
+            "opponent_ref": member,
+            "player_ref": player,
+            "actor": getattr(player, "name", None),
+            "game_state": game_state,
+            "outcome": "detected",
+            "player_successes": 0,
+            "opponent_successes": 3,
+            "subject_pool": 0,
+            "observer_pool": 3,
+        })))
             return True
 
         # Move toward target
