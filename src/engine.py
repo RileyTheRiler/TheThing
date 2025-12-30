@@ -754,9 +754,10 @@ def main():
             game.save_manager.save_game(game, slot)
         elif action == "LOAD":
             slot = cmd[1] if len(cmd) > 1 else "auto"
-            data = game.save_manager.load_game(slot)
-            if data:
-                game = GameState.from_dict(data)
+            loaded_game = game.save_manager.load_game(slot)
+            if loaded_game:
+                game.cleanup()
+                game = loaded_game
                 print("*** GAME LOADED ***")
         elif action == "STATUS":
             for m in game.crew:
