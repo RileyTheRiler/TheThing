@@ -1316,41 +1316,16 @@ class RepairCommand(Command):
         player_room = game_state.station_map.get_room_name(*game_state.player.location)
 
         if target_type == "RADIO":
-            if player_room != "Radio Room":
-                event_bus.emit(GameEvent(EventType.WARNING, {"text": "You must be in the Radio Room to repair the radio."}))
-                return
-            
-            if game_state.sabotage.radio_operational:
-                event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "The radio is already operational."}))
-                return
-
-            tools = next((i for i in game_state.player.inventory if "TOOLS" in i.name.upper()), None)
-            if not tools:
-                event_bus.emit(GameEvent(EventType.WARNING, {"text": "You need Tools to repair the radio."}))
-                return
-
-            game_state.sabotage.radio_operational = True
-            event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "You spend some time rewiring the radio. It's working again."}))
-            game_state.advance_turn()
+            success, message, evt_type = game_state.attempt_repair_radio()
+            event_bus.emit(GameEvent(evt_type, {"text": message}))
+            if success:
+                game_state.advance_turn()
 
         elif target_type in ["HELICOPTER", "CHOPPER"]:
-            if player_room != "Hangar":
-                event_bus.emit(GameEvent(EventType.WARNING, {"text": "You must be in the Hangar to repair the helicopter."}))
-                return
-            
-            if game_state.helicopter_status == "FIXED":
-                event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "The helicopter is already fixed."}))
-                return
-
-            tools = next((i for i in game_state.player.inventory if "TOOLS" in i.name.upper()), None)
-            parts = next((i for i in game_state.player.inventory if "PARTS" in i.name.upper()), None)
-            
-            if not tools or not parts:
-                event_bus.emit(GameEvent(EventType.WARNING, {"text": "You need Tools and Replacement Parts to fix the helicopter."}))
-                return
-
-            event_bus.emit(GameEvent(EventType.HELICOPTER_REPAIRED, {"game_state": game_state}))
-            game_state.advance_turn()
+            success, message, evt_type = game_state.attempt_repair_helicopter()
+            event_bus.emit(GameEvent(evt_type, {"text": message}))
+            if success:
+                game_state.advance_turn()
         else:
             event_bus.emit(GameEvent(EventType.ERROR, {"text": f"You can't repair '{target_type}'."}))
 
@@ -1361,18 +1336,10 @@ class FlyCommand(Command):
 
     def execute(self, context: GameContext, args: List[str]) -> None:
         game_state = context.game
-        player_room = game_state.station_map.get_room_name(*game_state.player.location)
-
-        if player_room != "Hangar":
-            event_bus.emit(GameEvent(EventType.WARNING, {"text": "You must be in the Hangar to fly the helicopter."}))
-            return
-
-        if getattr(game_state, "helicopter_status", "BROKEN") != "FIXED":
-            event_bus.emit(GameEvent(EventType.WARNING, {"text": "The helicopter is not operational. It needs repairs."}))
-            return
-
-        event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "You climb into the pilot's seat and engage the rotors..."}))
-        event_bus.emit(GameEvent(EventType.ESCAPE_SUCCESS, {"game_state": game_state}))
+        success, message, evt_type = game_state.attempt_escape()
+        event_bus.emit(GameEvent(evt_type, {"text": message}))
+        if success:
+            game_state.advance_turn()
 
 class SOSCommand(Command):
     name = "SOS"
@@ -1381,23 +1348,10 @@ class SOSCommand(Command):
 
     def execute(self, context: GameContext, args: List[str]) -> None:
         game_state = context.game
-        player_room = game_state.station_map.get_room_name(*game_state.player.location)
-
-        if player_room != "Radio Room":
-            event_bus.emit(GameEvent(EventType.WARNING, {"text": "You must be in the Radio Room to send an SOS."}))
-            return
-
-        if not game_state.sabotage.radio_operational:
-            event_bus.emit(GameEvent(EventType.WARNING, {"text": "The radio is damaged. It needs repairs first."}))
-            return
-
-        if getattr(game_state, "rescue_signal_active", False):
-            event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "The SOS signal is already broadcasting."}))
-            return
-
-        event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "You broadcast a high-frequency SOS signal across all bands."}))
-        event_bus.emit(GameEvent(EventType.SOS_EMITTED, {"game_state": game_state}))
-        game_state.advance_turn()
+        success, message, evt_type = game_state.attempt_radio_signal()
+        event_bus.emit(GameEvent(evt_type, {"text": message}))
+        if success:
+            game_state.advance_turn()
 
 class AccuseCommand(Command):
     name = "ACCUSE"

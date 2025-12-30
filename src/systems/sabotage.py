@@ -17,6 +17,9 @@ class SabotageManager:
         # Operational status of critical systems
         self.radio_operational = True
         self.chopper_operational = True
+        # Legacy compatibility for older attributes referenced in events
+        self.radio_working = True
+        self.helicopter_working = True
         
         # Event tracking
         self.events_triggered = {
@@ -100,6 +103,9 @@ class SabotageManager:
             return None 
         
         self.radio_operational = False
+        self.radio_working = False
+        if game_state:
+            game_state.radio_operational = False
         self.events_triggered[SabotageEvent.RADIO_SMASHING] = True
         return "SABOTAGE: RADIO DESTROYED"
     
@@ -108,6 +114,11 @@ class SabotageManager:
             return None 
         
         self.chopper_operational = False
+        self.helicopter_working = False
+        if game_state:
+            game_state.helicopter_operational = False
+            if getattr(game_state, "helicopter_status", None) != "ESCAPED":
+                game_state.helicopter_status = "BROKEN"
         self.events_triggered[SabotageEvent.CHOPPER_DESTRUCTION] = True
         return "SABOTAGE: HELICOPTER DESTROYED"
     
