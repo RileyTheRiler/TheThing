@@ -133,6 +133,11 @@ class AISystem:
 
     def _update_suspicion_state(self, observer: 'CrewMember', player: 'CrewMember', game_state: 'GameState', reason: str = ""):
         """Evaluate suspicion thresholds and trigger dialogue prompts."""
+        # Coordination overrides standard suspicion transitions to keep focus on the ambush
+        if getattr(observer, "coordinating_ambush", False) and getattr(observer, "is_infected", False):
+            observer.suspicion_state = "coordinating"
+            return
+
         thresholds = getattr(observer, "suspicion_thresholds", {"question": 4, "follow": 8})
         prev_state = getattr(observer, "suspicion_state", "idle")
         level = getattr(observer, "suspicion_level", 0)
@@ -213,9 +218,9 @@ class AISystem:
         if not infected_allies:
             return  # No allies to coordinate with
 
-        # Calculate flanking positions for each ally
+        # Calculate flanking positions for each ally using the pathfinder to ensure opposite approach vectors
         flank_positions = self._calculate_flanking_positions(
-            player_location, alerter.location, len(infected_allies), station_map
+            player_location, alerter.location, infected_allies, station_map, current_turn=game_state.turn
         )
 
         # Assign flanking positions to allies
@@ -226,6 +231,7 @@ class AISystem:
             ally.flank_position = flank_pos
             ally.coordination_leader = alerter.name
             ally.coordination_turns_remaining = 5  # Coordination expires after 5 turns
+            ally.suspicion_state = "coordinating"
 
         # Alerter also enters coordination mode (approaches directly)
         alerter.coordinating_ambush = True
@@ -233,6 +239,7 @@ class AISystem:
         alerter.flank_position = None  # Leader approaches directly
         alerter.coordination_leader = alerter.name
         alerter.coordination_turns_remaining = 5
+        alerter.suspicion_state = "coordinating"
 
         # Emit coordination event
         event_bus.emit(GameEvent(EventType.INFECTED_COORDINATION, {
@@ -249,54 +256,82 @@ class AISystem:
             }))
 
     def _calculate_flanking_positions(self, target: Tuple[int, int], leader_pos: Tuple[int, int],
-                                       num_flankers: int, station_map: 'StationMap') -> List[Tuple[int, int]]:
+                                       allies: List['CrewMember'], station_map: 'StationMap', current_turn: int = 0) -> List[Tuple[int, int]]:
         """Calculate optimal flanking positions around a target for pincer movement.
 
-        Positions allies on opposite sides of the target from the leader.
+        Positions allies on opposite sides of the target from the leader while using the pathfinder
+        to prefer routes that actually connect to the destination.
         """
         tx, ty = target
         lx, ly = leader_pos
 
-        # Calculate direction from leader to target
+        # Calculate normalized direction from leader to target
         dx = tx - lx
         dy = ty - ly
 
-        # Flanking positions are perpendicular and opposite to leader's approach
-        flank_offsets = [
-            # Perpendicular positions (left and right of approach vector)
-            (-dy, dx),   # 90 degrees left
-            (dy, -dx),   # 90 degrees right
-            # Opposite position (behind target from leader's perspective)
-            (-dx, -dy),
-            # Diagonal flanking positions
-            (-dy - 1, dx + 1),
-            (dy + 1, -dx - 1),
+        def _normalize(val: int) -> int:
+            if val > 0:
+                return 1
+            if val < 0:
+                return -1
+            return 0
+
+        dir_x = _normalize(dx)
+        dir_y = _normalize(dy)
+
+        # Primary offsets: opposite side first, then perpendicular lanes
+        base_offsets = [
+            (-dir_x * 3, -dir_y * 3),  # Directly opposite the leader's approach
+            (-dir_y * 3, dir_x * 3),   # Perpendicular left
+            (dir_y * 3, -dir_x * 3),   # Perpendicular right
+            (-dir_x * 2, -dir_y * 2),  # Closer opposite position
+            (-dir_y * 2, dir_x * 2),   # Closer perpendicular
+            (dir_y * 2, -dir_x * 2),
         ]
 
-        positions = []
-        for offset_x, offset_y in flank_offsets:
-            if len(positions) >= num_flankers:
+        positions: List[Tuple[int, int]] = []
+        tested_positions = set()
+        for ally in allies:
+            if len(positions) >= len(allies):
                 break
 
-            # Normalize offset to reasonable distance (2-4 tiles from target)
-            if offset_x != 0:
-                offset_x = 3 if offset_x > 0 else -3
-            if offset_y != 0:
-                offset_y = 3 if offset_y > 0 else -3
+            # Try offsets in priority order until we find a reachable flank for this ally
+            for offset_x, offset_y in base_offsets:
+                flank_x = tx + offset_x
+                flank_y = ty + offset_y
+                candidate = (flank_x, flank_y)
 
-            flank_x = tx + offset_x
-            flank_y = ty + offset_y
+                if candidate in tested_positions:
+                    continue
+                if candidate == target:
+                    continue
+                tested_positions.add(candidate)
 
-            # Ensure position is walkable
-            if station_map.is_walkable(flank_x, flank_y):
-                positions.append((flank_x, flank_y))
-            else:
-                # Try adjacent tiles if primary position is blocked
+                # Ensure position is walkable and reachable from this ally
+                if not station_map.is_walkable(flank_x, flank_y):
+                    continue
+
+                path = pathfinder.find_path(ally.location, candidate, station_map, current_turn)
+                if path:
+                    positions.append(candidate)
+                    break
+
+                # Try nearby adjustments if primary spot is not reachable
                 for adj_x, adj_y in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
                     alt_x, alt_y = flank_x + adj_x, flank_y + adj_y
-                    if station_map.is_walkable(alt_x, alt_y):
-                        positions.append((alt_x, alt_y))
+                    if not station_map.is_walkable(alt_x, alt_y):
+                        continue
+                    alt_candidate = (alt_x, alt_y)
+                    if alt_candidate in tested_positions:
+                        continue
+                    tested_positions.add(alt_candidate)
+                    path = pathfinder.find_path(ally.location, alt_candidate, station_map, current_turn)
+                    if path:
+                        positions.append(alt_candidate)
                         break
+
+                if len(positions) >= len(allies):
+                    break
 
         return positions
 
@@ -305,6 +340,8 @@ class AISystem:
 
         Returns True if the NPC took a coordination action this turn.
         """
+        member.suspicion_state = "coordinating"
+
         # Decay coordination timer
         if member.coordination_turns_remaining > 0:
             member.coordination_turns_remaining -= 1
@@ -333,7 +370,7 @@ class AISystem:
                             break
                     if leader:
                         flank_positions = self._calculate_flanking_positions(
-                            player_loc, leader.location, 1, game_state.station_map
+                            player_loc, leader.location, [member], game_state.station_map, current_turn=game_state.turn
                         )
                         if flank_positions:
                             member.flank_position = flank_positions[0]
@@ -381,6 +418,8 @@ class AISystem:
         member.flank_position = None
         member.coordination_leader = None
         member.coordination_turns_remaining = 0
+        if getattr(member, "suspicion_state", None) == "coordinating":
+            member.suspicion_state = "idle"
 
     def _build_alert_context(self, game_state: 'GameState') -> Dict[str, Any]:
         """Capture alert modifiers for this turn."""
