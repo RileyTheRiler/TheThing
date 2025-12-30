@@ -163,6 +163,46 @@
             "effect_desc": "+3 to thermal detection pool. Detect The Thing's higher heat signature.",
             "uses": -1,
             "spawn_room": "Radio Room"
+        },
+        {
+            "id": "rag",
+            "name": "Rag",
+            "description": "A torn piece of cloth. Useful for improvised crafting.",
+            "category": "material",
+            "uses": -1,
+            "spawn_room": "Kitchen"
+        },
+        {
+            "id": "cloth",
+            "name": "Cloth",
+            "description": "A piece of insulating fabric from a coat or blanket.",
+            "category": "material",
+            "uses": -1,
+            "spawn_room": "Sleeping Quarters"
+        },
+        {
+            "id": "fuel_canister",
+            "name": "Fuel Canister",
+            "description": "A small container of flammable fuel. Handle with care.",
+            "category": "material",
+            "uses": 3,
+            "spawn_room": "Generator"
+        },
+        {
+            "id": "container",
+            "name": "Metal Container",
+            "description": "A small metal box. Can hold samples or small items.",
+            "category": "tool",
+            "uses": -1,
+            "spawn_room": "Lab"
+        },
+        {
+            "id": "wire",
+            "name": "Wire",
+            "description": "A length of thin wire. Good for tripwires and improvised devices.",
+            "category": "material",
+            "uses": -1,
+            "spawn_room": "Generator"
         }
     ]
 }

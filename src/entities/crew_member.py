@@ -294,7 +294,7 @@ class CrewMember:
             # Stealth skill progression
             "stealth_xp": getattr(self, 'stealth_xp', 0),
             "stealth_level": getattr(self, 'stealth_level', 0),
-            "silent_takedown_unlocked": getattr(self, 'silent_takedown_unlocked', False)
+            "silent_takedown_unlocked": getattr(self, 'silent_takedown_unlocked', False),
             "schedule_slip_flag": getattr(self, 'schedule_slip_flag', False),
             "schedule_slip_reason": getattr(self, 'schedule_slip_reason', None)
         }

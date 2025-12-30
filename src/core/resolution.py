@@ -35,7 +35,6 @@ class Skill(Enum):
     COMMS = "Comms"
     DECEPTION = "Deception"
     STEALTH = "Stealth"
-    DECEPTION = "Deception"
 
     @staticmethod
     def get_attribute(skill):

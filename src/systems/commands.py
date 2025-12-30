@@ -1459,6 +1459,96 @@ class SettingsCommand(Command):
         event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "Settings updated (simulated)."}))
 
 
+class DeployCommand(Command):
+    name = "DEPLOY"
+    aliases = ["PLACE", "SET"]
+    description = "Deploy a placeable item like a tripwire. Usage: DEPLOY <item>"
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+
+        if not args:
+            event_bus.emit(GameEvent(EventType.ERROR, {
+                "text": "Usage: DEPLOY <item>\nDeployable items create traps or alerts at your location."
+            }))
+            # Show deployable items in inventory
+            deployables = [i for i in game_state.player.inventory
+                          if getattr(i, 'deployable', False) or
+                          (hasattr(i, 'effect') and i.effect == 'alerts_on_trigger')]
+            if deployables:
+                names = ", ".join([i.name for i in deployables])
+                event_bus.emit(GameEvent(EventType.MESSAGE, {
+                    "text": f"Deployable items: {names}"
+                }))
+            return
+
+        item_name = " ".join(args).upper()
+
+        # Find deployable item in player inventory
+        item = next((i for i in game_state.player.inventory
+                    if i.name.upper() == item_name or item_name in i.name.upper()), None)
+
+        if not item:
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": f"You don't have a {item_name}."
+            }))
+            return
+
+        # Check if item is deployable
+        is_deployable = getattr(item, 'deployable', False) or \
+                       (hasattr(item, 'effect') and item.effect == 'alerts_on_trigger')
+
+        if not is_deployable:
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": f"The {item.name} can't be deployed."
+            }))
+            return
+
+        # Initialize deployed items tracker if needed
+        if not hasattr(game_state, 'deployed_items'):
+            game_state.deployed_items = {}
+
+        player_pos = game_state.player.location
+        player_room = game_state.station_map.get_room_name(*player_pos)
+
+        # Check if there's already a deployed item at this location
+        if player_pos in game_state.deployed_items:
+            existing = game_state.deployed_items[player_pos]
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": f"There's already a {existing['item_name']} deployed here."
+            }))
+            return
+
+        # Remove item from inventory and deploy it
+        deployed_item = game_state.player.remove_item(item.name)
+
+        if not deployed_item:
+            event_bus.emit(GameEvent(EventType.ERROR, {
+                "text": "Failed to deploy item."
+            }))
+            return
+
+        # Store deployment info
+        game_state.deployed_items[player_pos] = {
+            'item_name': deployed_item.name,
+            'item': deployed_item,
+            'room': player_room,
+            'turn_deployed': game_state.turn,
+            'effect': getattr(deployed_item, 'effect', 'alerts_on_trigger'),
+            'triggered': False
+        }
+
+        event_bus.emit(GameEvent(EventType.MESSAGE, {
+            "text": f"You carefully deploy the {deployed_item.name} at your location."
+        }))
+        event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+            "text": f"Deployed {deployed_item.name} in {player_room} at {player_pos}."
+        }))
+
+        # Deploying takes a turn
+        game_state.advance_turn()
+
+
 class SecurityCommand(Command):
     name = "SECURITY"
     aliases = ["CAMERAS"]
@@ -1749,6 +1839,7 @@ class CommandDispatcher:
         self.register(SabotageSecurityCommand())
         self.register(ThermalCommand())
         self.register(SettingsCommand())
+        self.register(DeployCommand())
 
     def register(self, command: Command):
         """Register a command and its aliases."""
