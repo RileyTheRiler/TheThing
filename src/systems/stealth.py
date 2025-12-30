@@ -316,16 +316,22 @@ class StealthSystem:
 
         # Heat-based detection when room is dark and not frozen
         thermal_detected = False
-        if ctx["is_dark"] and not ctx["is_frozen"]:
+        thermal_bonus = 0
+        thermal_context = ctx["env_effects"] or ctx.get("resolution_mods")
+        if thermal_context and getattr(thermal_context, "heat_detection_enabled", False):
+            thermal_bonus = getattr(thermal_context, "thermal_detection_bonus", 0)
+
+        thermal_allowed = ctx["is_dark"] and not ctx["is_frozen"]
+
+        if thermal_allowed:
             # Get observer's thermal detection pool (includes thermal goggles bonus)
             if hasattr(observer, 'get_thermal_detection_pool'):
                 thermal_pool = observer.get_thermal_detection_pool()
             else:
                 thermal_pool = observer.attributes.get(Attribute.THERMAL, 2)
 
-            # Environmental thermal bonus (power off gives equipment bonus)
-            if ctx["env_effects"] and ctx["env_effects"].heat_detection_enabled:
-                thermal_pool += ctx["env_effects"].thermal_detection_bonus
+            # Environmental/room thermal bonus (power off gives equipment bonus)
+            thermal_pool += thermal_bonus
 
             # Subject's thermal signature (Things run hotter)
             if hasattr(subject, 'get_thermal_signature'):
@@ -335,11 +341,12 @@ class StealthSystem:
 
             thermal_pool = max(1, thermal_pool)
             thermal_result = ResolutionSystem.roll_check(thermal_pool, game_state.rng)
-            thermal_detected = thermal_result['success_count'] >= subject_result['success_count']
-            thermal_result = res.roll_check(thermal_pool, game_state.rng)
             # Thermal detection is easier against higher thermal signatures
-            thermal_threshold = max(0, subject_result['success_count'] - (subject_thermal - 2))
+            thermal_threshold = max(0, subject_result['success_count'] - max(0, subject_thermal - 2))
             thermal_detected = thermal_result['success_count'] >= thermal_threshold
+
+        if not (visual_detected or thermal_detected) and getattr(observer, "is_infected", False):
+            thermal_detected = self.check_reverse_thermal_detection(observer, subject, game_state)
 
         return visual_detected or thermal_detected
 
@@ -389,6 +396,9 @@ class StealthSystem:
             env_effects = env.get_current_modifiers(room_name, game_state)
             observer_pool = ResolutionSystem.adjust_pool(observer_pool, env_effects.observation_pool_modifier)
 
+        has_resolution_mods = hasattr(room_states, "get_resolution_modifiers")
+        resolution_mods = room_states.get_resolution_modifiers(room_name) if has_resolution_mods and room_name else None
+
         # Darkness makes visual spotting harder
         if is_dark:
             subject_pool += 2
@@ -414,6 +424,7 @@ class StealthSystem:
             "is_dark": is_dark,
             "is_frozen": is_frozen,
             "env_effects": env_effects,
+            "resolution_mods": resolution_mods,
             "observer_result_penalty": observer_result_penalty,
             "room_name": room_name
         }
@@ -591,8 +602,18 @@ class StealthSystem:
         visual_ratio = ctx["observer_pool"] / (ctx["observer_pool"] + ctx["subject_pool"])
 
         thermal_ratio = 0.0
-        if ctx["env_effects"] and ctx["env_effects"].heat_detection_enabled and not ctx["is_frozen"]:
-            thermal_pool = observer.attributes.get(Attribute.THERMAL, 1) + ctx["env_effects"].thermal_detection_bonus
+        if ctx["is_dark"] and not ctx["is_frozen"]:
+            thermal_bonus = 0
+            thermal_context = ctx["env_effects"] or ctx.get("resolution_mods")
+            if thermal_context and getattr(thermal_context, "heat_detection_enabled", False):
+                thermal_bonus = getattr(thermal_context, "thermal_detection_bonus", 0)
+
+            if hasattr(observer, 'get_thermal_detection_pool'):
+                thermal_pool = observer.get_thermal_detection_pool()
+            else:
+                thermal_pool = observer.attributes.get(Attribute.THERMAL, 1)
+
+            thermal_pool += thermal_bonus
             thermal_ratio = thermal_pool / (thermal_pool + ctx["subject_pool"])
 
         # Combine independent visual and thermal chances
@@ -641,7 +662,17 @@ class StealthSystem:
             return False
 
         # The Thing has enhanced thermal senses (+2 base, +3 from infection)
-        thing_thermal_pool = 5  # Enhanced Thing senses
+        if hasattr(infected_npc, "get_thermal_detection_pool"):
+            thing_thermal_pool = infected_npc.get_thermal_detection_pool()
+        else:
+            thing_thermal_pool = max(5, infected_npc.attributes.get(Attribute.THERMAL, 2))
+
+        thermal_bonus = 0
+        if room_states and hasattr(room_states, "get_resolution_modifiers"):
+            mods = room_states.get_resolution_modifiers(room_name)
+            if getattr(mods, "heat_detection_enabled", False):
+                thermal_bonus = getattr(mods, "thermal_detection_bonus", 0)
+        thing_thermal_pool += thermal_bonus
 
         # Check if player has thermal blanket equipped/in inventory
         thermal_blanket_penalty = self._get_thermal_blanket_bonus(player)

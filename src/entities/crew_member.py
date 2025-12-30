@@ -105,6 +105,16 @@ class CrewMember:
         self.stealth_level = 0
         self.silent_takedown_unlocked = False  # Unlocked at level 4
 
+        # Thermal baseline (humans) and elevated signature (Things)
+        self._ensure_thermal_attribute()
+
+    def _ensure_thermal_attribute(self):
+        """Ensure THERMAL attribute exists and is elevated for infected."""
+        base_thermal = 5 if getattr(self, "is_infected", False) else 2
+        current = self.attributes.get(Attribute.THERMAL)
+        if current is None or current < base_thermal:
+            self.attributes[Attribute.THERMAL] = base_thermal
+
     def add_knowledge_tag(self, tag):
         """Add a knowledge tag/memory log if it doesn't already exist."""
         if tag not in self.knowledge_tags:
@@ -391,6 +401,7 @@ class CrewMember:
         m.suspicion_decay_delay = data.get("suspicion_decay_delay", 3)
         m.suspicion_last_raised = data.get("suspicion_last_raised")
         m.suspicion_state = data.get("suspicion_state", "idle")
+        m._ensure_thermal_attribute()
 
         # Infected coordination state
         m.coordinating_ambush = data.get("coordinating_ambush", False)
@@ -523,11 +534,8 @@ class CrewMember:
         a higher thermal signature, making them detectable via thermal sensing.
         """
         base_thermal = self.attributes.get(Attribute.THERMAL, 2)
-
-        # Infected creatures run hotter (+3 thermal signature)
         if getattr(self, 'is_infected', False):
-            return base_thermal + 3
-
+            base_thermal = max(base_thermal, 5)
         return base_thermal
 
     def get_thermal_detection_pool(self) -> int:
@@ -536,6 +544,8 @@ class CrewMember:
         Checks if character has thermal goggles equipped for bonus.
         """
         base_pool = self.attributes.get(Attribute.THERMAL, 2)
+        if getattr(self, 'is_infected', False):
+            base_pool = max(base_pool, 5)
 
         # Check for thermal goggles in inventory
         for item in getattr(self, 'inventory', []):

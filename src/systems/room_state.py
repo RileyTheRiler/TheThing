@@ -278,12 +278,16 @@ class RoomStateManager:
             modifiers.attack_pool -= 1
             modifiers.observation_pool -= 1
             modifiers.stealth_detection -= 0.15  # Harder to spot someone in the dark
+            modifiers.heat_detection_enabled = True
+            modifiers.thermal_detection_bonus = 1
             # HEAD had more granular modifiers (Firearms -2, Melee -1, Empathy -1)
             # These are roughly covered by attack_pool -= 1.
 
         if RoomState.FROZEN in states:
             modifiers.attack_pool -= 1  # Numb hands, sluggish attacks
             modifiers.observation_pool -= 1  # Frosted visors, breath mist
+            modifiers.heat_detection_enabled = False
+            modifiers.thermal_detection_bonus = 0
 
         return modifiers
 
