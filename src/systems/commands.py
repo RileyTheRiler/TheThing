@@ -5,8 +5,11 @@ from dataclasses import dataclass
 from core.resolution import Attribute, Skill
 from core.event_system import event_bus, EventType, GameEvent
 
+from systems.distraction import DistractionSystem
 from systems.interrogation import InterrogationSystem, InterrogationTopic
+from systems.security import SecuritySystem
 from systems.stealth import StealthPosture
+from systems.social import ExplainAwaySystem
 
 if TYPE_CHECKING:
     from engine import GameState, CrewMember
@@ -133,8 +136,11 @@ class MoveCommand(Command):
             destination = game_state.station_map.get_room_name(*game_state.player.location)
             event_bus.emit(GameEvent(EventType.MOVEMENT, {
                 "actor": getattr(game_state.player, "name", "You"),
+                "mover": game_state.player,
+                "to": game_state.player.location,
                 "direction": direction,
-                "destination": destination
+                "destination": destination,
+                "game_state": game_state
             }))
             _handle_hiding_entry(game_state)
             game_state.advance_turn()
@@ -662,6 +668,13 @@ class InterrogateCommand(Command):
         event_bus.emit(GameEvent(EventType.MESSAGE, {
             "text": f"[INTERROGATE: {target.name} - {topic.value.upper()}]"
         }))
+
+        # Show schedule disruption indicator if target is out of expected location
+        if result.out_of_schedule and result.schedule_message:
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": result.schedule_message
+            }))
+
         event_bus.emit(GameEvent(EventType.DIALOGUE, {
             "speaker": target.name,
             "text": result.dialogue
@@ -675,6 +688,93 @@ class InterrogateCommand(Command):
             game_state.trust_system.update_trust(target.name, game_state.player.name, result.trust_change)
             change_str = f"+{result.trust_change}" if result.trust_change > 0 else str(result.trust_change)
             event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {"text": f"Trust {change_str}"}))
+
+
+class ExplainCommand(Command):
+    name = "EXPLAIN"
+    aliases = ["EXCUSE"]
+    description = "Explain suspicious behavior to an NPC who caught you sneaking."
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+
+        # Initialize explain system if needed
+        if not hasattr(game_state, "explain_system"):
+            game_state.explain_system = ExplainAwaySystem()
+
+        explain_sys = game_state.explain_system
+
+        # Check if there are pending explanation opportunities
+        pending = explain_sys.get_pending_observers()
+
+        if not pending:
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": "There's no one expecting an explanation right now."
+            }))
+            return
+
+        # If specific target provided, use that
+        if args:
+            target_name = args[0].upper()
+            if target_name not in [p.upper() for p in pending]:
+                event_bus.emit(GameEvent(EventType.WARNING, {
+                    "text": f"{target_name} isn't waiting for an explanation from you."
+                }))
+                return
+            # Find the actual observer
+            observer = None
+            for name in pending:
+                if name.upper() == target_name:
+                    observer = next((m for m in game_state.crew if m.name == name), None)
+                    break
+        else:
+            # Default to first pending observer
+            observer_name = pending[0]
+            observer = next((m for m in game_state.crew if m.name == observer_name), None)
+
+        if not observer:
+            event_bus.emit(GameEvent(EventType.ERROR, {
+                "text": "Could not find the observer to explain to."
+            }))
+            explain_sys.clear_pending()
+            return
+
+        # Check if observer is in the same room
+        player_room = game_state.station_map.get_room_name(*game_state.player.location)
+        observer_room = game_state.station_map.get_room_name(*observer.location)
+
+        if player_room != observer_room:
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": f"{observer.name} is no longer here. The moment has passed."
+            }))
+            explain_sys.clear_pending(observer.name)
+            return
+
+        # Attempt the explanation
+        result = explain_sys.attempt_explain(game_state.player, observer, game_state)
+
+        # Display the dialogue
+        event_bus.emit(GameEvent(EventType.DIALOGUE, {
+            "speaker": game_state.player.name,
+            "target": observer.name,
+            "text": result.dialogue
+        }))
+
+        # Show outcome
+        if result.success:
+            outcome_text = f"[SUCCESS] {observer.name}'s suspicion decreased by {abs(result.suspicion_change)}."
+        elif result.critical:
+            outcome_text = f"[CRITICAL FAILURE] {observer.name} is now hostile!"
+        else:
+            outcome_text = f"[FAILURE] {observer.name}'s suspicion increased. Trust penalty: {result.trust_change}"
+
+        event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+            "text": f"EXPLAIN: Player {result.player_successes} successes vs {observer.name} {result.observer_successes} successes"
+        }))
+        event_bus.emit(GameEvent(EventType.MESSAGE, {"text": outcome_text}))
+
+        # Explaining takes a turn
+        game_state.advance_turn()
 
 class ConfrontSlipCommand(Command):
     name = "CONFRONT"
@@ -1017,20 +1117,39 @@ class VentCommand(Command):
 
         movement_payload = {
             "actor": getattr(player, "name", "You"),
+            "mover": player,
+            "to": target,
             "direction": direction,
             "destination": destination_room,
             "vent": True,
             "mode": "vent",
-            "noise": player.get_noise_level()
+            "noise": player.get_noise_level(),
+            "game_state": game_state
         }
         event_bus.emit(GameEvent(EventType.MOVEMENT, movement_payload))
         event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "Metal scrapes under you as you crawl through the vent."}))
 
+        # Handle vent movement with enhanced mechanics (echoing noise, encounters)
         stealth_sys = getattr(game_state, "stealth", None) or getattr(game_state, "stealth_system", None)
+        encounter_result = None
         if stealth_sys and hasattr(stealth_sys, "handle_vent_movement"):
-            stealth_sys.handle_vent_movement(game_state, player, target)
+            encounter_result = stealth_sys.handle_vent_movement(game_state, player, target)
 
-        game_state.advance_turn()
+        # Vent crawling takes multiple turns (slow movement in cramped space)
+        crawl_turns = 2  # Default
+        if stealth_sys and hasattr(stealth_sys, "get_vent_crawl_turns"):
+            crawl_turns = stealth_sys.get_vent_crawl_turns()
+
+        for _ in range(crawl_turns):
+            game_state.advance_turn()
+
+        # If player was caught in vent encounter, they may be forced out
+        if encounter_result and encounter_result.get("encounter") and not encounter_result.get("escaped"):
+            player.in_vent = False
+            player.set_posture(StealthPosture.CROUCHING)
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": "You are knocked out of the vent!"
+            }))
 
 class CrawlCommand(Command):
     name = "CRAWL"
@@ -1087,8 +1206,11 @@ class SneakCommand(Command):
             destination = game_state.station_map.get_room_name(*game_state.player.location)
             event_bus.emit(GameEvent(EventType.MOVEMENT, {
                 "actor": "You",
+                "mover": game_state.player,
+                "to": game_state.player.location,
                 "direction": direction,
-                "destination": destination
+                "destination": destination,
+                "game_state": game_state
             }))
             event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "(Sneaking)"}))
             _handle_hiding_entry(game_state)
@@ -1266,6 +1388,64 @@ class AccuseCommand(Command):
             game_state.player, target, [], game_state
         )
 
+class ThrowCommand(Command):
+    name = "THROW"
+    aliases = ["TOSS"]
+    description = "Throw an item to create a distraction. Usage: THROW <item> <direction>"
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+
+        if len(args) < 2:
+            event_bus.emit(GameEvent(EventType.ERROR, {
+                "text": "Usage: THROW <item> <direction>\nDirections: N/S/E/W or NE/NW/SE/SW"
+            }))
+            return
+
+        item_name = args[0].upper()
+        direction = args[1].upper()
+
+        # Find item in player inventory
+        item = next((i for i in game_state.player.inventory
+                     if i.name.upper() == item_name or item_name in i.name.upper()), None)
+
+        if not item:
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": f"You don't have a {item_name}."
+            }))
+            # Show available throwable items
+            if not hasattr(game_state, 'distraction_system'):
+                game_state.distraction_system = DistractionSystem()
+            throwables = game_state.distraction_system.get_throwable_items(game_state.player)
+            if throwables:
+                names = ", ".join([i.name for i in throwables])
+                event_bus.emit(GameEvent(EventType.MESSAGE, {
+                    "text": f"Throwable items: {names}"
+                }))
+            return
+
+        if not getattr(item, 'throwable', False):
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": f"The {item.name} can't be thrown."
+            }))
+            return
+
+        # Initialize distraction system if needed
+        if not hasattr(game_state, 'distraction_system'):
+            game_state.distraction_system = DistractionSystem()
+
+        # Attempt to throw the item
+        success, message = game_state.distraction_system.throw_item(
+            game_state.player, item, direction, game_state
+        )
+
+        if success:
+            event_bus.emit(GameEvent(EventType.MESSAGE, {"text": message}))
+            game_state.advance_turn()
+        else:
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": message}))
+
+
 class SettingsCommand(Command):
     name = "SETTINGS"
     aliases = ["CONFIG"]
@@ -1279,9 +1459,246 @@ class SettingsCommand(Command):
         event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "Settings updated (simulated)."}))
 
 
+class SecurityCommand(Command):
+    name = "SECURITY"
+    aliases = ["CAMERAS"]
+    description = "Check security console for alerts. Usage: SECURITY [STATUS]"
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+        player_room = game_state.station_map.get_room_name(*game_state.player.location)
+
+        # Initialize security system if needed
+        if not hasattr(game_state, 'security_system'):
+            game_state.security_system = SecuritySystem(game_state)
+
+        security_sys = game_state.security_system
+
+        if args and args[0].upper() == "STATUS":
+            # Show device status
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": f"--- SECURITY STATUS ---\n{security_sys.get_status()}"
+            }))
+            return
+
+        # Check the security console (only in Radio Room)
+        if player_room != "Radio Room":
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": "The security console is in the Radio Room."
+            }))
+            return
+
+        unread = security_sys.check_console()
+
+        if not unread:
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": "--- SECURITY LOG ---\nNo new alerts."
+            }))
+        else:
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": f"--- SECURITY LOG ({len(unread)} alerts) ---"
+            }))
+            for entry in unread[-10:]:  # Show last 10
+                device = entry['device_type'].replace('_', ' ').title()
+                event_bus.emit(GameEvent(EventType.MESSAGE, {
+                    "text": f"[Turn {entry['turn']}] {device} ({entry['device_room']}): {entry['target']} detected at {entry['position']}"
+                }))
+
+
+class SabotageSecurityCommand(Command):
+    name = "SABOTAGE"
+    aliases = ["DISABLE"]
+    description = "Sabotage a security device. Usage: SABOTAGE CAMERA/SENSOR"
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+
+        if not args:
+            event_bus.emit(GameEvent(EventType.ERROR, {
+                "text": "Usage: SABOTAGE <CAMERA/SENSOR>\nYou must be at the device's location."
+            }))
+            return
+
+        target_type = args[0].upper()
+
+        if target_type not in ["CAMERA", "SENSOR", "MOTION_SENSOR"]:
+            event_bus.emit(GameEvent(EventType.ERROR, {
+                "text": "You can sabotage: CAMERA, SENSOR"
+            }))
+            return
+
+        # Initialize security system if needed
+        if not hasattr(game_state, 'security_system'):
+            game_state.security_system = SecuritySystem(game_state)
+
+        security_sys = game_state.security_system
+        player_pos = game_state.player.location
+
+        # Check if there's a device at player's location
+        device = security_sys.get_device_at(player_pos)
+
+        if not device:
+            # Check for nearby devices in the same room
+            player_room = game_state.station_map.get_room_name(*player_pos)
+            room_devices = security_sys.get_devices_in_room(player_room)
+
+            if not room_devices:
+                event_bus.emit(GameEvent(EventType.WARNING, {
+                    "text": "There's no security device here to sabotage."
+                }))
+                return
+
+            # Find matching device type
+            matching = [d for d in room_devices if
+                       (target_type == "CAMERA" and d.device_type == "camera") or
+                       (target_type in ["SENSOR", "MOTION_SENSOR"] and d.device_type == "motion_sensor")]
+
+            if not matching:
+                event_bus.emit(GameEvent(EventType.WARNING, {
+                    "text": f"There's no {target_type.lower()} in this room."
+                }))
+                return
+
+            device = matching[0]
+            device_pos = device.position
+        else:
+            device_pos = player_pos
+
+        # Check for required tools
+        tools = next((i for i in game_state.player.inventory if "TOOLS" in i.name.upper()), None)
+        if not tools:
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": "You need Tools to sabotage security devices."
+            }))
+            return
+
+        # Attempt sabotage
+        success, message = security_sys.sabotage_device(device_pos, game_state)
+
+        if success:
+            event_bus.emit(GameEvent(EventType.MESSAGE, {"text": message}))
+            game_state.advance_turn()
+        else:
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": message}))
+
+
+class ThermalCommand(Command):
+    name = "THERMAL"
+    aliases = ["SCAN", "HEATSCAN"]
+    description = "Scan for heat signatures with thermal goggles. Only works in darkness."
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        from core.resolution import ResolutionSystem
+        from systems.room_state import RoomState
+
+        game_state = context.game
+        player = game_state.player
+        player_room = game_state.station_map.get_room_name(*player.location)
+        room_states = getattr(game_state, 'room_states', None)
+
+        # Check if player has thermal goggles
+        has_goggles = any(
+            hasattr(item, 'effect') and item.effect == 'thermal_detection'
+            for item in getattr(player, 'inventory', [])
+        )
+
+        if not has_goggles:
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": "You need Thermal Goggles to scan for heat signatures."
+            }))
+            return
+
+        # Check room darkness
+        is_dark = room_states.has_state(player_room, RoomState.DARK) if room_states else False
+        if not is_dark:
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": "Thermal scanning only works in darkness. The ambient light washes out heat signatures."
+            }))
+            return
+
+        # Check if room is frozen (blocks thermal)
+        is_frozen = room_states.has_state(player_room, RoomState.FROZEN) if room_states else False
+        if is_frozen:
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": "The room is frozen solid. All heat signatures are masked by the extreme cold."
+            }))
+            return
+
+        # Get player's thermal detection pool
+        if hasattr(player, 'get_thermal_detection_pool'):
+            thermal_pool = player.get_thermal_detection_pool()
+        else:
+            thermal_pool = 2
+
+        event_bus.emit(GameEvent(EventType.MESSAGE, {
+            "text": "You activate the thermal goggles and scan the room..."
+        }))
+
+        # Find all characters in the same room
+        crew_in_room = [
+            m for m in game_state.crew
+            if m.is_alive and m.location == player.location and m != player
+        ]
+
+        if not crew_in_room:
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": "No heat signatures detected in this area."
+            }))
+            game_state.advance_turn()
+            return
+
+        res = ResolutionSystem()
+        rng = game_state.rng
+
+        detections = []
+        for target in crew_in_room:
+            # Get target's thermal signature (Things run hotter)
+            if hasattr(target, 'get_thermal_signature'):
+                target_thermal = target.get_thermal_signature()
+            else:
+                target_thermal = 2
+
+            # Roll thermal detection
+            scan_result = res.roll_check(thermal_pool, rng)
+
+            # Higher thermal signature = easier to detect
+            # Infected creatures have +3 thermal, so threshold is lower
+            if target_thermal > 3:  # Infected (5+ thermal)
+                thermal_desc = "ELEVATED"
+                intensity = "burns brightly"
+            else:
+                thermal_desc = "normal"
+                intensity = "glows steadily"
+
+            # Detection success - always see something in thermal
+            detections.append({
+                "name": target.name,
+                "thermal": thermal_desc,
+                "intensity": intensity,
+                "successes": scan_result['success_count'],
+                "is_elevated": target_thermal > 3
+            })
+
+        event_bus.emit(GameEvent(EventType.MESSAGE, {
+            "text": f"--- THERMAL SCAN RESULTS ({player_room}) ---"
+        }))
+
+        for d in detections:
+            if d['is_elevated']:
+                event_bus.emit(GameEvent(EventType.WARNING, {
+                    "text": f"  {d['name']}: {d['thermal'].upper()} - Their heat signature {d['intensity']}!"
+                }))
+            else:
+                event_bus.emit(GameEvent(EventType.MESSAGE, {
+                    "text": f"  {d['name']}: {d['thermal']} body temperature"
+                }))
+
+        game_state.advance_turn()
+
+
 class CommandDispatcher:
     """Manages command registration and dispatching."""
-    
+
     def __init__(self):
         self.commands: Dict[str, Command] = {}
         self._register_defaults()
@@ -1305,6 +1722,7 @@ class CommandDispatcher:
         self.register(CancelTestCommand())
         self.register(TalkCommand())
         self.register(InterrogateCommand())
+        self.register(ExplainCommand())
         self.register(ConfrontSlipCommand())
         self.register(BarricadeCommand())
         self.register(JournalCommand())
@@ -1326,6 +1744,10 @@ class CommandDispatcher:
         self.register(FlyCommand())
         self.register(SOSCommand())
         self.register(AccuseCommand())
+        self.register(ThrowCommand())
+        self.register(SecurityCommand())
+        self.register(SabotageSecurityCommand())
+        self.register(ThermalCommand())
         self.register(SettingsCommand())
 
     def register(self, command: Command):

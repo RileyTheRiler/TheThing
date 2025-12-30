@@ -11,6 +11,8 @@ class Item:
     """
 
     def __init__(self, name, description, is_evidence=False, weapon_skill=None, damage=0,
+                 uses=-1, effect=None, effect_value=0, category="misc",
+                 throwable=False, noise_level=0, creates_light=False):
                  uses=-1, effect=None, effect_value=0, category="misc", cooldown=0):
         self.name = name
         self.description = description
@@ -23,6 +25,10 @@ class Item:
         self.category = category
         self.cooldown = cooldown
         self.history = []
+        # Distraction mechanics
+        self.throwable = throwable
+        self.noise_level = noise_level
+        self.creates_light = creates_light
 
     def add_history(self, turn, location):
         """Record an event in the item's chain of custody."""
@@ -58,6 +64,10 @@ class Item:
             "effect": self.effect,
             "effect_value": self.effect_value,
             "category": self.category,
+            "history": self.history,
+            "throwable": self.throwable,
+            "noise_level": self.noise_level,
+            "creates_light": self.creates_light
             "cooldown": self.cooldown,
             "history": self.history
         }
@@ -101,6 +111,9 @@ class Item:
             effect=data.get("effect"),
             effect_value=data.get("effect_value", 0),
             category=data.get("category", "misc"),
+            throwable=data.get("throwable", False),
+            noise_level=data.get("noise_level", 0),
+            creates_light=data.get("creates_light", False)
             cooldown=data.get("cooldown", 0)
         )
         item.history = data.get("history", [])
