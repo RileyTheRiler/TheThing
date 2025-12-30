@@ -140,6 +140,7 @@
     {
         "name": "Garry",
         "role": "Commander",
+        "security_role": true,
         "behavior": "Stiff",
         "attributes": {
             "Prowess": 3,
@@ -252,6 +253,7 @@
     {
         "name": "Windows",
         "role": "Radio Op",
+        "security_role": true,
         "behavior": "Paranoid",
         "attributes": {
             "Prowess": 2,

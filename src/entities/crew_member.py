@@ -49,6 +49,8 @@ class CrewMember:
         self.is_revealed = False    # Agent 3: Violent Reveal
         self.slipped_vapor = False  # Hook: Biological Slip flag
         self.knowledge_tags = []    # Agent 3: Searchlight Harvest
+        self.security_role = False
+        self.next_security_check_turn = 0
         self.stealth_posture = StealthPosture.STANDING
         self.schedule_slip_flag = False  # Flagged when off expected schedule
         self.schedule_slip_reason = None
@@ -283,6 +285,8 @@ class CrewMember:
             "knowledge_tags": self.knowledge_tags,
             "stealth_posture": self.stealth_posture.name,
             "in_vent": self.in_vent,
+            "security_role": getattr(self, "security_role", False),
+            "next_security_check_turn": getattr(self, "next_security_check_turn", 0),
             "suspicion_level": getattr(self, 'suspicion_level', 0),
             "suspicion_thresholds": getattr(self, 'suspicion_thresholds', {"question": 4, "follow": 8}),
             "suspicion_decay_delay": getattr(self, 'suspicion_decay_delay', 3),
@@ -380,6 +384,8 @@ class CrewMember:
         m.out_of_place_reason = data.get("out_of_place_reason")
         m.location_hint_active = data.get("location_hint_active", False)
         m.in_vent = data.get("in_vent", False)
+        m.security_role = data.get("security_role", False)
+        m.next_security_check_turn = data.get("next_security_check_turn", 0)
         m.suspicion_level = data.get("suspicion_level", 0)
         m.suspicion_thresholds = data.get("suspicion_thresholds", {"question": 4, "follow": 8})
         m.suspicion_decay_delay = data.get("suspicion_decay_delay", 3)
