@@ -25,7 +25,7 @@ from systems.crafting import CraftingSystem
 from systems.endgame import EndgameSystem
 from systems.forensics import BiologicalSlipGenerator, BloodTestSim, ForensicDatabase, EvidenceLog, ForensicsSystem
 from systems.missionary import MissionarySystem
-from systems.persistence import SaveManager
+from systems.persistence import SaveManager, CURRENT_SAVE_VERSION
 from systems.psychology import PsychologySystem
 from systems.random_events import RandomEventSystem
 from systems.room_state import RoomState, RoomStateManager
@@ -44,105 +44,6 @@ from ui.message_reporter import MessageReporter
 from audio.audio_manager import AudioManager, Sound
 
 
-class CrewMember:
-    def __init__(self, name, role, behavior_type, attributes=None, skills=None, schedule=None, invariants=None):
-        self.name = name
-        self.role = role
-        self.behavior_type = behavior_type
-        self.is_infected = False  # The "Truth" hidden from the player
-        self.trust_score = 50      # 0 to 100
-        self.location = (0, 0)
-        self.is_alive = True
-        
-        # Stats
-        self.attributes = attributes if attributes else {}
-        self.skills = skills if skills else {}
-        self.schedule = schedule if schedule else []
-        self.invariants = invariants if invariants else []
-        self.forbidden_rooms = [] # Hydrated from JSON
-        self.stress = 0
-        self.inventory = []
-        self.health = 3 # Base health
-        self.mask_integrity = 100.0 # Agent 3: Mask Tracking
-        self.is_revealed = False    # Agent 3: Violent Reveal
-        self.slipped_vapor = False  # Hook: Biological Slip flag
-
-    def take_damage(self, amount):
-        self.health -= amount
-        if self.health <= 0:
-            self.health = 0
-            self.is_alive = False
-            return True # Died
-        return False
-
-    def add_item(self, item, turn=0):
-        self.inventory.append(item)
-        item.add_history(turn, f"Picked up by {self.name}")
-    
-    def remove_item(self, item_name):
-        for i, item in enumerate(self.inventory):
-            if item.name.upper() == item_name.upper():
-                return self.inventory.pop(i)
-        return None
-
-    def roll_check(self, attribute, skill=None, rng=None, resolution_system=None):
-        attr_val = self.attributes.get(attribute, 1) 
-        skill_val = self.skills.get(skill, 0)
-        pool_size = attr_val + skill_val
-        
-        # Use provided ResolutionSystem or fallback to static class method
-        if resolution_system:
-            return resolution_system.roll_check(pool_size, rng)
-        return ResolutionSystem.roll_check(pool_size, rng)
-
-    def move(self, dx, dy, station_map):
-        new_x = self.location[0] + dx
-        new_y = self.location[1] + dy
-        if station_map.is_walkable(new_x, new_y):
-            self.location = (new_x, new_y)
-            return True
-        return False
-
-    def get_description(self, game_state):
-        rng = game_state.rng
-        desc = [f"This is {self.name}, the {self.role}."]
-        
-        # 1. Spatial Slip Check
-        current_room = game_state.station_map.get_room_name(*self.location)
-        if hasattr(self, 'forbidden_rooms') and current_room in self.forbidden_rooms:
-            desc.append(f"Something is wrong. {self.name} shouldn't be in the {current_room}. They look out of place, almost defensive.")
-
-        # 2. Invariant Visual Slips (Base Behavioral Patterns)
-        for inv in [i for i in self.invariants if i.get('type') == 'visual']:
-            if self.is_infected and rng.random_float() < inv.get('slip_chance', 0.5):
-                desc.append(inv['slip_desc'])
-            else:
-                desc.append(inv['baseline'])
-
-        # 3. Agent 3/4 biological slips and sensory tells
-        if self.is_infected and not self.is_revealed:
-            # Chance to show a sensory tell increases as mask integrity drops
-            if self.mask_integrity < 80:
-                slip_chance = (80 - self.mask_integrity) / 80.0
-                if rng.random_float() < slip_chance:
-                    slip = BiologicalSlipGenerator.get_visual_slip(rng)
-                    desc.append(f"You notice they are {slip}.")
-            
-            # Specific hint for infected NPCs
-            if self.mask_integrity < 50 and rng.random_float() < 0.3:
-                 desc.append("Their eyes seem strange... almost like lusterless black spheres.")
-        
-        # 4. State based on stress and environment
-        state = "shivering in the cold"
-        if self.stress > 3:
-            state = "visibly shaking and hyperventilating"
-        elif self.is_infected and self.mask_integrity < 40:
-             state = "unnaturally still, staring through you"
-             
-        desc.append(f"State: {state.capitalize()}.")
-        
-        return " ".join(desc)
-
 class GameState:
     @property
     def paranoia_level(self):
@@ -157,48 +58,23 @@ class GameState:
         if not hasattr(self, "social_thresholds"):
             return
 
-        # 0. PRIORITY: Lynch Mob Hunting (Agent 2)
-        if game_state.lynch_mob.active_mob and game_state.lynch_mob.target:
-            target = game_state.lynch_mob.target
-            if target != self and target.is_alive:
-                # Move toward the lynch target
-                tx, ty = target.location
-                self._pathfind_step(tx, ty, game_state.station_map)
-                return
+        if previous_value is None:
+            self._paranoia_bucket = bucket_for_thresholds(clamped, self.social_thresholds.paranoia_thresholds)
+            return
 
-        # 1. Check Schedule
-        # Schedule entries: {"start": 8, "end": 20, "room": "Rec Room"}
-        # Fix: TimeSystem lacks 'hour' property, calculate manually (Start 08:00)
-        current_hour = (game_state.time_system.turn_count + 8) % 24
-        destination = None
-        for entry in self.schedule:
-            start = entry.get("start", 0)
-            end = entry.get("end", 24)
-            room = entry.get("room")
-            
-            # Handle wrap-around schedules (e.g., 20:00 to 08:00)
-            if start < end:
-                if start <= current_hour < end:
-                    destination = room
-                    break
-            else: # Wrap around midnight
-                if current_hour >= start or current_hour < end:
-                    destination = room
-                    break
-        
-        if destination:
-            # Move towards destination room
-            target_pos = game_state.station_map.rooms.get(destination)
-            if target_pos:
-                tx, ty, _, _ = target_pos
-                self._pathfind_step(tx, ty, game_state.station_map)
-                return
-
-        # 2. Idling / Wandering
-        if game_state.rng.random_float() < 0.3:
-            dx = game_state.rng.choose([-1, 0, 1])
-            dy = game_state.rng.choose([-1, 0, 1])
-            self.move(dx, dy, game_state.station_map)
+        new_bucket = bucket_for_thresholds(clamped, self.social_thresholds.paranoia_thresholds)
+        previous_bucket = getattr(self, "_paranoia_bucket", new_bucket)
+        if new_bucket != previous_bucket:
+            self._paranoia_bucket = new_bucket
+            direction = "UP" if clamped > previous_value else "DOWN"
+            event_bus.emit(GameEvent(EventType.PARANOIA_THRESHOLD_CROSSED, {
+                "value": clamped,
+                "previous_value": previous_value,
+                "bucket": bucket_label(new_bucket),
+                "thresholds": list(self.social_thresholds.paranoia_thresholds),
+                "direction": direction,
+                "threshold": self.social_thresholds.paranoia_thresholds[new_bucket-1] if direction == "UP" else self.social_thresholds.paranoia_thresholds[new_bucket]
+            }))
 
     def _pathfind_step(self, target_x, target_y, station_map):
         """Simple greedy step towards target."""
@@ -590,6 +466,9 @@ class GameState:
     def to_dict(self):
         """Serialize game state to dictionary for saving."""
         return {
+            "_save_version": CURRENT_SAVE_VERSION,
+            "save_version": CURRENT_SAVE_VERSION,
+            "turn": self.turn,
             "difficulty": self.difficulty.value,
             "power_on": self.power_on,
             "paranoia_level": self.paranoia_level,
@@ -601,6 +480,7 @@ class GameState:
             "time_system": self.time_system.to_dict(),
             "station_map": self.station_map.to_dict(),
             "crew": [m.to_dict() for m in self.crew],
+            "player_location": self.player.location if self.player else (0, 0),
             "journal": self.journal,
             "trust": self.trust_system.matrix if hasattr(self, "trust_system") else {},
             "crafting": self.crafting.to_dict() if hasattr(self.crafting, "to_dict") else {},
@@ -613,6 +493,8 @@ class GameState:
         """Deserialize game state from dictionary with defensive defaults and validation."""
         if not data or not isinstance(data, dict):
             return None
+
+        save_version = data.get("save_version", data.get("_save_version", 0))
 
         difficulty_value = data.get("difficulty", Difficulty.NORMAL.value)
         try:
@@ -634,6 +516,7 @@ class GameState:
         game.helicopter_status = data.get("helicopter_status", "BROKEN")
         game.rescue_signal_active = data.get("rescue_signal_active", False)
         game.rescue_turns_remaining = data.get("rescue_turns_remaining")
+        game.turn = data.get("turn", getattr(game, "turn", 1))
 
         if "rng" in data:
             game.rng.from_dict(data["rng"])
@@ -645,18 +528,33 @@ class GameState:
 
         if "station_map" in data:
             game.station_map = StationMap.from_dict(data["station_map"])
+        else:
+            game.station_map = StationMap()
 
         crew_data = data.get("crew", [])
         if crew_data:
             game.crew = []
             for m_data in crew_data:
-                member = CrewMember.from_dict(m_data)
+                try:
+                    member = CrewMember.from_dict(m_data)
+                except Exception:
+                    name = m_data.get("name", "Unknown") if isinstance(m_data, dict) else "Unknown"
+                    member = CrewMember(name, m_data.get("role", "None") if isinstance(m_data, dict) else "None", m_data.get("behavior_type", "Neutral") if isinstance(m_data, dict) else "Neutral")
                 if member:
                     game.crew.append(member)
+        else:
+            game.crew = []
 
         game.player = next((m for m in game.crew if m.name == "MacReady"), None)
-        if not game.player and game.crew:
-            game.player = game.crew[0]
+        if not game.player:
+            fallback_player = CrewMember("MacReady", "Pilot", "Neutral")
+            game.crew.insert(0, fallback_player)
+            game.player = fallback_player
+
+        if "player_location" in data and game.player:
+            loc = data.get("player_location")
+            if isinstance(loc, (list, tuple)) and len(loc) == 2:
+                game.player.location = (loc[0], loc[1])
 
         game.journal = data.get("journal", [])
 
