@@ -1,6 +1,6 @@
 """StationMap entity class for The Thing game."""
 
-from typing import List, Dict
+from typing import List, Dict, Tuple
 from entities.item import Item
 
 
@@ -179,6 +179,34 @@ class StationMap:
         """Get names of rooms adjacent to the current position."""
         current_room = self.get_room_name(x, y)
         return self.get_connections(current_room)
+
+    def get_walkable_neighbors(self, x: int, y: int, include_diagonal: bool = False) -> List[Tuple[int, int]]:
+        """Return walkable neighbor tiles for a coordinate."""
+        deltas = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+        if include_diagonal:
+            deltas.extend([(-1, -1), (-1, 1), (1, -1), (1, 1)])
+        neighbors = []
+        for dx, dy in deltas:
+            nx, ny = x + dx, y + dy
+            if self.is_walkable(nx, ny):
+                neighbors.append((nx, ny))
+        return neighbors
+
+    def get_throw_landing_tiles(self, start: Tuple[int, int], direction: Tuple[int, int],
+                                min_distance: int = 3, max_distance: int = 5) -> List[Tuple[int, int]]:
+        """Return candidate landing tiles for a thrown item along a direction."""
+        if not direction or direction == (0, 0):
+            return []
+        dx, dy = direction
+        x, y = start
+        candidates: List[Tuple[int, int]] = []
+        for step in range(1, max_distance + 1):
+            nx, ny = x + (dx * step), y + (dy * step)
+            if not self.is_walkable(nx, ny):
+                break
+            if step >= min_distance:
+                candidates.append((nx, ny))
+        return candidates
 
     def render(self, crew):
         """Render the map with crew member positions."""
