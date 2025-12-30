@@ -1538,8 +1538,12 @@ class DeployCommand(Command):
             return
 
         # Check if item is deployable
-        is_deployable = getattr(item, 'deployable', False) or \
-                       (hasattr(item, 'effect') and item.effect == 'alerts_on_trigger')
+        is_deployable = getattr(item, 'is_deployable_item', None)
+        if callable(is_deployable):
+            is_deployable = item.is_deployable_item()
+        else:
+            is_deployable = getattr(item, 'deployable', False) or \
+                           (hasattr(item, 'effect') and item.effect == 'alerts_on_trigger')
 
         if not is_deployable:
             event_bus.emit(GameEvent(EventType.WARNING, {
@@ -1572,21 +1576,43 @@ class DeployCommand(Command):
             return
 
         # Store deployment info
-        game_state.deployed_items[player_pos] = {
-            'item_name': deployed_item.name,
-            'item': deployed_item,
-            'room': player_room,
-            'turn_deployed': game_state.turn,
-            'effect': getattr(deployed_item, 'effect', 'alerts_on_trigger'),
-            'triggered': False
-        }
+        effect_type = getattr(deployed_item, "effect", None)
 
-        event_bus.emit(GameEvent(EventType.MESSAGE, {
-            "text": f"You carefully deploy the {deployed_item.name} at your location."
-        }))
-        event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
-            "text": f"Deployed {deployed_item.name} in {player_room} at {player_pos}."
-        }))
+        # Some deployables resolve instantly instead of waiting for a trigger
+        if effect_type == "instant_barricade" and hasattr(game_state, "room_states"):
+            # Apply barricade strength immediately
+            strength_boost = max(1, getattr(deployed_item, "effect_value", 1))
+            result_text = None
+            for _ in range(strength_boost):
+                result_text = game_state.room_states.barricade_room(player_room, actor=getattr(game_state.player, "name", "You"))
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": result_text or f"You brace the {player_room} using the {deployed_item.name}."
+            }))
+            event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+                "text": f"{deployed_item.name} consumed to barricade {player_room}."
+            }))
+        else:
+            noise_strength = deployed_item.get_noise_strength(0) if hasattr(deployed_item, "get_noise_strength") else getattr(deployed_item, "noise_level", 0)
+            if not noise_strength and effect_type == "alerts_on_trigger":
+                noise_strength = 6
+
+            game_state.deployed_items[player_pos] = {
+                'item_name': deployed_item.name,
+                'item': deployed_item,
+                'room': player_room,
+                'turn_deployed': game_state.turn,
+                'effect': effect_type or 'alerts_on_trigger',
+                'effect_value': getattr(deployed_item, 'effect_value', 0),
+                'noise_level': noise_strength,
+                'triggered': False
+            }
+
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": f"You carefully deploy the {deployed_item.name} at your location."
+            }))
+            event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+                "text": f"Deployed {deployed_item.name} in {player_room} at {player_pos}."
+            }))
 
         # Deploying takes a turn
         game_state.advance_turn()

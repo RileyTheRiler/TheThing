@@ -722,6 +722,7 @@ class AISystem:
 
         item_name = deployed['item_name']
         room = deployed['room']
+        noise_level = deployed.get('noise_level', 6)
 
         # Emit alert to player
         event_bus.emit(GameEvent(EventType.WARNING, {
@@ -734,8 +735,12 @@ class AISystem:
             "item": item_name,
             "triggered_by": member.name,
             "location": member_pos,
+            "target_location": member_pos,
             "room": room,
-            "noise_level": 6,  # Tripwires are loud
+            "noise_level": noise_level,  # Tripwires are loud
+            "intensity": noise_level,
+            "priority_override": 2,
+            "linger_turns": 2,
             "game_state": game_state
         }))
 

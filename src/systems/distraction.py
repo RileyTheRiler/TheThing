@@ -116,8 +116,12 @@ class DistractionSystem:
             "source": "distraction",
             "source_item": item.name,
             "location": landing_pos,
+            "target_location": landing_pos,
             "room": landing_room,
             "noise_level": noise_level,
+            "intensity": noise_level,
+            "priority_override": 1,
+            "linger_turns": self.INVESTIGATION_TURNS,
             "creates_light": creates_light,
             "game_state": game_state
         }))
