@@ -10,7 +10,7 @@ from core.event_system import event_bus, EventType, GameEvent
 from core.resolution import Attribute, Skill, ResolutionSystem
 from core.design_briefs import DesignBriefRegistry
 
-from entities.crew_member import CrewMember
+from entities.crew_member import CrewMember as EntityCrewMember
 from entities.item import Item
 from entities.station_map import StationMap
 
@@ -143,6 +143,9 @@ class CrewMember:
         
         return " ".join(desc)
 
+# Ensure the engine uses the primary CrewMember implementation from entities
+CrewMember = EntityCrewMember
+
 class GameState:
     @property
     def paranoia_level(self):
@@ -162,6 +165,7 @@ class GameState:
 
         # 0. PRIORITY: Lynch Mob Hunting (Agent 2)
         if hasattr(self, "lynch_mob") and hasattr(self, "station_map") and self.lynch_mob.active_mob and self.lynch_mob.target:
+        if hasattr(self, "lynch_mob") and self.lynch_mob.active_mob and self.lynch_mob.target:
             target = self.lynch_mob.target
             if target != self and target.is_alive:
                 # Move toward the lynch target
@@ -172,6 +176,8 @@ class GameState:
         # 1. Check Schedule
         # Schedule entries: {"start": 8, "end": 20, "room": "Rec Room"}
         # Fix: TimeSystem lacks 'hour' property, calculate manually (Start 08:00)
+        if not hasattr(self, "schedule"):
+            return
         current_hour = (self.time_system.turn_count + 8) % 24
         destination = None
         for entry in self.schedule:
@@ -278,6 +284,8 @@ class GameState:
         # 4. Global State
         self.power_on = True
         self.blood_bank_destroyed = False
+        self.alert_status = "CALM"
+        self.alert_turns_remaining = 0
         self.paranoia_level = self.difficulty_settings["starting_paranoia"]
         self.mode = GameMode.INVESTIGATIVE
         # self.verbosity = Verbosity.STANDARD
@@ -336,6 +344,8 @@ class GameState:
         self.rescue_signal_active = False
         self.rescue_turns_remaining = None 
         self.rescue_eta_turns = 20
+        self.alert_status = "calm"
+        self.alert_turns_remaining = 0
         self.journal = []
         self.evidence_log = EvidenceLog()
         self.forensic_db = ForensicDatabase()
@@ -705,6 +715,10 @@ class GameState:
 
     def to_dict(self):
         """Serialize game state to dictionary for saving."""
+        if hasattr(self, "alert_system") and self.alert_system:
+            # Mirror alert system fields for save visibility
+            self.alert_status = "alert" if self.alert_system.is_active else "calm"
+            self.alert_turns_remaining = self.alert_system.turns_remaining
         return {
             "difficulty": self.difficulty.value,
             "power_on": self.power_on,
@@ -718,6 +732,8 @@ class GameState:
             "rescue_signal_active": self.rescue_signal_active,
             "rescue_turns_remaining": self.rescue_turns_remaining,
             "rescue_eta_turns": self.rescue_eta_turns,
+            "alert_status": self.alert_status,
+            "alert_turns_remaining": self.alert_turns_remaining,
             "rng": self.rng.to_dict(),
             "time_system": self.time_system.to_dict(),
             "station_map": self.station_map.to_dict(),
@@ -760,6 +776,9 @@ class GameState:
         game.rescue_signal_active = data.get("rescue_signal_active", False)
         game.rescue_turns_remaining = data.get("rescue_turns_remaining")
         game.rescue_eta_turns = data.get("rescue_eta_turns", game.rescue_eta_turns)
+        game.alert_status = data.get("alert_status", "calm")
+        game.alert_status = data.get("alert_status", "CALM")
+        game.alert_turns_remaining = data.get("alert_turns_remaining", 0)
 
         if "rng" in data:
             game.rng.from_dict(data["rng"])
@@ -803,6 +822,16 @@ class GameState:
             game.sabotage.radio_working = game.radio_operational
             game.sabotage.chopper_operational = game.helicopter_operational
             game.sabotage.helicopter_working = game.helicopter_operational
+        # Restore alert system/state
+        alert_data = data.get("alert_system", {})
+        if hasattr(game, "alert_system") and game.alert_system:
+            game.alert_system.cleanup()
+        game.alert_system = AlertSystem.from_dict(alert_data, game)
+        game.alert_status = data.get("alert_status", game.alert_status)
+        game.alert_turns_remaining = data.get("alert_turns_remaining", game.alert_turns_remaining)
+        if hasattr(game, "alert_system") and game.alert_system:
+            game.alert_system.cleanup()
+        game.alert_system = AlertSystem.from_dict(data.get("alert_system"), game)
 
         return game
 
@@ -876,9 +905,10 @@ def main():
             game.save_manager.save_game(game, slot)
         elif action == "LOAD":
             slot = cmd[1] if len(cmd) > 1 else "auto"
-            data = game.save_manager.load_game(slot)
-            if data:
-                game = GameState.from_dict(data)
+            loaded_game = game.save_manager.load_game(slot)
+            if loaded_game:
+                game.cleanup()
+                game = loaded_game
                 print("*** GAME LOADED ***")
         elif action == "STATUS":
             for m in game.crew:

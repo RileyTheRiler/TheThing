@@ -273,93 +273,6 @@ class DropCommand(Command):
                 "text": f"You don't have '{item_name}'."
             }))
 
-class ThrowCommand(Command):
-    name = "THROW"
-    aliases = ["TOSS"]
-    description = "Throw a throwable item toward coordinates. Usage: THROW <ITEM NAME> <X> <Y>"
-
-    def execute(self, context: GameContext, args: List[str]) -> None:
-        game_state = context.game
-        if len(args) < 3:
-            event_bus.emit(GameEvent(EventType.ERROR, {"text": "Usage: THROW <ITEM NAME> <X> <Y>"}))
-            return
-
-        try:
-            target_x = int(args[-2])
-            target_y = int(args[-1])
-        except ValueError:
-            event_bus.emit(GameEvent(EventType.ERROR, {"text": "Target coordinates must be numbers."}))
-            return
-
-        item_name = " ".join(args[:-2])
-        if not game_state.station_map.is_walkable(target_x, target_y):
-            event_bus.emit(GameEvent(EventType.WARNING, {"text": "That throw target is outside the station."}))
-            return
-
-        if not hasattr(game_state, "action_cooldowns"):
-            game_state.action_cooldowns = {}
-        ready_turn = game_state.action_cooldowns.get(self.name, 0)
-        if ready_turn and game_state.turn < ready_turn:
-            remaining = ready_turn - game_state.turn
-            event_bus.emit(GameEvent(EventType.WARNING, {
-                "text": f"Throw is on cooldown for {remaining} more turn(s)."
-            }))
-            event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
-                "text": "Throw cooldown active.",
-                "cooldown": remaining
-            }))
-            return
-
-        throwable = next((i for i in game_state.player.inventory if i.name.upper() == item_name.upper()), None)
-        if not throwable:
-            event_bus.emit(GameEvent(EventType.WARNING, {"text": f"You don't have '{item_name}'."}))
-            return
-        if getattr(throwable, "category", "").lower() != "throwable":
-            event_bus.emit(GameEvent(EventType.WARNING, {"text": f"{throwable.name} can't be thrown as a distraction."}))
-            return
-        if getattr(throwable, "uses", -1) == 0:
-            event_bus.emit(GameEvent(EventType.WARNING, {"text": f"{throwable.name} has no charges left."}))
-            event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {"text": "No ammo remaining.", "ammo": 0}))
-            return
-
-        thrown_item = game_state.player.remove_item(throwable.name)
-        spent = False
-        if thrown_item.is_consumable():
-            thrown_item.consume()
-            spent = thrown_item.uses <= 0
-
-        target_room = game_state.station_map.get_room_name(target_x, target_y)
-        thrown_item.add_history(game_state.turn, f"Thrown toward {target_room}")
-        if not spent:
-            game_state.station_map.add_item_to_room(thrown_item, target_x, target_y, game_state.turn)
-
-        event_bus.emit(GameEvent(EventType.MESSAGE, {
-            "text": f"You throw {thrown_item.name} toward {target_room} ({target_x},{target_y})."
-        }))
-
-        cooldown_turns = getattr(thrown_item, "cooldown", 0) or 1
-        game_state.action_cooldowns[self.name] = game_state.turn + cooldown_turns
-        ammo_remaining = thrown_item.uses if thrown_item.is_consumable() else None
-        event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
-            "text": f"{thrown_item.name} lands with a sharp clatter.",
-            "ammo": ammo_remaining,
-            "cooldown": cooldown_turns
-        }))
-
-        payload = {
-            "game_state": game_state,
-            "room": target_room,
-            "target_location": (target_x, target_y),
-            "source": thrown_item.name,
-            "type": getattr(thrown_item, "effect", "noise"),
-            "intensity": getattr(thrown_item, "effect_value", 1),
-            "priority_override": 2 if getattr(thrown_item, "effect", "") == "signal" else 1,
-            "linger_turns": 3 if getattr(thrown_item, "effect", "") == "signal" else 1
-        }
-        event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, payload))
-
-        game_state.advance_turn()
-
 class AttackCommand(Command):
     name = "ATTACK"
     aliases = []
@@ -1388,23 +1301,30 @@ class AccuseCommand(Command):
 class ThrowCommand(Command):
     name = "THROW"
     aliases = ["TOSS"]
-    description = "Throw an item to create a distraction. Usage: THROW <item> <direction>"
+    description = "Throw an item toward a target tile. Usage: THROW <ITEM> <TARGET>"
+    description = "Throw an item to create a distraction. Usage: THROW <ITEM> <TARGET>"
 
     def execute(self, context: GameContext, args: List[str]) -> None:
         game_state = context.game
 
         if len(args) < 2:
             event_bus.emit(GameEvent(EventType.ERROR, {
-                "text": "Usage: THROW <item> <direction>\nDirections: N/S/E/W or NE/NW/SE/SW"
+                "text": "Usage: THROW <ITEM> <TARGET>\nTARGET can be coordinates (X Y) or a room name."
             }))
             return
 
-        item_name = args[0].upper()
-        direction = args[1].upper()
+        item, target = self._parse_item_and_target(args, game_state)
+        if not item or not target:
+                "text": "Usage: THROW <ITEM> <TARGET>\nTargets: direction (N/S/E/W/NE/NW/SE/SW) or coordinates (X,Y)"
+            }))
+            return
+
+        item_name = " ".join(args[:-1]).upper()
+        target = args[-1].upper()
 
         # Find item in player inventory
         item = next((i for i in game_state.player.inventory
-                     if i.name.upper() == item_name or item_name in i.name.upper()), None)
+                     if i.name.upper() == item_name or i.name.upper() == item_name.replace(",", " ")), None)
 
         if not item:
             event_bus.emit(GameEvent(EventType.WARNING, {
@@ -1421,19 +1341,13 @@ class ThrowCommand(Command):
                 }))
             return
 
-        if not getattr(item, 'throwable', False):
-            event_bus.emit(GameEvent(EventType.WARNING, {
-                "text": f"The {item.name} can't be thrown."
-            }))
-            return
-
-        # Initialize distraction system if needed
-        if not hasattr(game_state, 'distraction_system'):
+        if not hasattr(game_state, "distraction_system"):
             game_state.distraction_system = DistractionSystem()
 
+        success, message = game_state.distraction_system.throw_toward(
         # Attempt to throw the item
         success, message = game_state.distraction_system.throw_item(
-            game_state.player, item, direction, game_state
+            game_state.player, item, target, game_state
         )
 
         if success:
@@ -1441,6 +1355,71 @@ class ThrowCommand(Command):
             game_state.advance_turn()
         else:
             event_bus.emit(GameEvent(EventType.WARNING, {"text": message}))
+
+    def _parse_item_and_target(self, args: List[str], game_state: "GameState"):
+        """Split args into (item, target) supporting multi-word names."""
+        inventory_names = [i.name.upper() for i in game_state.player.inventory]
+        split_index = None
+
+        # Coordinate target: last two args numeric
+        if len(args) >= 3 and args[-2].lstrip("+-").isdigit() and args[-1].lstrip("+-").isdigit():
+            split_index = len(args) - 2
+
+        if split_index is None:
+            for i in range(len(args) - 1, 0, -1):
+                cand = " ".join(args[:i]).upper()
+                if cand in inventory_names:
+                    split_index = i
+                    break
+
+        if split_index is None:
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": "Couldn't find a matching item to throw in your inventory."
+            }))
+            return None, None
+
+        item_name = " ".join(args[:split_index]).upper()
+        item = next((i for i in game_state.player.inventory if i.name.upper() == item_name), None)
+        if not item:
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": f"You don't have '{item_name}'."
+            }))
+            return None, None
+        if not getattr(item, "throwable", False):
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": f"The {item.name} can't be thrown."
+            }))
+            return None, None
+
+        target_tokens = args[split_index:]
+        target_location = self._resolve_target(target_tokens, game_state)
+        if not target_location:
+            return item, None
+        return item, target_location
+
+    def _resolve_target(self, tokens: List[str], game_state: "GameState"):
+        """Resolve target tokens into map coordinates."""
+        # Numeric coordinates
+        if len(tokens) == 2 and all(t.lstrip("+-").isdigit() for t in tokens):
+            x, y = int(tokens[0]), int(tokens[1])
+            if not game_state.station_map.is_walkable(x, y):
+                event_bus.emit(GameEvent(EventType.WARNING, {"text": "That throw target is outside the station."}))
+                return None
+            return (x, y)
+
+        room_name = " ".join(tokens)
+        room_center = game_state.station_map.get_room_center(room_name)
+        if room_center:
+            return room_center
+        # Case-insensitive room lookup
+        for known_name in game_state.station_map.rooms.keys():
+            if known_name.lower() == room_name.lower():
+                return game_state.station_map.get_room_center(known_name)
+
+        event_bus.emit(GameEvent(EventType.WARNING, {
+            "text": f"Unknown target '{room_name}'. Provide coordinates or a room name."
+        }))
+        return None
 
 
 class SettingsCommand(Command):
