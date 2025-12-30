@@ -470,7 +470,8 @@ class StealthSystem:
 
         # Vent noise is louder due to echoing in metal ducts
         base_noise = self.config.get("vent_base_noise", self.VENT_BASE_NOISE) if self.config else self.VENT_BASE_NOISE
-        noise_level = max(actor.get_noise_level(), base_noise)
+        vent_noise_bonus = self.config.get("vent_noise_bonus", 5) if self.config else 5
+        noise_level = max(actor.get_noise_level() + vent_noise_bonus, base_noise + vent_noise_bonus)
 
         # Broadcast perception event at current location
         vent_payload = normalize_perception_payload({
@@ -478,6 +479,9 @@ class StealthSystem:
             "room": room,
             "location": destination,
             "noise_level": noise_level,
+            "priority_override": 3,
+            "game_state": game_state
+        }))
             "game_state": game_state,
             "actor_ref": actor,
             "actor": getattr(actor, "name", None),
@@ -489,6 +493,8 @@ class StealthSystem:
         for adj_x, adj_y in adjacent_vents:
             adj_room = station_map.get_room_name(adj_x, adj_y)
             # Reduced noise at adjacent nodes (echo falloff)
+            echo_noise = max(noise_level - 3, base_noise)
+            event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, {
             echo_noise = max(noise_level - 3, 5)
             echo_payload = normalize_perception_payload({
                 "source": "vent_echo",

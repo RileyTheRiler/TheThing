@@ -45,6 +45,8 @@ class AISystem:
         payload = normalize_perception_payload(event.payload)
         if not payload:
             return
+        if self._handle_vent_noise_ping(payload):
+            return
 
         # Noise/distraction payloads (no player reference, direct coordinates)
         if payload.get("target_location") and not payload.get("player_ref"):
@@ -715,6 +717,20 @@ class AISystem:
         """
         rng = game_state.rng
 
+        # Vent interceptions take priority over general hunting
+        vent_goal = getattr(member, "vent_intercept_goal", None)
+        vent_expires = getattr(member, "vent_intercept_expires", 0)
+        if vent_goal:
+            if vent_expires and game_state.turn > vent_expires:
+                member.vent_intercept_goal = None
+                member.vent_intercept_expires = 0
+            elif member.location == vent_goal:
+                member.vent_intercept_goal = None
+                member.vent_intercept_expires = 0
+            else:
+                self._pathfind_step(member, vent_goal[0], vent_goal[1], game_state)
+                return
+
         # Find nearest living human
         humans = [m for m in game_state.crew
                   if m.is_alive and not getattr(m, 'is_infected', False) and m != member]
@@ -1030,6 +1046,52 @@ class AISystem:
             }))
         return True
 
+    def _handle_vent_noise_ping(self, payload: Dict) -> bool:
+        """Direct infected (Thing) AI toward loud vent noises for interception."""
+        source = payload.get("source", "")
+        if source not in ("vent", "vent_echo"):
+            return False
+
+        game_state = payload.get("game_state")
+        vent_loc = payload.get("location")
+        station_map = game_state.station_map if game_state else None
+        if not game_state or not vent_loc or not station_map:
+            return False
+
+        vent_nodes = []
+        if station_map.is_at_vent(*vent_loc):
+            vent_nodes.append(vent_loc)
+        vent_nodes.extend(getattr(station_map, "get_vent_entry_nodes", lambda: [])())
+        if not vent_nodes:
+            return False
+
+        priority = max(3, payload.get("priority_override", 0) or 0)
+        duration = max(3, payload.get("linger_turns", 3))
+        noise_level = payload.get("noise_level", 0)
+        for npc in game_state.crew:
+            if npc == game_state.player or not npc.is_alive:
+                continue
+            if not getattr(npc, "is_infected", False):
+                continue
+            intercept = self._get_closest_position(npc.location, vent_nodes)
+            npc.investigating = True
+            npc.investigation_goal = intercept
+            npc.last_known_player_location = vent_loc
+            npc.investigation_priority = max(getattr(npc, "investigation_priority", 0), priority)
+            npc.investigation_expires = game_state.turn + duration
+            npc.investigation_source = "vent_noise"
+            npc.vent_intercept_goal = intercept
+            npc.vent_intercept_expires = game_state.turn + duration
+
+        event_bus.emit(GameEvent(EventType.DIAGNOSTIC, {
+            "type": "AI_VENT_NOISE_TARGET",
+            "source": source,
+            "noise_level": noise_level,
+            "room": station_map.get_room_name(*vent_loc),
+            "vent_location": vent_loc
+        }))
+        return True
+
     def _handle_investigation_ping(self, payload: Dict):
         """Handle PERCEPTION_EVENT payloads that mark a noisy distraction."""
         game_state = payload.get("game_state")
@@ -1084,6 +1146,11 @@ class AISystem:
             member.investigation_expires = 0
             member.investigation_loops = 0
             member.last_known_player_location = None
+        vent_goal = getattr(member, "vent_intercept_goal", None)
+        vent_expires = getattr(member, "vent_intercept_expires", 0)
+        if vent_goal and vent_expires and game_state.turn > vent_expires:
+            member.vent_intercept_goal = None
+            member.vent_intercept_expires = 0
             member.investigation_linger_turns = 0
             member.investigation_arrival_reported = False
     def _record_last_seen(self, member: 'CrewMember', location: Tuple[int, int], game_state: 'GameState', room_name: Optional[str] = None) -> str:
@@ -1201,6 +1268,11 @@ class AISystem:
 
         # All targets checked, cycle back but still return first
         return member.search_targets[0] if member.search_targets else None
+
+    @staticmethod
+    def _get_closest_position(origin: Tuple[int, int], targets: List[Tuple[int, int]]) -> Tuple[int, int]:
+        """Return the target position closest to origin using Manhattan distance."""
+        return min(targets, key=lambda pos: abs(origin[0] - pos[0]) + abs(origin[1] - pos[1]))
 
     def reset_search_on_detection(self, member: 'CrewMember', new_location: Tuple[int, int], game_state: 'GameState'):
         """Reset search timer and update anchor when player is re-detected during active search.
