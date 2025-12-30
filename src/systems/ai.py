@@ -28,6 +28,7 @@ class AISystem:
         self.alert_context: Dict[str, Any] = {"active": False, "observation_bonus": 0, "speed_multiplier": 1}
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
         event_bus.subscribe(EventType.PERCEPTION_EVENT, self.on_perception_event)
+        self.security_roles = {"commander", "radio op"}
 
     def cleanup(self):
         event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
@@ -122,6 +123,11 @@ class AISystem:
         """NPC reacts to player evading detection completely."""
         # Increase suspicion slightly
         self._apply_suspicion(observer, 1, game_state, reason="evasion")
+
+    def _is_security_officer(self, member: 'CrewMember') -> bool:
+        """Return True if this NPC should respond to security console alerts."""
+        role = getattr(member, "role", "").lower()
+        return role in self.security_roles
 
     def _apply_suspicion(self, observer: 'CrewMember', amount: int, game_state: 'GameState', reason: str = ""):
         """Adjust suspicion and update state transitions."""
@@ -657,6 +663,11 @@ class AISystem:
             if self._execute_search(member, game_state):
                 return
 
+        # 2.5 SECURITY: Console checks for roles tasked with monitoring cameras
+        if self._is_security_officer(member):
+            if self._handle_security_console(member, game_state):
+                return
+
         # 3. Check Schedule
         # Schedule entries: {"start": 8, "end": 20, "room": "Rec Room"}
         current_hour = game_state.time_system.hour
@@ -967,6 +978,46 @@ class AISystem:
         """Move one step toward the player when detected via perception."""
         player_loc = self.cache.player_location if self.cache else game_state.player.location
         self._pathfind_step(member, player_loc[0], player_loc[1], game_state, steps=self._get_alert_steps())
+
+    def _handle_security_console(self, member: 'CrewMember', game_state: 'GameState') -> bool:
+        """Send security-focused NPCs to the console and react to alerts."""
+        if getattr(member, "investigating", False) or getattr(member, "search_turns_remaining", 0) > 0:
+            return False
+
+        security_sys = getattr(game_state, "security_system", None)
+        if not security_sys or not security_sys.has_unread_alerts():
+            return False
+
+        console_room = getattr(security_sys, "console_room", "Radio Room")
+        member_room = game_state.station_map.get_room_name(*member.location)
+
+        # Move toward the console if not present
+        if member_room != console_room:
+            target_pos = game_state.station_map.rooms.get(console_room)
+            if target_pos:
+                tx, ty, _, _ = target_pos
+                self._pathfind_step(member, tx, ty, game_state)
+                return True
+            return False
+
+        # At console: read alerts and set investigation target
+        alerts = security_sys.check_console(npc=member)
+        if not alerts:
+            return True
+
+        latest = alerts[-1]
+        target_pos = latest.get("position") or latest.get("location")
+        if isinstance(target_pos, (list, tuple)) and len(target_pos) >= 2:
+            member.investigating = True
+            member.investigation_goal = (target_pos[0], target_pos[1])
+            member.investigation_priority = max(getattr(member, "investigation_priority", 0), 3)
+            member.investigation_expires = game_state.turn + 4
+            member.investigation_source = "security_console"
+            member.last_known_player_location = member.investigation_goal
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": f"{member.name} leaves the console to investigate a security alert in {game_state.station_map.get_room_name(*member.investigation_goal)}."
+            }))
+        return True
 
     def _handle_investigation_ping(self, payload: Dict):
         """Handle PERCEPTION_EVENT payloads that mark a noisy distraction."""

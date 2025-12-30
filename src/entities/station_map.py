@@ -45,6 +45,9 @@ class StationMap:
         # Designated hiding spots with metadata for stealth/combat interactions.
         # Each entry: (x, y): {"room": name, "cover_bonus": int, "blocks_los": bool, "label": str}
         self.hiding_spots = self._build_hiding_spots()
+        # Fixed security device placements for cameras and motion sensors
+        # Mirrors hiding_spots structure for quick lookup
+        self.security_cameras, self.motion_sensors = self._build_security_devices()
         # Lightweight vent graph for network traversal + entry/exit metadata
         self.vent_graph = self._build_vent_graph()
 
@@ -340,34 +343,31 @@ class StationMap:
         Motion sensors have: room
         """
         cameras = {
-            (6, 6): {"room": "Rec Room", "facing": "S", "range": 3},
-            (12, 2): {"room": "Radio Room", "facing": "E", "range": 3},
-            (17, 2): {"room": "Storage", "facing": "W", "range": 3},
-            (7, 17): {"room": "Hangar", "facing": "N", "range": 3},
-            (12, 12): {"room": "Lab", "facing": "S", "range": 3},
+            (6, 6): {"room": "Rec Room", "facing": "S", "range": 3, "label": "Rec Room camera"},
+            (12, 2): {"room": "Radio Room", "facing": "E", "range": 3, "label": "Radio booth camera"},
+            (17, 2): {"room": "Storage", "facing": "W", "range": 3, "label": "Storage camera"},
+            (7, 17): {"room": "Hangar", "facing": "N", "range": 3, "label": "Hangar door camera"},
+            (12, 12): {"room": "Lab", "facing": "S", "range": 3, "label": "Lab camera"},
         }
         motion_sensors = {
-            (13, 3): {"room": "Radio Room"},
-            (16, 17): {"room": "Generator"},
-            (1, 17): {"room": "Kennel"},
+            (13, 3): {"room": "Radio Room", "label": "Radio Room motion sensor"},
+            (16, 17): {"room": "Generator", "label": "Generator motion sensor"},
+            (1, 17): {"room": "Kennel", "label": "Kennel motion sensor"},
         }
         return cameras, motion_sensors
 
     def is_camera_location(self, x: int, y: int) -> bool:
         """Return True if there is a camera at this position."""
-        cameras, _ = self._build_security_devices()
-        return (x, y) in cameras
+        return (x, y) in self.security_cameras
 
     def is_sensor_location(self, x: int, y: int) -> bool:
         """Return True if there is a motion sensor at this position."""
-        _, sensors = self._build_security_devices()
-        return (x, y) in sensors
+        return (x, y) in self.motion_sensors
 
     def get_security_device_info(self, x: int, y: int) -> Dict:
         """Return security device metadata for the coordinate or None."""
-        cameras, sensors = self._build_security_devices()
-        if (x, y) in cameras:
-            return {"type": "camera", **cameras[(x, y)]}
-        if (x, y) in sensors:
-            return {"type": "motion_sensor", **sensors[(x, y)]}
+        if (x, y) in self.security_cameras:
+            return {"type": "camera", **self.security_cameras[(x, y)]}
+        if (x, y) in self.motion_sensors:
+            return {"type": "motion_sensor", **self.motion_sensors[(x, y)]}
         return None

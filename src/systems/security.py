@@ -153,6 +153,8 @@ class SecuritySystem:
     events are logged to a security console that NPCs can check.
     """
 
+    console_room = "Radio Room"
+
     # Sabotage configuration
     SABOTAGE_NOISE = 4  # Noise level when sabotaging
     SABOTAGE_DURATION = 15  # Turns until device auto-repairs
@@ -161,7 +163,10 @@ class SecuritySystem:
         self.game_state = game_state
         self.cameras: Dict[Tuple[int, int], Camera] = {}
         self.motion_sensors: Dict[Tuple[int, int], MotionSensor] = {}
-        self.security_log = SecurityLog()
+        if game_state and hasattr(game_state, "security_log"):
+            self.security_log = game_state.security_log
+        else:
+            self.security_log = SecurityLog()
 
         # Initialize default security devices
         self._init_default_devices()
@@ -177,27 +182,38 @@ class SecuritySystem:
 
     def _init_default_devices(self):
         """Set up default camera and sensor positions."""
-        # Cameras - positioned to watch key areas
-        default_cameras = [
-            ((6, 6), "Rec Room", "S", 3),      # Watches Rec Room entrance
-            ((12, 2), "Radio Room", "E", 3),   # Watches Radio Room
-            ((17, 2), "Storage", "W", 3),      # Watches Storage room
-            ((7, 17), "Hangar", "N", 3),       # Watches Hangar entrance
-            ((12, 12), "Lab", "S", 3),         # Watches Lab
-        ]
+        station_map = getattr(self.game_state, "station_map", None)
+        if station_map and hasattr(station_map, "security_cameras"):
+            for pos, meta in station_map.security_cameras.items():
+                self.cameras[pos] = Camera(
+                    pos,
+                    meta.get("room"),
+                    meta.get("facing", "N"),
+                    meta.get("range", 3)
+                )
+        else:
+            # Fallback hardcoded defaults if map is missing
+            default_cameras = [
+                ((6, 6), "Rec Room", "S", 3),
+                ((12, 2), "Radio Room", "E", 3),
+                ((17, 2), "Storage", "W", 3),
+                ((7, 17), "Hangar", "N", 3),
+                ((12, 12), "Lab", "S", 3),
+            ]
+            for pos, room, facing, range_tiles in default_cameras:
+                self.cameras[pos] = Camera(pos, room, facing, range_tiles)
 
-        for pos, room, facing, range_tiles in default_cameras:
-            self.cameras[pos] = Camera(pos, room, facing, range_tiles)
-
-        # Motion sensors - positioned at critical chokepoints
-        default_sensors = [
-            ((13, 3), "Radio Room"),   # Radio Room entrance
-            ((16, 17), "Generator"),   # Generator entrance
-            ((1, 17), "Kennel"),       # Kennel corner
-        ]
-
-        for pos, room in default_sensors:
-            self.motion_sensors[pos] = MotionSensor(pos, room)
+        if station_map and hasattr(station_map, "motion_sensors"):
+            for pos, meta in station_map.motion_sensors.items():
+                self.motion_sensors[pos] = MotionSensor(pos, meta.get("room"))
+        else:
+            default_sensors = [
+                ((13, 3), "Radio Room"),
+                ((16, 17), "Generator"),
+                ((1, 17), "Kennel"),
+            ]
+            for pos, room in default_sensors:
+                self.motion_sensors[pos] = MotionSensor(pos, room)
 
     def on_movement(self, event: GameEvent):
         """Handle movement events and check for detections."""
@@ -221,7 +237,8 @@ class SecuritySystem:
                     turn, "camera", camera.room,
                     getattr(mover, "name", "Unknown"),
                     new_pos,
-                    f"Camera in {camera.room} detected movement"
+                    f"Camera in {camera.room} detected movement",
+                    game_state=game_state
                 )
 
         # Check motion sensors
@@ -231,11 +248,13 @@ class SecuritySystem:
                     turn, "motion_sensor", sensor.room,
                     getattr(mover, "name", "Unknown"),
                     new_pos,
-                    f"Motion sensor in {sensor.room} triggered"
+                    f"Motion sensor in {sensor.room} triggered",
+                    game_state=game_state
                 )
 
     def _log_detection(self, turn: int, device_type: str, device_room: str,
-                       target_name: str, target_pos: Tuple[int, int], description: str):
+                       target_name: str, target_pos: Tuple[int, int], description: str,
+                       game_state: Optional['GameState'] = None):
         """Log a security detection."""
         self.security_log.add_entry(
             turn, device_type, device_room, target_name, target_pos, description
@@ -248,7 +267,10 @@ class SecuritySystem:
             "device_room": device_room,
             "target": target_name,
             "position": target_pos,
-            "description": description
+            "target_location": target_pos,
+            "room": device_room,
+            "description": description,
+            "game_state": game_state
         }))
 
     def on_turn_advance(self, event: GameEvent):
@@ -267,7 +289,7 @@ class SecuritySystem:
                 if sensor.sabotaged_turns <= 0:
                     sensor.operational = True
 
-    def sabotage_device(self, position: Tuple[int, int], game_state: 'GameState') -> Tuple[bool, str]:
+    def sabotage_device(self, position: Tuple[int, int], game_state: 'GameState', saboteur=None) -> Tuple[bool, str]:
         """Attempt to sabotage a security device at the given position.
 
         Returns (success, message).
@@ -286,19 +308,27 @@ class SecuritySystem:
 
         device_name = device.device_type.replace('_', ' ')
 
-        # Emit noise event (sabotage makes noise)
-        event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, {
-            "source": "sabotage",
-            "noise_level": self.SABOTAGE_NOISE,
-            "location": position,
-            "game_state": game_state
-        }))
+        # Emit noise/alert consequences through sabotage manager if present
+        if game_state and hasattr(game_state, "sabotage"):
+            game_state.sabotage.register_security_sabotage(
+                device,
+                game_state,
+                saboteur=saboteur,
+                noise_level=self.SABOTAGE_NOISE
+            )
+        else:
+            event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, {
+                "source": "sabotage",
+                "noise_level": self.SABOTAGE_NOISE,
+                "target_location": position,
+                "game_state": game_state
+            }))
 
         # Log to journal
         if hasattr(game_state, 'journal'):
             game_state.journal.append(
                 f"[Turn {game_state.turn}] {device_name.title()} in {device.room} was sabotaged"
-            )
+        )
 
         return True, f"You disable the {device_name} in {device.room}. It will be offline for {self.SABOTAGE_DURATION} turns."
 
@@ -332,6 +362,12 @@ class SecuritySystem:
         """
         unread = self.security_log.get_unread()
         self.security_log.mark_all_read()
+
+        if npc and unread:
+            event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+                "text": f"{npc.name} reviews {len(unread)} security alerts at the console."
+            }))
+
         return unread
 
     def has_unread_alerts(self) -> bool:
@@ -376,9 +412,11 @@ class SecuritySystem:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict, game_state: Optional['GameState'] = None) -> 'SecuritySystem':
+    def from_dict(cls, data: Dict, game_state: Optional['GameState'] = None, existing_system: Optional['SecuritySystem'] = None) -> 'SecuritySystem':
         """Deserialize security system from save data."""
-        system = cls(game_state)
+        system = existing_system or cls(game_state)
+        if game_state and hasattr(game_state, "security_log"):
+            system.security_log = game_state.security_log
 
         if not data:
             return system
