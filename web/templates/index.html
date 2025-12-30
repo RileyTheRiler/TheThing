@@ -131,13 +131,23 @@
                         <div id="game-canvas" class="map-display interactive-map-3d"></div>
                         <div id="map-legend" class="map-legend"></div>
                         <div class="nav-controls">
-                            <button class="nav-btn" data-dir="north" title="Go North (Arrow Up)">▲</button>
+                            <button class="nav-btn" data-dir="north" title="Go North (Arrow Up)" aria-label="Go North">
+                                <span aria-hidden="true">▲</span>
+                            </button>
                             <div class="nav-row">
-                                <button class="nav-btn" data-dir="west" title="Go West (Arrow Left)">◄</button>
-                                <button class="nav-btn nav-center" disabled>●</button>
-                                <button class="nav-btn" data-dir="east" title="Go East (Arrow Right)">►</button>
+                                <button class="nav-btn" data-dir="west" title="Go West (Arrow Left)" aria-label="Go West">
+                                    <span aria-hidden="true">◄</span>
+                                </button>
+                                <button class="nav-btn nav-center" disabled aria-label="Current Location">
+                                    <span aria-hidden="true">●</span>
+                                </button>
+                                <button class="nav-btn" data-dir="east" title="Go East (Arrow Right)" aria-label="Go East">
+                                    <span aria-hidden="true">►</span>
+                                </button>
                             </div>
-                            <button class="nav-btn" data-dir="south" title="Go South (Arrow Down)">▼</button>
+                            <button class="nav-btn" data-dir="south" title="Go South (Arrow Down)" aria-label="Go South">
+                                <span aria-hidden="true">▼</span>
+                            </button>
                         </div>
                     </div>
 
@@ -236,13 +246,13 @@
                 </div>
                 <div class="blood-test-actions">
                     <button class="minigame-btn heat-btn" onclick="sendQuickCommand('HEAT')">
-                        <span class="btn-icon">🔥</span> HEAT WIRE
+                        <span class="btn-icon" aria-hidden="true">🔥</span> HEAT WIRE
                     </button>
                     <button class="minigame-btn apply-btn" onclick="sendQuickCommand('APPLY')">
-                        <span class="btn-icon">💉</span> APPLY TO SAMPLE
+                        <span class="btn-icon" aria-hidden="true">💉</span> APPLY TO SAMPLE
                     </button>
                     <button class="minigame-btn cancel-btn" onclick="sendQuickCommand('CANCEL')">
-                        ✕ CANCEL TEST
+                        <span aria-hidden="true">✕</span> CANCEL TEST
                     </button>
                 </div>
             </div>
@@ -258,38 +268,38 @@
                 <div class="interrogation-topics">
                     <button class="topic-btn" onclick="sendQuickCommand('ASK WHEREABOUTS')"
                         title="Ask where they've been recently">
-                        <span class="topic-icon">📍</span>
+                        <span class="topic-icon" aria-hidden="true">📍</span>
                         <span class="topic-name">WHEREABOUTS</span>
                         <span class="topic-desc">Where have you been?</span>
                     </button>
                     <button class="topic-btn" onclick="sendQuickCommand('ASK ALIBI')" title="Verify their story">
-                        <span class="topic-icon">📋</span>
+                        <span class="topic-icon" aria-hidden="true">📋</span>
                         <span class="topic-name">ALIBI</span>
                         <span class="topic-desc">Can anyone confirm that?</span>
                     </button>
                     <button class="topic-btn" onclick="sendQuickCommand('ASK SUSPICION')" title="Ask who they suspect">
-                        <span class="topic-icon">🔍</span>
+                        <span class="topic-icon" aria-hidden="true">🔍</span>
                         <span class="topic-name">SUSPICIONS</span>
                         <span class="topic-desc">Who do you suspect?</span>
                     </button>
                     <button class="topic-btn" onclick="sendQuickCommand('ASK BEHAVIOR')"
                         title="Ask about strange behavior">
-                        <span class="topic-icon">👁</span>
+                        <span class="topic-icon" aria-hidden="true">👁</span>
                         <span class="topic-name">BEHAVIOR</span>
                         <span class="topic-desc">Notice anything strange?</span>
                     </button>
                     <button class="topic-btn" onclick="sendQuickCommand('ASK KNOWLEDGE')" title="Test their knowledge">
-                        <span class="topic-icon">🧠</span>
+                        <span class="topic-icon" aria-hidden="true">🧠</span>
                         <span class="topic-name">KNOWLEDGE</span>
                         <span class="topic-desc">What do you know?</span>
                     </button>
                 </div>
                 <div class="interrogation-actions">
                     <button class="minigame-btn accuse-btn" onclick="sendQuickCommand('ACCUSE')">
-                        <span class="btn-icon">⚠</span> ACCUSE
+                        <span class="btn-icon" aria-hidden="true">⚠</span> ACCUSE
                     </button>
                     <button class="minigame-btn cancel-btn" onclick="sendQuickCommand('DONE')">
-                        ✕ END INTERROGATION
+                        <span aria-hidden="true">✕</span> END INTERROGATION
                     </button>
                 </div>
             </div>
@@ -300,7 +310,9 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h3>COMMAND REFERENCE</h3>
-                    <button class="modal-close" onclick="closeCommandModal()">✕</button>
+                    <button class="modal-close" onclick="closeCommandModal()" aria-label="Close Command Reference">
+                        <span aria-hidden="true">✕</span>
+                    </button>
                 </div>
                 <div class="modal-search">
                     <input type="text" id="command-search" placeholder="Search commands..." oninput="filterCommands()">
@@ -325,7 +337,9 @@
             <div class="modal-content terminal-modal-content">
                 <div class="modal-header terminal-header">
                     <h3 id="terminal-room-name">🖥 TERMINAL: [ROOM]</h3>
-                    <button class="modal-close" onclick="closeTerminalModal()">✕</button>
+                    <button class="modal-close" onclick="closeTerminalModal()" aria-label="Close Terminal">
+                        <span aria-hidden="true">✕</span>
+                    </button>
                 </div>
                 <div class="terminal-status">
                     <div class="terminal-section">
@@ -358,7 +372,9 @@
             <div class="modal-content stats-modal-content">
                 <div class="modal-header">
                     <h3>📊 GAME STATISTICS</h3>
-                    <button class="modal-close" onclick="closeStatsModal()">✕</button>
+                    <button class="modal-close" onclick="closeStatsModal()" aria-label="Close Statistics">
+                        <span aria-hidden="true">✕</span>
+                    </button>
                 </div>
                 <div class="stats-content">
                     <div class="stats-section">
@@ -438,7 +454,9 @@
             <div class="modal-content journal-modal-content">
                 <div class="modal-header">
                     <h3>📓 INVESTIGATION JOURNAL</h3>
-                    <button class="modal-close" onclick="closeJournalModal()">✕</button>
+                    <button class="modal-close" onclick="closeJournalModal()" aria-label="Close Journal">
+                        <span aria-hidden="true">✕</span>
+                    </button>
                 </div>
                 <div class="journal-filters">
                     <button class="journal-filter-btn active" data-filter="all">ALL</button>
