@@ -163,8 +163,12 @@ class StealthSystem:
 
         # Station Alert Bonus (all NPCs more vigilant during alert)
         alert_system = getattr(game_state, 'alert_system', None)
+        alert_bonus = 0
         if alert_system and alert_system.is_active:
-            observer_pool += alert_system.get_observation_bonus()
+            alert_bonus = alert_system.get_observation_bonus()
+        elif getattr(game_state, "alert_status", "").upper() == "ALERT" and getattr(game_state, "alert_turns_remaining", 0) > 0:
+            alert_bonus = 1
+        observer_pool += alert_bonus
 
         # 3. Modifiers (Posture and Environment)
         posture = getattr(player, "stealth_posture", StealthPosture.STANDING)
@@ -268,7 +272,7 @@ class StealthSystem:
 
         self.cooldown = self.config.get("cooldown_turns", 1)
 
-    def evaluate_detection(self, observer, subject, game_state, noise_level=None) -> bool:
+    def evaluate_detection(self, observer, subject, game_state, noise_level=None, alert_bonus: int = 0) -> bool:
         """
         Check if observer detects subject.
         Returns True if detected.
@@ -276,7 +280,7 @@ class StealthSystem:
         if noise_level is None:
             noise_level = subject.get_noise_level()
 
-        ctx = self._prepare_detection_context(observer, subject, game_state, noise_level)
+        ctx = self._prepare_detection_context(observer, subject, game_state, noise_level, alert_bonus)
 
         res = ResolutionSystem()
         subject_result = ResolutionSystem.roll_check(ctx["subject_pool"], game_state.rng)
@@ -318,7 +322,7 @@ class StealthSystem:
 
         return visual_detected or thermal_detected
 
-    def _prepare_detection_context(self, observer, subject, game_state, noise_level: int):
+    def _prepare_detection_context(self, observer, subject, game_state, noise_level: int, alert_bonus: int = 0):
         """Build detection pools and environmental context for repeated calculations."""
         station_map = getattr(game_state, "station_map", None)
         room_states = getattr(game_state, "room_states", None)
@@ -337,8 +341,12 @@ class StealthSystem:
 
         # Station Alert Bonus (all NPCs more vigilant during alert)
         alert_system = getattr(game_state, 'alert_system', None)
-        if alert_system and alert_system.is_active:
-            observer_pool += alert_system.get_observation_bonus()
+        system_bonus = alert_system.get_observation_bonus() if alert_system and alert_system.is_active else 0
+        status_bonus = 0
+        if getattr(game_state, "alert_status", "").upper() == "ALERT" and getattr(game_state, "alert_turns_remaining", 0) > 0:
+            status_bonus = max(status_bonus, 1)
+
+        observer_pool += max(system_bonus, alert_bonus, status_bonus)
 
         prowess = subject.attributes.get(Attribute.PROWESS, 1)
         stealth = subject.skills.get(Skill.STEALTH, 0)
@@ -368,6 +376,7 @@ class StealthSystem:
         # Noise acts as penalty to subject pool (inverse of stealth) and a boon to observers
         noise_penalty = noise_level // 2
         subject_pool = max(1, subject_pool - noise_penalty)
+        observer_pool = max(1, observer_pool + noise_level)
 
         # Apply hiding spot modifiers when present
         hiding_spot, cover_bonus, blocks_los = self._hiding_spot_modifiers(getattr(game_state, "station_map", None), subject)
@@ -386,21 +395,6 @@ class StealthSystem:
             "env_effects": env_effects,
             "observer_result_penalty": observer_result_penalty,
             "room_name": room_name
-        }
-
-        # Noise acts as penalty to observer pool as well (harder to spot in loud environments)
-        noise_penalty = noise_level // 3
-        observer_pool = ResolutionSystem.adjust_pool(observer_pool, -noise_penalty)
-
-        return {
-            "observer_pool": max(1, observer_pool),
-            "subject_pool": max(1, subject_pool),
-            "env_effects": env_effects,
-            "is_dark": is_dark,
-            "is_frozen": is_frozen,
-            "room_name": room_name,
-            "cover_bonus": cover_bonus,
-            "blocks_los": blocks_los,
         }
 
     # === VENT MECHANICS CONFIGURATION ===

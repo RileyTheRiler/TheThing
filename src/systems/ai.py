@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Tuple, Optional, List, Dict
+from typing import TYPE_CHECKING, Tuple, Optional, List, Dict, Any
 from core.resolution import Attribute, Skill
 from core.event_system import event_bus, EventType, GameEvent
 from systems.pathfinding import pathfinder
@@ -25,6 +25,7 @@ class AISystem:
         self.budget_limit = 0
         self.budget_spent = 0
         self.exhaustion_count = 0  # Track how many times budget was denied
+        self.alert_context: Dict[str, Any] = {"active": False, "observation_bonus": 0, "speed_multiplier": 1}
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
         event_bus.subscribe(EventType.PERCEPTION_EVENT, self.on_perception_event)
 
@@ -381,6 +382,27 @@ class AISystem:
         member.coordination_leader = None
         member.coordination_turns_remaining = 0
 
+    def _build_alert_context(self, game_state: 'GameState') -> Dict[str, Any]:
+        """Capture alert modifiers for this turn."""
+        alert_system = getattr(game_state, "alert_system", None)
+        alert_active = False
+        observation_bonus = 0
+        speed_multiplier = 1
+
+        if alert_system and alert_system.is_active:
+            alert_active = True
+            observation_bonus = alert_system.get_observation_bonus()
+            speed_multiplier = alert_system.get_speed_multiplier()
+        elif getattr(game_state, "alert_status", "").upper() == "ALERT":
+            alert_active = True
+            observation_bonus = max(observation_bonus, 1 if getattr(game_state, "alert_turns_remaining", 0) > 0 else 0)
+
+        return {
+            "active": alert_active,
+            "observation_bonus": observation_bonus,
+            "speed_multiplier": max(1, speed_multiplier)
+        }
+
     def update(self, game_state: 'GameState'):
         """Updates AI for all crew members with per-turn caching and action budget."""
         # Initialize turn-level cache and budget
@@ -388,6 +410,7 @@ class AISystem:
         self.budget_limit = 15 + (5 * len(game_state.crew))
         self.budget_spent = 0
         self.exhaustion_count = 0
+        self.alert_context = self._build_alert_context(game_state)
         
         for member in game_state.crew:
             if member != game_state.player:
@@ -417,6 +440,8 @@ class AISystem:
         """
         if not member.is_alive:
             return
+        if not self.alert_context.get("active") and getattr(member, "alerted_to_player", False):
+            member.alerted_to_player = False
         self._expire_investigation(member, game_state)
         current_turn = getattr(game_state, "turn", 0)
         if hasattr(member, "decay_suspicion"):
@@ -665,7 +690,8 @@ class AISystem:
         vis_mod = self.cache.get_visibility_modifier(player_room, game_state) if self.cache else None
         
         # We need a small update to StealthSystem to accept vis_mod, or just pass normal
-        detected = stealth.evaluate_detection(member, player, game_state, noise_level=noise)
+        alert_bonus = self.alert_context.get("observation_bonus", 0) if self.alert_context else 0
+        detected = stealth.evaluate_detection(member, player, game_state, noise_level=noise, alert_bonus=alert_bonus)
         if detected and hasattr(member, "add_knowledge_tag"):
             member.add_knowledge_tag(f"Spotted {player.name} in {player_room}")
             room = self._record_last_seen(member, player.location, game_state, player_room)
@@ -680,47 +706,55 @@ class AISystem:
 
         # 1. Budget check for pathfinding
         # Check cache first to determine cost
-        cache_key = (member.location, goal)
-        use_astar = True
-        if hasattr(pathfinder, '_path_cache') and cache_key in pathfinder._path_cache:
-            use_astar = False
+        steps = max(1, self.alert_context.get("speed_multiplier", 1) if self.alert_context else 1)
+        budget_used = False
 
-        cost = self.COST_ASTAR if use_astar else self.COST_PATH_CACHE
-        
-        dx, dy = 0, 0
-        if self._request_budget(cost):
-            # Try A* pathfinding
-            dx, dy = pathfinder.get_move_delta(member.location, goal, station_map, current_turn)
-        else:
-            # Budget exhausted - fall back to greedy movement (0 cost)
-            dx = 1 if target_x > member.location[0] else -1 if target_x < member.location[0] else 0
-            dy = 1 if target_y > member.location[1] else -1 if target_y < member.location[1] else 0
+        for _ in range(steps):
+            cache_key = (member.location, goal)
+            use_astar = True
+            if hasattr(pathfinder, '_path_cache') and cache_key in pathfinder._path_cache:
+                use_astar = False
 
-        # Check for barricades at destination
-        new_x = member.location[0] + dx
-        new_y = member.location[1] + dy
+            cost = self.COST_ASTAR if use_astar else self.COST_PATH_CACHE
+            
+            dx, dy = 0, 0
+            if not budget_used and self._request_budget(cost):
+                # Try A* pathfinding
+                dx, dy = pathfinder.get_move_delta(member.location, goal, station_map, current_turn)
+                budget_used = True
+            else:
+                # Budget exhausted or already spent - fall back to greedy movement (0 cost)
+                dx = 1 if target_x > member.location[0] else -1 if target_x < member.location[0] else 0
+                dy = 1 if target_y > member.location[1] else -1 if target_y < member.location[1] else 0
 
-        if station_map.is_walkable(new_x, new_y):
-            target_room = station_map.get_room_name(new_x, new_y)
-            current_room = station_map.get_room_name(*member.location)
+            # Check for barricades at destination
+            new_x = member.location[0] + dx
+            new_y = member.location[1] + dy
 
-            if hasattr(game_state, 'room_states') and game_state.room_states.is_entry_blocked(target_room) and target_room != current_room:
-                if getattr(member, 'is_revealed', False):
-                    # Revealed Things try to break barricades
-                    success, msg, _ = game_state.room_states.attempt_break_barricade(
-                        target_room, member, game_state.rng, is_thing=True
-                    )
-                    if not success:
-                        return  # Can't move this turn
-                    # else fall through to move
-                else:
-                    # Regular NPCs respect barricades
-                    return
+            if station_map.is_walkable(new_x, new_y):
+                target_room = station_map.get_room_name(new_x, new_y)
+                current_room = station_map.get_room_name(*member.location)
 
-        member.move(dx, dy, station_map)
+                if hasattr(game_state, 'room_states') and game_state.room_states.is_entry_blocked(target_room) and target_room != current_room:
+                    if getattr(member, 'is_revealed', False):
+                        # Revealed Things try to break barricades
+                        success, msg, _ = game_state.room_states.attempt_break_barricade(
+                            target_room, member, game_state.rng, is_thing=True
+                        )
+                        if not success:
+                            return  # Can't move this turn
+                        # else fall through to move
+                    else:
+                        # Regular NPCs respect barricades
+                        return
 
-        # Check for tripwire triggers at new location
-        self._check_tripwire_trigger(member, game_state)
+            member.move(dx, dy, station_map)
+
+            # Check for tripwire triggers at new location
+            self._check_tripwire_trigger(member, game_state)
+
+            if member.location == goal:
+                break
 
     def _check_tripwire_trigger(self, member: 'CrewMember', game_state: 'GameState'):
         """Check if NPC stepped on a deployed tripwire and trigger it."""
