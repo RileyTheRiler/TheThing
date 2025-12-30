@@ -1,6 +1,6 @@
 """StationMap entity class for The Thing game."""
 
-from typing import List, Dict
+from typing import List, Dict, Tuple, Optional
 from entities.item import Item
 
 
@@ -114,6 +114,53 @@ class StationMap:
     def is_walkable(self, x, y):
         """Check if a position is within map bounds."""
         return 0 <= x < self.width and 0 <= y < self.height
+
+    def project_toward(self, start: Tuple[int, int], target: Tuple[int, int],
+                       min_distance: int = 3, max_distance: int = 5) -> Optional[Tuple[int, int]]:
+        """Project a straight-line path toward a target, clamped to a distance band.
+
+        Returns the furthest walkable tile between ``min_distance`` and ``max_distance``
+        away from ``start`` in the direction of ``target``. If no tile exists in that
+        band, the closest valid tile along the path is returned, or ``None`` if blocked.
+        """
+        if not start or not target:
+            return None
+
+        sx, sy = start
+        tx, ty = target
+        dx = tx - sx
+        dy = ty - sy
+
+        step_x = 0 if dx == 0 else (1 if dx > 0 else -1)
+        step_y = 0 if dy == 0 else (1 if dy > 0 else -1)
+
+        # No movement if the target is the same tile
+        if step_x == 0 and step_y == 0:
+            return None
+
+        path = []
+        x, y = sx, sy
+        for _ in range(max_distance):
+            x += step_x
+            y += step_y
+            if not self.is_walkable(x, y):
+                break
+            path.append((x, y))
+
+        if not path:
+            return None
+
+        if len(path) >= min_distance:
+            return path[min_distance - 1]
+        return path[-1]
+
+    def get_room_center(self, room_name: str) -> Optional[Tuple[int, int]]:
+        """Return the center coordinate of a named room, if known."""
+        bounds = self.rooms.get(room_name)
+        if not bounds:
+            return None
+        x1, y1, x2, y2 = bounds
+        return ((x1 + x2) // 2, (y1 + y2) // 2)
 
     def get_room_name(self, x, y):
         """Get the name of the room at the given coordinates."""

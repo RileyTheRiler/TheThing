@@ -454,14 +454,20 @@ class AISystem:
         if getattr(member, 'investigating', False) and hasattr(member, 'last_known_player_location'):
             target_loc = getattr(member, "investigation_goal", None) or member.last_known_player_location
             if member.location == target_loc:
-                # Arrived at investigation spot
-                member.investigating = False
-                member.investigation_goal = None
-                member.investigation_priority = 0
-                member.investigation_source = None
-                event_bus.emit(GameEvent(EventType.MESSAGE, {
-                    "text": f"{member.name} checks the area but finds nothing."
-                }))
+                linger = getattr(member, "investigation_loops", 0)
+                if linger > 0:
+                    member.investigation_loops = linger - 1
+                    event_bus.emit(GameEvent(EventType.MESSAGE, {
+                        "text": f"{member.name} scans the area for clues..."
+                    }))
+                else:
+                    member.investigating = False
+                    member.investigation_goal = None
+                    member.investigation_priority = 0
+                    member.investigation_source = None
+                    event_bus.emit(GameEvent(EventType.MESSAGE, {
+                        "text": f"{member.name} checks the area but finds nothing."
+                    }))
             else:
                 # Move toward investigation spot
                 self._pathfind_step(member, target_loc[0], target_loc[1], game_state)
@@ -775,7 +781,11 @@ class AISystem:
                 npc.last_known_player_location = target_loc
                 npc.investigation_priority = max(getattr(npc, "investigation_priority", 0), priority)
                 npc.investigation_expires = game_state.turn + duration
+                npc.investigation_loops = duration
                 npc.investigation_source = source
+                if getattr(npc, "coordinating_ambush", False):
+                    self._clear_coordination(npc)
+                npc.suspicion_state = getattr(npc, "suspicion_state", "idle")
 
         event_bus.emit(GameEvent(EventType.DIAGNOSTIC, {
             "type": "AI_INVESTIGATION_PING",
@@ -794,6 +804,7 @@ class AISystem:
             member.investigation_priority = 0
             member.investigation_source = None
             member.investigation_expires = 0
+            member.investigation_loops = 0
             member.last_known_player_location = None
     def _record_last_seen(self, member: 'CrewMember', location: Tuple[int, int], game_state: 'GameState', room_name: Optional[str] = None) -> str:
         """Store last-seen player data on the NPC for later search behavior."""
