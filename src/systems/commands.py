@@ -9,7 +9,7 @@ from systems.distraction import DistractionSystem
 from systems.interrogation import InterrogationSystem, InterrogationTopic
 from systems.security import SecuritySystem
 from systems.stealth import StealthPosture
-from systems.social import ExplainAwaySystem
+from systems.dialogue_system import DialogueBranchingSystem
 
 if TYPE_CHECKING:
     from engine import GameState, CrewMember
@@ -272,93 +272,6 @@ class DropCommand(Command):
             event_bus.emit(GameEvent(EventType.WARNING, {
                 "text": f"You don't have '{item_name}'."
             }))
-
-class ThrowCommand(Command):
-    name = "THROW"
-    aliases = ["TOSS"]
-    description = "Throw a throwable item toward coordinates. Usage: THROW <ITEM NAME> <X> <Y>"
-
-    def execute(self, context: GameContext, args: List[str]) -> None:
-        game_state = context.game
-        if len(args) < 3:
-            event_bus.emit(GameEvent(EventType.ERROR, {"text": "Usage: THROW <ITEM NAME> <X> <Y>"}))
-            return
-
-        try:
-            target_x = int(args[-2])
-            target_y = int(args[-1])
-        except ValueError:
-            event_bus.emit(GameEvent(EventType.ERROR, {"text": "Target coordinates must be numbers."}))
-            return
-
-        item_name = " ".join(args[:-2])
-        if not game_state.station_map.is_walkable(target_x, target_y):
-            event_bus.emit(GameEvent(EventType.WARNING, {"text": "That throw target is outside the station."}))
-            return
-
-        if not hasattr(game_state, "action_cooldowns"):
-            game_state.action_cooldowns = {}
-        ready_turn = game_state.action_cooldowns.get(self.name, 0)
-        if ready_turn and game_state.turn < ready_turn:
-            remaining = ready_turn - game_state.turn
-            event_bus.emit(GameEvent(EventType.WARNING, {
-                "text": f"Throw is on cooldown for {remaining} more turn(s)."
-            }))
-            event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
-                "text": "Throw cooldown active.",
-                "cooldown": remaining
-            }))
-            return
-
-        throwable = next((i for i in game_state.player.inventory if i.name.upper() == item_name.upper()), None)
-        if not throwable:
-            event_bus.emit(GameEvent(EventType.WARNING, {"text": f"You don't have '{item_name}'."}))
-            return
-        if getattr(throwable, "category", "").lower() != "throwable":
-            event_bus.emit(GameEvent(EventType.WARNING, {"text": f"{throwable.name} can't be thrown as a distraction."}))
-            return
-        if getattr(throwable, "uses", -1) == 0:
-            event_bus.emit(GameEvent(EventType.WARNING, {"text": f"{throwable.name} has no charges left."}))
-            event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {"text": "No ammo remaining.", "ammo": 0}))
-            return
-
-        thrown_item = game_state.player.remove_item(throwable.name)
-        spent = False
-        if thrown_item.is_consumable():
-            thrown_item.consume()
-            spent = thrown_item.uses <= 0
-
-        target_room = game_state.station_map.get_room_name(target_x, target_y)
-        thrown_item.add_history(game_state.turn, f"Thrown toward {target_room}")
-        if not spent:
-            game_state.station_map.add_item_to_room(thrown_item, target_x, target_y, game_state.turn)
-
-        event_bus.emit(GameEvent(EventType.MESSAGE, {
-            "text": f"You throw {thrown_item.name} toward {target_room} ({target_x},{target_y})."
-        }))
-
-        cooldown_turns = getattr(thrown_item, "cooldown", 0) or 1
-        game_state.action_cooldowns[self.name] = game_state.turn + cooldown_turns
-        ammo_remaining = thrown_item.uses if thrown_item.is_consumable() else None
-        event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
-            "text": f"{thrown_item.name} lands with a sharp clatter.",
-            "ammo": ammo_remaining,
-            "cooldown": cooldown_turns
-        }))
-
-        payload = {
-            "game_state": game_state,
-            "room": target_room,
-            "target_location": (target_x, target_y),
-            "source": thrown_item.name,
-            "type": getattr(thrown_item, "effect", "noise"),
-            "intensity": getattr(thrown_item, "effect_value", 1),
-            "priority_override": 2 if getattr(thrown_item, "effect", "") == "signal" else 1,
-            "linger_turns": 3 if getattr(thrown_item, "effect", "") == "signal" else 1
-        }
-        event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, payload))
-
-        game_state.advance_turn()
 
 class AttackCommand(Command):
     name = "ATTACK"
@@ -733,30 +646,27 @@ class InterrogateCommand(Command):
             event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {"text": f"Trust {change_str}"}))
 
 
-class ExplainCommand(Command):
-    name = "EXPLAIN"
-    aliases = ["EXCUSE"]
-    description = "Explain suspicious behavior to an NPC who caught you sneaking."
+class ExplainAwayCommand(Command):
+    name = "EXPLAIN_AWAY"
+    aliases = ["EXPLAIN", "EXCUSE"]
+    description = "Explain suspicious behavior with a contested Influence + Deception roll."
 
     def execute(self, context: GameContext, args: List[str]) -> None:
         game_state = context.game
 
-        # Initialize explain system if needed
-        if not hasattr(game_state, "explain_system"):
-            game_state.explain_system = ExplainAwaySystem()
+        if not hasattr(game_state, "dialogue_branching"):
+            game_state.dialogue_branching = DialogueBranchingSystem(rng=getattr(game_state, "rng", None))
 
-        explain_sys = game_state.explain_system
+        explain_sys = game_state.dialogue_branching
 
-        # Check if there are pending explanation opportunities
         pending = explain_sys.get_pending_observers()
-
         if not pending:
             event_bus.emit(GameEvent(EventType.MESSAGE, {
                 "text": "There's no one expecting an explanation right now."
             }))
             return
 
-        # If specific target provided, use that
+        observer = None
         if args:
             target_name = args[0].upper()
             if target_name not in [p.upper() for p in pending]:
@@ -764,14 +674,11 @@ class ExplainCommand(Command):
                     "text": f"{target_name} isn't waiting for an explanation from you."
                 }))
                 return
-            # Find the actual observer
-            observer = None
             for name in pending:
                 if name.upper() == target_name:
                     observer = next((m for m in game_state.crew if m.name == name), None)
                     break
         else:
-            # Default to first pending observer
             observer_name = pending[0]
             observer = next((m for m in game_state.crew if m.name == observer_name), None)
 
@@ -782,7 +689,6 @@ class ExplainCommand(Command):
             explain_sys.clear_pending()
             return
 
-        # Check if observer is in the same room
         player_room = game_state.station_map.get_room_name(*game_state.player.location)
         observer_room = game_state.station_map.get_room_name(*observer.location)
 
@@ -793,17 +699,14 @@ class ExplainCommand(Command):
             explain_sys.clear_pending(observer.name)
             return
 
-        # Attempt the explanation
-        result = explain_sys.attempt_explain(game_state.player, observer, game_state)
+        result = explain_sys.explain_away(game_state.player, observer, game_state)
 
-        # Display the dialogue
         event_bus.emit(GameEvent(EventType.DIALOGUE, {
             "speaker": game_state.player.name,
             "target": observer.name,
             "text": result.dialogue
         }))
 
-        # Show outcome
         if result.success:
             outcome_text = f"[SUCCESS] {observer.name}'s suspicion decreased by {abs(result.suspicion_change)}."
         elif result.critical:
@@ -812,11 +715,10 @@ class ExplainCommand(Command):
             outcome_text = f"[FAILURE] {observer.name}'s suspicion increased. Trust penalty: {result.trust_change}"
 
         event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
-            "text": f"EXPLAIN: Player {result.player_successes} successes vs {observer.name} {result.observer_successes} successes"
+            "text": f"EXPLAIN_AWAY: Player {result.player_successes} successes vs {observer.name} {result.observer_successes} successes"
         }))
         event_bus.emit(GameEvent(EventType.MESSAGE, {"text": outcome_text}))
 
-        # Explaining takes a turn
         game_state.advance_turn()
 
 class ConfrontSlipCommand(Command):
@@ -1316,41 +1218,16 @@ class RepairCommand(Command):
         player_room = game_state.station_map.get_room_name(*game_state.player.location)
 
         if target_type == "RADIO":
-            if player_room != "Radio Room":
-                event_bus.emit(GameEvent(EventType.WARNING, {"text": "You must be in the Radio Room to repair the radio."}))
-                return
-            
-            if game_state.sabotage.radio_operational:
-                event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "The radio is already operational."}))
-                return
-
-            tools = next((i for i in game_state.player.inventory if "TOOLS" in i.name.upper()), None)
-            if not tools:
-                event_bus.emit(GameEvent(EventType.WARNING, {"text": "You need Tools to repair the radio."}))
-                return
-
-            game_state.sabotage.radio_operational = True
-            event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "You spend some time rewiring the radio. It's working again."}))
-            game_state.advance_turn()
+            success, message, evt_type = game_state.attempt_repair_radio()
+            event_bus.emit(GameEvent(evt_type, {"text": message}))
+            if success:
+                game_state.advance_turn()
 
         elif target_type in ["HELICOPTER", "CHOPPER"]:
-            if player_room != "Hangar":
-                event_bus.emit(GameEvent(EventType.WARNING, {"text": "You must be in the Hangar to repair the helicopter."}))
-                return
-            
-            if game_state.helicopter_status == "FIXED":
-                event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "The helicopter is already fixed."}))
-                return
-
-            tools = next((i for i in game_state.player.inventory if "TOOLS" in i.name.upper()), None)
-            parts = next((i for i in game_state.player.inventory if "PARTS" in i.name.upper()), None)
-            
-            if not tools or not parts:
-                event_bus.emit(GameEvent(EventType.WARNING, {"text": "You need Tools and Replacement Parts to fix the helicopter."}))
-                return
-
-            event_bus.emit(GameEvent(EventType.HELICOPTER_REPAIRED, {"game_state": game_state}))
-            game_state.advance_turn()
+            success, message, evt_type = game_state.attempt_repair_helicopter()
+            event_bus.emit(GameEvent(evt_type, {"text": message}))
+            if success:
+                game_state.advance_turn()
         else:
             event_bus.emit(GameEvent(EventType.ERROR, {"text": f"You can't repair '{target_type}'."}))
 
@@ -1361,18 +1238,10 @@ class FlyCommand(Command):
 
     def execute(self, context: GameContext, args: List[str]) -> None:
         game_state = context.game
-        player_room = game_state.station_map.get_room_name(*game_state.player.location)
-
-        if player_room != "Hangar":
-            event_bus.emit(GameEvent(EventType.WARNING, {"text": "You must be in the Hangar to fly the helicopter."}))
-            return
-
-        if getattr(game_state, "helicopter_status", "BROKEN") != "FIXED":
-            event_bus.emit(GameEvent(EventType.WARNING, {"text": "The helicopter is not operational. It needs repairs."}))
-            return
-
-        event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "You climb into the pilot's seat and engage the rotors..."}))
-        event_bus.emit(GameEvent(EventType.ESCAPE_SUCCESS, {"game_state": game_state}))
+        success, message, evt_type = game_state.attempt_escape()
+        event_bus.emit(GameEvent(evt_type, {"text": message}))
+        if success:
+            game_state.advance_turn()
 
 class SOSCommand(Command):
     name = "SOS"
@@ -1381,23 +1250,10 @@ class SOSCommand(Command):
 
     def execute(self, context: GameContext, args: List[str]) -> None:
         game_state = context.game
-        player_room = game_state.station_map.get_room_name(*game_state.player.location)
-
-        if player_room != "Radio Room":
-            event_bus.emit(GameEvent(EventType.WARNING, {"text": "You must be in the Radio Room to send an SOS."}))
-            return
-
-        if not game_state.sabotage.radio_operational:
-            event_bus.emit(GameEvent(EventType.WARNING, {"text": "The radio is damaged. It needs repairs first."}))
-            return
-
-        if getattr(game_state, "rescue_signal_active", False):
-            event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "The SOS signal is already broadcasting."}))
-            return
-
-        event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "You broadcast a high-frequency SOS signal across all bands."}))
-        event_bus.emit(GameEvent(EventType.SOS_EMITTED, {"game_state": game_state}))
-        game_state.advance_turn()
+        success, message, evt_type = game_state.attempt_radio_signal()
+        event_bus.emit(GameEvent(evt_type, {"text": message}))
+        if success:
+            game_state.advance_turn()
 
 class AccuseCommand(Command):
     name = "ACCUSE"
@@ -1434,23 +1290,30 @@ class AccuseCommand(Command):
 class ThrowCommand(Command):
     name = "THROW"
     aliases = ["TOSS"]
-    description = "Throw an item to create a distraction. Usage: THROW <item> <direction>"
+    description = "Throw an item toward a target tile. Usage: THROW <ITEM> <TARGET>"
+    description = "Throw an item to create a distraction. Usage: THROW <ITEM> <TARGET>"
 
     def execute(self, context: GameContext, args: List[str]) -> None:
         game_state = context.game
 
         if len(args) < 2:
             event_bus.emit(GameEvent(EventType.ERROR, {
-                "text": "Usage: THROW <item> <direction>\nDirections: N/S/E/W or NE/NW/SE/SW"
+                "text": "Usage: THROW <ITEM> <TARGET>\nTARGET can be coordinates (X Y) or a room name."
             }))
             return
 
-        item_name = args[0].upper()
-        direction = args[1].upper()
+        item, target = self._parse_item_and_target(args, game_state)
+        if not item or not target:
+                "text": "Usage: THROW <ITEM> <TARGET>\nTargets: direction (N/S/E/W/NE/NW/SE/SW) or coordinates (X,Y)"
+            }))
+            return
+
+        item_name = " ".join(args[:-1]).upper()
+        target = args[-1].upper()
 
         # Find item in player inventory
         item = next((i for i in game_state.player.inventory
-                     if i.name.upper() == item_name or item_name in i.name.upper()), None)
+                     if i.name.upper() == item_name or i.name.upper() == item_name.replace(",", " ")), None)
 
         if not item:
             event_bus.emit(GameEvent(EventType.WARNING, {
@@ -1467,19 +1330,13 @@ class ThrowCommand(Command):
                 }))
             return
 
-        if not getattr(item, 'throwable', False):
-            event_bus.emit(GameEvent(EventType.WARNING, {
-                "text": f"The {item.name} can't be thrown."
-            }))
-            return
-
-        # Initialize distraction system if needed
-        if not hasattr(game_state, 'distraction_system'):
+        if not hasattr(game_state, "distraction_system"):
             game_state.distraction_system = DistractionSystem()
 
+        success, message = game_state.distraction_system.throw_toward(
         # Attempt to throw the item
         success, message = game_state.distraction_system.throw_item(
-            game_state.player, item, direction, game_state
+            game_state.player, item, target, game_state
         )
 
         if success:
@@ -1487,6 +1344,71 @@ class ThrowCommand(Command):
             game_state.advance_turn()
         else:
             event_bus.emit(GameEvent(EventType.WARNING, {"text": message}))
+
+    def _parse_item_and_target(self, args: List[str], game_state: "GameState"):
+        """Split args into (item, target) supporting multi-word names."""
+        inventory_names = [i.name.upper() for i in game_state.player.inventory]
+        split_index = None
+
+        # Coordinate target: last two args numeric
+        if len(args) >= 3 and args[-2].lstrip("+-").isdigit() and args[-1].lstrip("+-").isdigit():
+            split_index = len(args) - 2
+
+        if split_index is None:
+            for i in range(len(args) - 1, 0, -1):
+                cand = " ".join(args[:i]).upper()
+                if cand in inventory_names:
+                    split_index = i
+                    break
+
+        if split_index is None:
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": "Couldn't find a matching item to throw in your inventory."
+            }))
+            return None, None
+
+        item_name = " ".join(args[:split_index]).upper()
+        item = next((i for i in game_state.player.inventory if i.name.upper() == item_name), None)
+        if not item:
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": f"You don't have '{item_name}'."
+            }))
+            return None, None
+        if not getattr(item, "throwable", False):
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": f"The {item.name} can't be thrown."
+            }))
+            return None, None
+
+        target_tokens = args[split_index:]
+        target_location = self._resolve_target(target_tokens, game_state)
+        if not target_location:
+            return item, None
+        return item, target_location
+
+    def _resolve_target(self, tokens: List[str], game_state: "GameState"):
+        """Resolve target tokens into map coordinates."""
+        # Numeric coordinates
+        if len(tokens) == 2 and all(t.lstrip("+-").isdigit() for t in tokens):
+            x, y = int(tokens[0]), int(tokens[1])
+            if not game_state.station_map.is_walkable(x, y):
+                event_bus.emit(GameEvent(EventType.WARNING, {"text": "That throw target is outside the station."}))
+                return None
+            return (x, y)
+
+        room_name = " ".join(tokens)
+        room_center = game_state.station_map.get_room_center(room_name)
+        if room_center:
+            return room_center
+        # Case-insensitive room lookup
+        for known_name in game_state.station_map.rooms.keys():
+            if known_name.lower() == room_name.lower():
+                return game_state.station_map.get_room_center(known_name)
+
+        event_bus.emit(GameEvent(EventType.WARNING, {
+            "text": f"Unknown target '{room_name}'. Provide coordinates or a room name."
+        }))
+        return None
 
 
 class SettingsCommand(Command):
@@ -1538,8 +1460,12 @@ class DeployCommand(Command):
             return
 
         # Check if item is deployable
-        is_deployable = getattr(item, 'deployable', False) or \
-                       (hasattr(item, 'effect') and item.effect == 'alerts_on_trigger')
+        is_deployable = getattr(item, 'is_deployable_item', None)
+        if callable(is_deployable):
+            is_deployable = item.is_deployable_item()
+        else:
+            is_deployable = getattr(item, 'deployable', False) or \
+                           (hasattr(item, 'effect') and item.effect == 'alerts_on_trigger')
 
         if not is_deployable:
             event_bus.emit(GameEvent(EventType.WARNING, {
@@ -1572,21 +1498,43 @@ class DeployCommand(Command):
             return
 
         # Store deployment info
-        game_state.deployed_items[player_pos] = {
-            'item_name': deployed_item.name,
-            'item': deployed_item,
-            'room': player_room,
-            'turn_deployed': game_state.turn,
-            'effect': getattr(deployed_item, 'effect', 'alerts_on_trigger'),
-            'triggered': False
-        }
+        effect_type = getattr(deployed_item, "effect", None)
 
-        event_bus.emit(GameEvent(EventType.MESSAGE, {
-            "text": f"You carefully deploy the {deployed_item.name} at your location."
-        }))
-        event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
-            "text": f"Deployed {deployed_item.name} in {player_room} at {player_pos}."
-        }))
+        # Some deployables resolve instantly instead of waiting for a trigger
+        if effect_type == "instant_barricade" and hasattr(game_state, "room_states"):
+            # Apply barricade strength immediately
+            strength_boost = max(1, getattr(deployed_item, "effect_value", 1))
+            result_text = None
+            for _ in range(strength_boost):
+                result_text = game_state.room_states.barricade_room(player_room, actor=getattr(game_state.player, "name", "You"))
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": result_text or f"You brace the {player_room} using the {deployed_item.name}."
+            }))
+            event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+                "text": f"{deployed_item.name} consumed to barricade {player_room}."
+            }))
+        else:
+            noise_strength = deployed_item.get_noise_strength(0) if hasattr(deployed_item, "get_noise_strength") else getattr(deployed_item, "noise_level", 0)
+            if not noise_strength and effect_type == "alerts_on_trigger":
+                noise_strength = 6
+
+            game_state.deployed_items[player_pos] = {
+                'item_name': deployed_item.name,
+                'item': deployed_item,
+                'room': player_room,
+                'turn_deployed': game_state.turn,
+                'effect': effect_type or 'alerts_on_trigger',
+                'effect_value': getattr(deployed_item, 'effect_value', 0),
+                'noise_level': noise_strength,
+                'triggered': False
+            }
+
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": f"You carefully deploy the {deployed_item.name} at your location."
+            }))
+            event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+                "text": f"Deployed {deployed_item.name} in {player_room} at {player_pos}."
+            }))
 
         # Deploying takes a turn
         game_state.advance_turn()
@@ -1706,7 +1654,7 @@ class SabotageSecurityCommand(Command):
             return
 
         # Attempt sabotage
-        success, message = security_sys.sabotage_device(device_pos, game_state)
+        success, message = security_sys.sabotage_device(device_pos, game_state, saboteur=game_state.player)
 
         if success:
             event_bus.emit(GameEvent(EventType.MESSAGE, {"text": message}))
@@ -1855,7 +1803,7 @@ class CommandDispatcher:
         self.register(CancelTestCommand())
         self.register(TalkCommand())
         self.register(InterrogateCommand())
-        self.register(ExplainCommand())
+        self.register(ExplainAwayCommand())
         self.register(ConfrontSlipCommand())
         self.register(BarricadeCommand())
         self.register(JournalCommand())
