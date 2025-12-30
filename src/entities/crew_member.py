@@ -13,6 +13,8 @@ class StealthPosture(Enum):
     CROUCHING = auto()
     CRAWLING = auto()
     HIDING = auto()
+    HIDDEN = auto()  # Added to support logic referencing HIDDEN
+    EXPOSED = auto() # Added to support logic referencing EXPOSED
 
 
 class CrewMember:
