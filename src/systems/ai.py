@@ -454,16 +454,36 @@ class AISystem:
         if getattr(member, 'investigating', False) and hasattr(member, 'last_known_player_location'):
             target_loc = getattr(member, "investigation_goal", None) or member.last_known_player_location
             if member.location == target_loc:
-                # Arrived at investigation spot
+                linger_turns = getattr(member, "investigation_linger_turns", 0)
+                arrival_announced = getattr(member, "investigation_arrival_reported", False)
+                if linger_turns > 0:
+                    if not arrival_announced:
+                        event_bus.emit(GameEvent(EventType.MESSAGE, {
+                            "text": f"{member.name} reaches the noise and starts looking around."
+                        }))
+                        member.investigation_arrival_reported = True
+                    neighbors = game_state.station_map.get_walkable_neighbors(*target_loc)
+                    if neighbors:
+                        patrol_target = game_state.rng.choose(neighbors) if hasattr(game_state, "rng") else neighbors[0]
+                        if patrol_target != member.location:
+                            self._pathfind_step(member, patrol_target[0], patrol_target[1], game_state)
+                            member.investigation_linger_turns = max(0, linger_turns - 1)
+                            return
+                    member.investigation_linger_turns = max(0, linger_turns - 1)
+                    return
+                # Arrived and finished lingering
                 member.investigating = False
                 member.investigation_goal = None
                 member.investigation_priority = 0
                 member.investigation_source = None
+                member.investigation_linger_turns = 0
+                member.investigation_arrival_reported = False
                 event_bus.emit(GameEvent(EventType.MESSAGE, {
                     "text": f"{member.name} checks the area but finds nothing."
                 }))
             else:
                 # Move toward investigation spot
+                member.investigation_arrival_reported = False
                 self._pathfind_step(member, target_loc[0], target_loc[1], game_state)
                 return
 
@@ -761,9 +781,10 @@ class AISystem:
         station_map = game_state.station_map
         target_room = station_map.get_room_name(*target_loc)
         priority = payload.get("priority_override", 1)
-        duration = max(1, payload.get("linger_turns", 2))
+        duration = max(3, payload.get("investigation_turns", 4))
         source = payload.get("source", "noise")
         intensity = payload.get("intensity", 1)
+        linger_turns = payload.get("linger_turns", 2)
 
         for npc in game_state.crew:
             if npc == game_state.player or not npc.is_alive:
@@ -776,6 +797,10 @@ class AISystem:
                 npc.investigation_priority = max(getattr(npc, "investigation_priority", 0), priority)
                 npc.investigation_expires = game_state.turn + duration
                 npc.investigation_source = source
+                npc.investigation_linger_turns = max(getattr(npc, "investigation_linger_turns", 0), linger_turns)
+                npc.investigation_arrival_reported = False
+                npc.search_turns_remaining = 0
+                npc.current_search_target = None
 
         event_bus.emit(GameEvent(EventType.DIAGNOSTIC, {
             "type": "AI_INVESTIGATION_PING",
@@ -795,6 +820,8 @@ class AISystem:
             member.investigation_source = None
             member.investigation_expires = 0
             member.last_known_player_location = None
+            member.investigation_linger_turns = 0
+            member.investigation_arrival_reported = False
     def _record_last_seen(self, member: 'CrewMember', location: Tuple[int, int], game_state: 'GameState', room_name: Optional[str] = None) -> str:
         """Store last-seen player data on the NPC for later search behavior."""
         room = room_name or game_state.station_map.get_room_name(*location)
