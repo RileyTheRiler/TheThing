@@ -1348,6 +1348,7 @@ class ThrowCommand(Command):
     name = "THROW"
     aliases = ["TOSS"]
     description = "Throw an item toward a target tile. Usage: THROW <ITEM> <TARGET>"
+    description = "Throw an item to create a distraction. Usage: THROW <ITEM> <TARGET>"
 
     def execute(self, context: GameContext, args: List[str]) -> None:
         game_state = context.game
@@ -1360,12 +1361,38 @@ class ThrowCommand(Command):
 
         item, target = self._parse_item_and_target(args, game_state)
         if not item or not target:
+                "text": "Usage: THROW <ITEM> <TARGET>\nTargets: direction (N/S/E/W/NE/NW/SE/SW) or coordinates (X,Y)"
+            }))
+            return
+
+        item_name = " ".join(args[:-1]).upper()
+        target = args[-1].upper()
+
+        # Find item in player inventory
+        item = next((i for i in game_state.player.inventory
+                     if i.name.upper() == item_name or i.name.upper() == item_name.replace(",", " ")), None)
+
+        if not item:
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": f"You don't have a {item_name}."
+            }))
+            # Show available throwable items
+            if not hasattr(game_state, 'distraction_system'):
+                game_state.distraction_system = DistractionSystem()
+            throwables = game_state.distraction_system.get_throwable_items(game_state.player)
+            if throwables:
+                names = ", ".join([i.name for i in throwables])
+                event_bus.emit(GameEvent(EventType.MESSAGE, {
+                    "text": f"Throwable items: {names}"
+                }))
             return
 
         if not hasattr(game_state, "distraction_system"):
             game_state.distraction_system = DistractionSystem()
 
         success, message = game_state.distraction_system.throw_toward(
+        # Attempt to throw the item
+        success, message = game_state.distraction_system.throw_item(
             game_state.player, item, target, game_state
         )
 

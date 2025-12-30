@@ -275,6 +275,8 @@ class GameState:
         # 4. Global State
         self.power_on = True
         self.blood_bank_destroyed = False
+        self.alert_status = "CALM"
+        self.alert_turns_remaining = 0
         self.paranoia_level = self.difficulty_settings["starting_paranoia"]
         self.mode = GameMode.INVESTIGATIVE
         # self.verbosity = Verbosity.STANDARD
@@ -597,6 +599,8 @@ class GameState:
             "helicopter_status": self.helicopter_status,
             "rescue_signal_active": self.rescue_signal_active,
             "rescue_turns_remaining": self.rescue_turns_remaining,
+            "alert_status": self.alert_status,
+            "alert_turns_remaining": self.alert_turns_remaining,
             "rng": self.rng.to_dict(),
             "time_system": self.time_system.to_dict(),
             "station_map": self.station_map.to_dict(),
@@ -634,6 +638,8 @@ class GameState:
         game.helicopter_status = data.get("helicopter_status", "BROKEN")
         game.rescue_signal_active = data.get("rescue_signal_active", False)
         game.rescue_turns_remaining = data.get("rescue_turns_remaining")
+        game.alert_status = data.get("alert_status", "CALM")
+        game.alert_turns_remaining = data.get("alert_turns_remaining", 0)
 
         if "rng" in data:
             game.rng.from_dict(data["rng"])
@@ -671,6 +677,10 @@ class GameState:
         game.parser.set_known_names([m.name for m in game.crew])
         game.room_states = RoomStateManager(list(game.station_map.rooms.keys()))
         game.crafting = CraftingSystem.from_dict(data.get("crafting"), game)
+
+        if hasattr(game, "alert_system") and game.alert_system:
+            game.alert_system.cleanup()
+        game.alert_system = AlertSystem.from_dict(data.get("alert_system"), game)
 
         return game
 
@@ -744,9 +754,10 @@ def main():
             game.save_manager.save_game(game, slot)
         elif action == "LOAD":
             slot = cmd[1] if len(cmd) > 1 else "auto"
-            data = game.save_manager.load_game(slot)
-            if data:
-                game = GameState.from_dict(data)
+            loaded_game = game.save_manager.load_game(slot)
+            if loaded_game:
+                game.cleanup()
+                game = loaded_game
                 print("*** GAME LOADED ***")
         elif action == "STATUS":
             for m in game.crew:

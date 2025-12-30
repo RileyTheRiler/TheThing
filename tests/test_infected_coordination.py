@@ -113,10 +113,12 @@ def test_broadcast_infected_alert_coordinates_allies(game_state, ai_system):
         assert infected2.ambush_target_location == (7, 7)
         assert infected2.coordination_leader == "Palmer"
         assert infected2.coordination_turns_remaining == 5
+        assert infected2.suspicion_state == "coordinating"
 
         # Check that leader also has coordination state
         assert infected1.coordinating_ambush is True
         assert infected1.coordination_leader == "Palmer"
+        assert infected1.suspicion_state == "coordinating"
 
     finally:
         event_bus.unsubscribe(EventType.INFECTED_COORDINATION, on_coordination)
@@ -152,15 +154,15 @@ def test_flanking_position_calculation(game_state, ai_system):
     """Test that flanking positions are calculated correctly."""
     target = (10, 10)
     leader_pos = (8, 10)  # Approaching from the left
-    num_flankers = 2
+    allies = [game_state.crew[1], game_state.crew[2]]
 
     positions = ai_system._calculate_flanking_positions(
-        target, leader_pos, num_flankers, game_state.station_map
+        target, leader_pos, allies, game_state.station_map, current_turn=game_state.turn
     )
 
     # Should have positions on opposite side or perpendicular
     assert len(positions) >= 1
-    assert len(positions) <= num_flankers
+    assert len(positions) <= len(allies)
 
     # Positions should not be the same as target
     for pos in positions:
@@ -254,6 +256,7 @@ def test_coordinated_ambush_priority_in_ai_update(game_state, ai_system):
 
     # Should have decremented coordination timer
     assert infected.coordination_turns_remaining == 4
+    assert infected.suspicion_state == "coordinating"
 
 
 def test_coordination_serialization(game_state):
