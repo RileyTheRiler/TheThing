@@ -60,26 +60,14 @@ class Renderer3D {
         // Scaling factor to match grid coordinates to 3D units
         this.gridScale = 2.0;
 
-        // Asset Configuration
+        // Asset Configuration (Commented out missing .glb assets to silence 404s)
         this.assets = {
             models: {
-                macready: 'static/assets/models/characters/MacReady.glb',
-                crew: 'static/assets/models/characters/Crew_Generic.glb',
-                thing: 'static/assets/models/characters/Thing_Revealed.glb',
-                wall: 'static/assets/models/environment/Wall_Straight.glb',
-                floor: 'static/assets/models/environment/Floor_Tile.glb'
-            }
-        };
-
-        // ... (constructor remains the same until assets config) ...
-        // Asset Configuration
-        this.assets = {
-            models: {
-                macready: 'static/assets/models/characters/MacReady.glb',
-                crew: 'static/assets/models/characters/Crew_Generic.glb',
-                thing: 'static/assets/models/characters/Thing_Revealed.glb',
-                wall: 'static/assets/models/environment/Wall_Straight.glb',
-                floor: 'static/assets/models/environment/Floor_Tile.glb'
+                // macready: 'static/assets/models/characters/MacReady.glb',
+                // crew: 'static/assets/models/characters/Crew_Generic.glb',
+                // thing: 'static/assets/models/characters/Thing_Revealed.glb',
+                // wall: 'static/assets/models/environment/Wall_Straight.glb',
+                // floor: 'static/assets/models/environment/Floor_Tile.glb'
             }
         };
 
@@ -116,10 +104,21 @@ class Renderer3D {
                         scene: model,
                         animations: gltf.animations || []
                     };
+
+                    // Check for pending characters that were waiting for this model
+                    if (this.characters) {
+                        this.characters.forEach((group, name) => {
+                            if (group.userData.isFallback && group.userData.pendingModel === key) {
+                                console.log(`Upgrading ${name} to loaded model ${key}`);
+                                this.upgradeToModel(group, key);
+                            }
+                        });
+                    }
                 },
                 undefined,
                 (error) => {
                     console.warn(`Failed to load ${key}:`, error);
+                    this.loadedModels[key] = { error: true };
                 }
             );
         }
@@ -256,7 +255,7 @@ class Renderer3D {
                 // FLOOR for almost everything
                 if (char !== ' ') {
                     let floorMesh;
-                    if (this.loadedModels['floor']) {
+                    if (this.loadedModels['floor'] && this.loadedModels['floor'].scene) {
                         floorMesh = this.loadedModels['floor'].scene.clone();
                     } else {
                         floorMesh = new THREE.Mesh(floorGeo, this.materials.floor);
@@ -270,14 +269,14 @@ class Renderer3D {
                 if (char === '#') {
                     // WALL
                     let mesh;
-                    if (this.loadedModels['wall']) {
+                    if (this.loadedModels['wall'] && this.loadedModels['wall'].scene) {
                         mesh = this.loadedModels['wall'].scene.clone();
                     } else {
                         mesh = new THREE.Mesh(wallGeo, this.materials.wall);
                         mesh.position.y = this.gridScale;
                     }
                     mesh.position.set(x, 0, z);
-                    if (!this.loadedModels['wall']) mesh.position.y = this.gridScale;
+                    if (!this.loadedModels['wall'] || !this.loadedModels['wall'].scene) mesh.position.y = this.gridScale;
 
                     mesh.castShadow = true;
                     mesh.receiveShadow = true;
@@ -557,7 +556,7 @@ class Renderer3D {
                 // Upgrade from fallback if model available
                 if (group.userData.isFallback) {
                     const key = member.name === 'MacReady' ? 'macready' : 'crew';
-                    if (this.loadedModels[key]) {
+                    if (this.loadedModels[key] && this.loadedModels[key].scene) {
                         this.upgradeToModel(group, key);
                     }
                 }
@@ -567,7 +566,7 @@ class Renderer3D {
                 group = new THREE.Group();
                 const key = member.name === 'MacReady' ? 'macready' : 'crew';
 
-                if (this.loadedModels[key]) {
+                if (this.loadedModels[key] && this.loadedModels[key].scene) {
                     this.setupModel(group, key);
                 } else {
                     this.setupFallback(group, member);
@@ -596,12 +595,18 @@ class Renderer3D {
 
     setupModel(group, key) {
         const data = this.loadedModels[key];
+        if (!data || !data.scene) {
+            // If not loaded yet or failed, we stay in fallback or wait
+            group.userData.pendingModel = key;
+            return;
+        }
+
         const model = data.scene.clone();
         group.add(model);
         group.userData.isFallback = false;
 
         // Setup Animation
-        if (data.animations.length > 0) {
+        if (data.animations && data.animations.length > 0) {
             const mixer = new THREE.AnimationMixer(model);
             group.userData.mixer = mixer;
             group.userData.animations = data.animations; // original clips
@@ -613,10 +618,10 @@ class Renderer3D {
 
     setupFallback(group, member) {
         const color = member.name === 'MacReady' ? this.materials.player.color : this.materials.crew.color;
-        const geometry = new THREE.BoxGeometry(1, 1, 1);
+        const geometry = new THREE.BoxGeometry(0.8, 1.8, 0.8);
         const material = new THREE.MeshStandardMaterial({ color: color });
         const mesh = new THREE.Mesh(geometry, material);
-        mesh.position.y = 0.5; // Box center is 0.5 up
+        mesh.position.y = 0.9; // Box center is 0.9 up for a 1.8 unit tall box
         mesh.castShadow = true;
         group.add(mesh);
         group.userData.isFallback = true;

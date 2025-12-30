@@ -206,6 +206,8 @@ COMMAND_REGISTRY: List[CommandMetadata] = [
         category="STEALTH",
         usage="UNHIDE",
         help_text="Step out of cover and stand up, ending the hiding posture."
+    ),
+    CommandMetadata(
         name="VENT",
         aliases=["DUCT"],
         description="Enter or crawl through ventilation ducts.",

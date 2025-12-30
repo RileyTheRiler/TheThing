@@ -15,6 +15,8 @@ def test_social_systems():
     print("\n1. Testing NPC Schedules...")
     # Blair starts at Rec Room (usually) but has a schedule for Infirmary from 8-18.
     blair = next(m for m in game.crew if m.name == "Blair")
+    # Set turn_count so derived hour is 10:00 AM, should be at Infirmary
+    game.time_system.turn_count = (10 - game.time_system.start_hour) % 24
     # Set turn_count so the derived hour is 10:00 AM (Infirmary shift)
     desired_hour = 10
     game.time_system.turn_count = (desired_hour - game.time_system.start_hour) % 24

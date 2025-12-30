@@ -273,6 +273,93 @@ class DropCommand(Command):
                 "text": f"You don't have '{item_name}'."
             }))
 
+class ThrowCommand(Command):
+    name = "THROW"
+    aliases = ["TOSS"]
+    description = "Throw a throwable item toward coordinates. Usage: THROW <ITEM NAME> <X> <Y>"
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+        if len(args) < 3:
+            event_bus.emit(GameEvent(EventType.ERROR, {"text": "Usage: THROW <ITEM NAME> <X> <Y>"}))
+            return
+
+        try:
+            target_x = int(args[-2])
+            target_y = int(args[-1])
+        except ValueError:
+            event_bus.emit(GameEvent(EventType.ERROR, {"text": "Target coordinates must be numbers."}))
+            return
+
+        item_name = " ".join(args[:-2])
+        if not game_state.station_map.is_walkable(target_x, target_y):
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": "That throw target is outside the station."}))
+            return
+
+        if not hasattr(game_state, "action_cooldowns"):
+            game_state.action_cooldowns = {}
+        ready_turn = game_state.action_cooldowns.get(self.name, 0)
+        if ready_turn and game_state.turn < ready_turn:
+            remaining = ready_turn - game_state.turn
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": f"Throw is on cooldown for {remaining} more turn(s)."
+            }))
+            event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+                "text": "Throw cooldown active.",
+                "cooldown": remaining
+            }))
+            return
+
+        throwable = next((i for i in game_state.player.inventory if i.name.upper() == item_name.upper()), None)
+        if not throwable:
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": f"You don't have '{item_name}'."}))
+            return
+        if getattr(throwable, "category", "").lower() != "throwable":
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": f"{throwable.name} can't be thrown as a distraction."}))
+            return
+        if getattr(throwable, "uses", -1) == 0:
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": f"{throwable.name} has no charges left."}))
+            event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {"text": "No ammo remaining.", "ammo": 0}))
+            return
+
+        thrown_item = game_state.player.remove_item(throwable.name)
+        spent = False
+        if thrown_item.is_consumable():
+            thrown_item.consume()
+            spent = thrown_item.uses <= 0
+
+        target_room = game_state.station_map.get_room_name(target_x, target_y)
+        thrown_item.add_history(game_state.turn, f"Thrown toward {target_room}")
+        if not spent:
+            game_state.station_map.add_item_to_room(thrown_item, target_x, target_y, game_state.turn)
+
+        event_bus.emit(GameEvent(EventType.MESSAGE, {
+            "text": f"You throw {thrown_item.name} toward {target_room} ({target_x},{target_y})."
+        }))
+
+        cooldown_turns = getattr(thrown_item, "cooldown", 0) or 1
+        game_state.action_cooldowns[self.name] = game_state.turn + cooldown_turns
+        ammo_remaining = thrown_item.uses if thrown_item.is_consumable() else None
+        event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+            "text": f"{thrown_item.name} lands with a sharp clatter.",
+            "ammo": ammo_remaining,
+            "cooldown": cooldown_turns
+        }))
+
+        payload = {
+            "game_state": game_state,
+            "room": target_room,
+            "target_location": (target_x, target_y),
+            "source": thrown_item.name,
+            "type": getattr(thrown_item, "effect", "noise"),
+            "intensity": getattr(thrown_item, "effect_value", 1),
+            "priority_override": 2 if getattr(thrown_item, "effect", "") == "signal" else 1,
+            "linger_turns": 3 if getattr(thrown_item, "effect", "") == "signal" else 1
+        }
+        event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, payload))
+
+        game_state.advance_turn()
+
 class AttackCommand(Command):
     name = "ATTACK"
     aliases = []
@@ -537,7 +624,9 @@ class InterrogateCommand(Command):
         "ALIBI": InterrogationTopic.ALIBI,
         "SUSPICION": InterrogationTopic.SUSPICION,
         "BEHAVIOR": InterrogationTopic.BEHAVIOR,
-        "KNOWLEDGE": InterrogationTopic.KNOWLEDGE
+        "KNOWLEDGE": InterrogationTopic.KNOWLEDGE,
+        "SLIP": InterrogationTopic.SCHEDULE_SLIP,
+        "SCHEDULE": InterrogationTopic.SCHEDULE_SLIP
     }
 
     def execute(self, context: GameContext, args: List[str]) -> None:
@@ -687,6 +776,61 @@ class ExplainCommand(Command):
         # Explaining takes a turn
         game_state.advance_turn()
 
+class ConfrontSlipCommand(Command):
+    name = "CONFRONT"
+    aliases = ["CALLOUT"]
+    description = "Confront a crew member who is off their schedule."
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+        player_room = game_state.station_map.get_room_name(*game_state.player.location)
+
+        if not args:
+            event_bus.emit(GameEvent(EventType.ERROR, {
+                "text": "Usage: CONFRONT <NAME>"
+            }))
+            return
+
+        target_name = args[0]
+        target = next((m for m in game_state.crew if m.name.upper() == target_name.upper()), None)
+
+        if not target:
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": f"Unknown target: {target_name}"}))
+            return
+        if game_state.station_map.get_room_name(*target.location) != player_room:
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": f"{target.name} is not here."}))
+            return
+        if not target.is_alive:
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": f"{target.name} cannot answer..."}))
+            return
+        if not getattr(target, "schedule_slip_flag", False):
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": f"{target.name} seems to be where they're supposed to be. No slip to confront."
+            }))
+            return
+
+        if not hasattr(game_state, "interrogation_system"):
+            game_state.interrogation_system = InterrogationSystem(game_state.rng, game_state.room_states)
+
+        result = game_state.interrogation_system.confront_schedule_slip(
+            game_state.player, target, game_state
+        )
+
+        event_bus.emit(GameEvent(EventType.MESSAGE, {
+            "text": f"[CONFRONT: {target.name} - OFF-SCHEDULE]"
+        }))
+        event_bus.emit(GameEvent(EventType.DIALOGUE, {
+            "speaker": target.name,
+            "text": result.dialogue
+        }))
+
+        for tell in result.tells:
+            event_bus.emit(GameEvent(EventType.MESSAGE, {"text": tell}))
+
+        if result.trust_change != 0 and hasattr(game_state, "trust_system"):
+            game_state.trust_system.update_trust(target.name, game_state.player.name, result.trust_change)
+            change_str = f"+{result.trust_change}" if result.trust_change > 0 else str(result.trust_change)
+            event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {"text": f"Trust {change_str}"}))
 
 class AccuseCommand(Command):
     name = "ACCUSE"
@@ -1567,6 +1711,7 @@ class CommandDispatcher:
         self.register(CraftCommand())
         self.register(GetCommand())
         self.register(DropCommand())
+        self.register(ThrowCommand())
         self.register(AttackCommand())
         self.register(TagCommand())
         self.register(LogCommand())
@@ -1578,6 +1723,7 @@ class CommandDispatcher:
         self.register(TalkCommand())
         self.register(InterrogateCommand())
         self.register(ExplainCommand())
+        self.register(ConfrontSlipCommand())
         self.register(BarricadeCommand())
         self.register(JournalCommand())
         self.register(StatusCommand())

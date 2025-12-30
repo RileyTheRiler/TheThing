@@ -1,0 +1,15 @@
+Traceback (most recent call last):
+  File "C:\Users\riley\Desktop\The Thing\server.py", line 17, in <module>
+    from engine import GameState
+  File "C:\Users\riley\Desktop\The Thing\src\engine.py", line 13, in <module>
+    from entities.crew_member import CrewMember
+  File "C:\Users\riley\Desktop\The Thing\src\entities\__init__.py", line 4, in <module>
+    from entities.crew_member import CrewMember
+  File "C:\Users\riley\Desktop\The Thing\src\entities\crew_member.py", line 11, in <module>
+    class StealthPosture(Enum):
+  File "C:\Users\riley\Desktop\The Thing\src\entities\crew_member.py", line 18, in StealthPosture
+    EXPOSED = STANDING  # Alias for clarity in tests/UI
+    ^^^^^^^
+  File "C:\ProgramData\miniconda3\Lib\enum.py", line 443, in __setitem__
+    raise TypeError('%r already defined as %r' % (key, self[key]))
+TypeError: 'EXPOSED' already defined as 1

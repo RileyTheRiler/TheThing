@@ -13,6 +13,7 @@ class StealthPosture(Enum):
     CROUCHING = auto()
     CRAWLING = auto()
     HIDING = auto()
+    # Aliases for external callers/tests
     EXPOSED = STANDING  # Alias for clarity in tests/UI
     HIDDEN = HIDING
 
@@ -49,6 +50,14 @@ class CrewMember:
         self.slipped_vapor = False  # Hook: Biological Slip flag
         self.knowledge_tags = []    # Agent 3: Searchlight Harvest
         self.stealth_posture = StealthPosture.STANDING
+        self.schedule_slip_flag = False  # Flagged when off expected schedule
+        self.schedule_slip_reason = None
+        self.location_hint_active = False
+        self.investigating = False
+        self.investigation_goal = None
+        self.investigation_priority = 0
+        self.investigation_expires = 0
+        self.investigation_source = None
         self.in_vent = False        # Whether the character is moving through vents
         # Thermal sense/resistance baseline for heat-based detection
         # Base thermal signature (human body heat)
@@ -73,6 +82,7 @@ class CrewMember:
         self.search_targets = []
         self.current_search_target = None
         self.search_turns_remaining = 0
+        self.last_location_hint_turn = -1  # Cooldown for ambient warnings
 
         # Infected coordination (pincer movement)
         self.coordinating_ambush = False
@@ -189,10 +199,15 @@ class CrewMember:
         current_room = game_state.station_map.get_room_name(*self.location)
         current_hour = game_state.time_system.hour
         rng = game_state.rng
+        current_turn = game_state.turn
         
         # Reset flag
         self.location_hint_active = False
         
+        # Only check once per turn to avoid spamming the same hint
+        if current_turn <= self.last_location_hint_turn:
+            return hints
+            
         # Check location_hint invariants
         for inv in [i for i in self.invariants if i.get('type') == 'location_hint']:
             expected_room = inv.get('expected_room')
@@ -207,6 +222,7 @@ class CrewMember:
                     if rng.random_float() < slip_chance:
                         hints.append(slip_desc)
                         self.location_hint_active = True  # Set for visual indicator
+                        self.last_location_hint_turn = current_turn
         
         return hints
 
@@ -279,6 +295,8 @@ class CrewMember:
             "stealth_xp": getattr(self, 'stealth_xp', 0),
             "stealth_level": getattr(self, 'stealth_level', 0),
             "silent_takedown_unlocked": getattr(self, 'silent_takedown_unlocked', False)
+            "schedule_slip_flag": getattr(self, 'schedule_slip_flag', False),
+            "schedule_slip_reason": getattr(self, 'schedule_slip_reason', None)
         }
 
     @classmethod
@@ -338,6 +356,9 @@ class CrewMember:
         m.mask_integrity = data.get("mask_integrity", 100.0)
         m.is_revealed = data.get("is_revealed", False)
         m.knowledge_tags = data.get("knowledge_tags", [])
+        m.schedule_slip_flag = data.get("schedule_slip_flag", False)
+        m.schedule_slip_reason = data.get("schedule_slip_reason")
+        m.location_hint_active = data.get("location_hint_active", False)
         m.in_vent = data.get("in_vent", False)
         m.suspicion_level = data.get("suspicion_level", 0)
         m.suspicion_thresholds = data.get("suspicion_thresholds", {"question": 4, "follow": 8})
@@ -528,23 +549,15 @@ class CrewMember:
 
     def get_reaction_dialogue(self, trigger_type: str) -> str:
         """
-        Generate reactive dialogue based on behavior type/personality.
-        
-        trigger_type: "STEALTH_DETECTED", "SUSPICIOUS", etc.
-        """
-        # Default lines
-        lines = ["Who's there?", "What was that?"]
-        
-        if trigger_type == "STEALTH_DETECTED":
-            if self.behavior_type == "Aggressive":
-                lines = ["Show yourself!", "I know you're there!", "Come out and fight!"]
-            elif self.behavior_type == "Nervous":
-                lines = ["Who's there?!", "Stay back!", "I... I hear you!"]
-            elif self.behavior_type == "Analytical":
-                lines = ["Identify yourself.", "Movement detected.", "Someone is lurking."]
-            else:
-                lines = ["Is someone there?", "Hello?", "Stop sneaking around."]
+        Legacy helper retained for compatibility.
 
+        Delegates to DialogueSystem via game systems; kept as a fallback string.
+        """
+        from systems.dialogue import DialogueSystem
+
+        system = DialogueSystem()
+        result = system._behavioral_reaction(self, trigger_type)
+        return result
         # Simple deterministic choice based on name length for now to act as RNG
         # (Since we don't have easy access to RNG here without passing it in, 
         # and simple consistent variation is fine)

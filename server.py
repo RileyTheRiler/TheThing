@@ -6,6 +6,7 @@ Handles game state and provides API endpoints for the browser client
 
 import sys
 import os
+import secrets
 from flask import Flask, render_template, jsonify, request
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
@@ -23,7 +24,8 @@ from ui.settings import settings
 app = Flask(__name__,
             static_folder='web/static',
             template_folder='web/templates')
-app.config['SECRET_KEY'] = 'the-thing-secret-key-2025'
+# SECURITY: Use environment variable for secret key or generate a secure random one
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', secrets.token_hex(32))
 CORS(app)
 # Use threading async_mode for Python 3.14 compatibility (eventlet not supported)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
@@ -226,6 +228,12 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/favicon.ico')
+def favicon():
+    """Return 204 No Content for favicon to suppress 404 logs"""
+    return '', 204
+
+
 @app.route('/api/new_game', methods=['POST'])
 def new_game():
     """Start a new game"""
@@ -334,6 +342,13 @@ def _execute_game_command(game, cmd):
     from core.resolution import Skill
 
     action = cmd[0]
+    
+    # Handle bare direction aliases
+    if action in ["NORTH", "SOUTH", "EAST", "WEST", "N", "S", "E", "W"]:
+        direction = action
+        action = "MOVE"
+        cmd = ["MOVE", direction]
+        
     player_room = game.station_map.get_room_name(*game.player.location)
     output = []
 
@@ -685,8 +700,15 @@ if __name__ == '__main__':
     print("   THE THING: ANTARCTIC RESEARCH STATION 31")
     print("   Browser Interface Server")
     print("=" * 60)
+
+    # SECURITY: Configuration from environment variables with secure defaults
+    host = os.environ.get('HOST', '127.0.0.1')
+    port = int(os.environ.get('PORT', 5000))
+    debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
+
     print("\nStarting server...")
-    print("Navigate to: http://localhost:5000")
+    print(f"Navigate to: http://{host}:{port}")
     print("\nPress CTRL+C to stop the server")
     print("=" * 60)
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True, allow_unsafe_werkzeug=True)
+    # allow_unsafe_werkzeug=True is required to run without debug mode when not using a WSGI server
+    socketio.run(app, host=host, port=port, debug=debug_mode, allow_unsafe_werkzeug=True)

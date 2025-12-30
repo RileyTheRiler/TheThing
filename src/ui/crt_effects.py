@@ -72,8 +72,13 @@ class CRTOutput:
         self.crawl_speed = crawl_speed  # Seconds per character
         self.enabled = True
         self.glitch_level = 0  # 0-100, increases with paranoia
+        
         from systems.architect import RandomnessEngine
         self.rng = rng or RandomnessEngine()
+        
+        # Web/Server Capture Support
+        self.capture_mode = False
+        self.buffer = []
 
         # Set color based on palette
         self.set_palette(palette)
@@ -96,12 +101,27 @@ class CRTOutput:
         """Return list of available palette names and descriptions."""
         return {name: config["description"] for name, config in PALETTES.items()}
     
+    def start_capture(self):
+        """Start buffering output instead of printing to stdout."""
+        self.capture_mode = True
+        self.buffer = []
+
+    def stop_capture(self):
+        """Stop buffering and return collected messages."""
+        messages = self.buffer
+        self.capture_mode = False
+        self.buffer = []
+        return messages
+
     def output(self, text, crawl=False, glitch=False):
         """
         Main output method. Replaces print().
         """
         if not self.enabled:
-            print(text)
+            if self.capture_mode:
+                self.buffer.append(text)
+            else:
+                print(text)
             return
         
         # Apply color
@@ -112,14 +132,17 @@ class CRTOutput:
         elif glitch:
             self._glitch_text(colored_text)
         else:
-            # Apply scanlines for multi-line output
-            lines = colored_text.split('\n')
-            for i, line in enumerate(lines):
-                if i % 2 == 1:
-                    # Dim every other line (scanline effect)
-                    print(f"{ANSI.DIM}{line}{ANSI.RESET}")
-                else:
-                    print(line)
+            if self.capture_mode:
+                self.buffer.append(text)
+            else:
+                # Apply scanlines for multi-line output
+                lines = colored_text.split('\n')
+                for i, line in enumerate(lines):
+                    if i % 2 == 1:
+                        # Dim every other line (scanline effect)
+                        print(f"{ANSI.DIM}{line}{ANSI.RESET}")
+                    else:
+                        print(line)
     
     def crawl(self, text, speed=None):
         """
@@ -147,6 +170,13 @@ class CRTOutput:
     
     def _crawl_text(self, text):
         """Internal crawl with color already applied."""
+        if self.capture_mode:
+            # For capture mode, we just strip ANSI and buffer it
+            import re
+            clean_text = re.sub(r'\033\[[0-9;]*m', '', text)
+            self.buffer.append(clean_text)
+            return
+
         for char in text:
             sys.stdout.write(char)
             sys.stdout.flush()
@@ -232,7 +262,10 @@ class CRTOutput:
         """
         High-visibility warning message.
         """
-        print(f"{ANSI.BLINK}{self.color}[!] {text}{ANSI.RESET}")
+        if self.capture_mode:
+            self.buffer.append(f"[WARNING] {text}")
+        else:
+            print(f"{ANSI.BLINK}{self.color}[!] {text}{ANSI.RESET}")
     
     def status_bar(self, turn, temp, location, power):
         """

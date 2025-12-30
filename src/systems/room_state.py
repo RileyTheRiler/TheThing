@@ -116,6 +116,9 @@ class RoomStateManager:
             for room_name in self.room_states:
                 if room_name != "Generator":
                     self.add_state(room_name, RoomState.FROZEN)
+
+        # Schedule slip detection (Agent hook)
+        self._check_schedule_slips(game_state)
     
     def get_room_description_modifiers(self, room_name):
         states = self.get_states(room_name)
@@ -283,3 +286,52 @@ class RoomStateManager:
             modifiers.observation_pool -= 1  # Frosted visors, breath mist
 
         return modifiers
+
+    # === Schedule Slip Detection ===
+    def _get_expected_room(self, member, current_hour):
+        """Return the expected room for a member based on schedule and hour."""
+        for entry in getattr(member, "schedule", []) or []:
+            start = entry.get("start", 0)
+            end = entry.get("end", 24)
+            room = entry.get("room")
+            if not room:
+                continue
+
+            # Handle wrap-around schedules (e.g., 20 -> 08)
+            if start < end:
+                if start <= current_hour < end:
+                    return room
+            else:
+                if current_hour >= start or current_hour < end:
+                    return room
+        return None
+
+    def _check_schedule_slips(self, game_state):
+        """Flag NPCs who are off their expected schedule location."""
+        if not hasattr(game_state, "crew"):
+            return
+
+        current_hour = getattr(game_state.time_system, "hour", getattr(game_state, "current_hour", 0))
+        for member in game_state.crew:
+            previous_flag = getattr(member, "schedule_slip_flag", False)
+            member.schedule_slip_flag = False
+            member.schedule_slip_reason = None
+
+            if not getattr(member, "is_alive", True):
+                continue
+            expected_room = self._get_expected_room(member, current_hour)
+            if not expected_room:
+                continue
+
+            actual_room = game_state.station_map.get_room_name(*member.location)
+            if actual_room != expected_room:
+                member.schedule_slip_flag = True
+                member.schedule_slip_reason = (
+                    f"{member.name} should be in {expected_room} around {current_hour:02d}00, "
+                    f"but is in {actual_room}."
+                )
+                # Emit once when the slip is first detected to avoid spam
+                if not previous_flag:
+                    event_bus.emit(GameEvent(EventType.MESSAGE, {
+                        "text": f"[SLIP] {member.name} is off-schedule (expected: {expected_room})."
+                    }))

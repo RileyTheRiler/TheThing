@@ -63,6 +63,10 @@ class WeatherSystem:
     def on_turn_advance(self, event: GameEvent):
         """Subscriber for TURN_ADVANCE event."""
         rng = event.payload.get("rng")
+        if not rng:
+            return
+            
+        events = self.tick(rng)
         game_state = event.payload.get("game_state")
         turn_inventory = event.payload.get("turn_inventory", {})
         if isinstance(turn_inventory, dict):

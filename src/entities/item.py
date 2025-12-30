@@ -13,6 +13,7 @@ class Item:
     def __init__(self, name, description, is_evidence=False, weapon_skill=None, damage=0,
                  uses=-1, effect=None, effect_value=0, category="misc",
                  throwable=False, noise_level=0, creates_light=False):
+                 uses=-1, effect=None, effect_value=0, category="misc", cooldown=0):
         self.name = name
         self.description = description
         self.is_evidence = is_evidence
@@ -22,6 +23,7 @@ class Item:
         self.effect = effect
         self.effect_value = effect_value
         self.category = category
+        self.cooldown = cooldown
         self.history = []
         # Distraction mechanics
         self.throwable = throwable
@@ -66,6 +68,8 @@ class Item:
             "throwable": self.throwable,
             "noise_level": self.noise_level,
             "creates_light": self.creates_light
+            "cooldown": self.cooldown,
+            "history": self.history
         }
 
     @classmethod
@@ -110,6 +114,40 @@ class Item:
             throwable=data.get("throwable", False),
             noise_level=data.get("noise_level", 0),
             creates_light=data.get("creates_light", False)
+            cooldown=data.get("cooldown", 0)
         )
         item.history = data.get("history", [])
         return item
+
+
+# Predefined throwable item templates
+THROWABLE_LIBRARY = {
+    "FLARE": {
+        "name": "Flare",
+        "description": "Burns brightly and loudly, drawing attention.",
+        "category": "throwable",
+        "effect": "signal",
+        "effect_value": 3,  # Light/noise strength
+        "uses": 1,
+        "cooldown": 2
+    },
+    "EMPTY CAN": {
+        "name": "Empty Can",
+        "description": "A noisy distraction when tossed.",
+        "category": "throwable",
+        "effect": "noise",
+        "effect_value": 1,
+        "uses": 3,
+        "cooldown": 1
+    }
+}
+
+
+def create_throwable(name):
+    """Factory for predefined throwable items. Returns None if unknown."""
+    if not name:
+        return None
+    data = THROWABLE_LIBRARY.get(name.upper())
+    if not data:
+        return None
+    return Item(**data)

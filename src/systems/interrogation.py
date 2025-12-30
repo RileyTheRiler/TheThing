@@ -15,6 +15,7 @@ class InterrogationTopic(Enum):
     SUSPICION = "suspicion"      # Who do you suspect?
     BEHAVIOR = "behavior"        # Why did you do X?
     KNOWLEDGE = "knowledge"      # What do you know about X?
+    SCHEDULE_SLIP = "schedule_slip"  # Why are you off-schedule?
 
 
 class ResponseType(Enum):
@@ -115,6 +116,18 @@ class InterrogationSystem:
                 ("I heard something in the {room} last night.", ResponseType.HONEST),
                 ("I saw {target} acting strange near the kennels.", ResponseType.HONEST),
                 ("I wish I knew more. This is terrifying.", ResponseType.NERVOUS),
+            ]
+        },
+        InterrogationTopic.SCHEDULE_SLIP: {
+            True: [
+                ("You're imagining things. I go where I'm needed.", ResponseType.DEFENSIVE),
+                ("Someone must have messed with the schedule.", ResponseType.EVASIVE),
+                ("Why does it matter? Everything's falling apart.", ResponseType.ACCUSATORY),
+            ],
+            False: [
+                ("I... got lost. The corridors all look the same.", ResponseType.NERVOUS),
+                ("I was helping elsewhere. Didn't anyone tell you?", ResponseType.DEFENSIVE),
+                ("Sorry, I thought I was supposed to be in {room}.", ResponseType.HONEST),
             ]
         }
     }
@@ -386,6 +399,66 @@ class InterrogationSystem:
             opposers=opposers,
             outcome_message=outcome
         )
+
+    def confront_schedule_slip(self, interrogator, subject, game_state):
+        """Special confrontation unlocked when a schedule slip is detected."""
+        if not getattr(subject, "schedule_slip_flag", False):
+            return InterrogationResult(
+                response_type=ResponseType.EVASIVE,
+                dialogue=f"{subject.name} looks confused. 'I'm on task, what's the problem?'",
+                tells=[],
+                trust_change=0
+            )
+
+        # Boosted empathy pool when you have concrete slip evidence
+        empathy_pool = (interrogator.attributes.get(Attribute.INFLUENCE, 1) +
+                        interrogator.skills.get(Skill.EMPATHY, 0) + 2)
+        check = self.rng.calculate_success(max(0, empathy_pool))
+
+        # Use slip reason as the confrontation opener
+        slip_reason = getattr(subject, "schedule_slip_reason", "You weren't where you were supposed to be.")
+        dialogue = f"You confront {subject.name}: {slip_reason}"
+
+        tells = [slip_reason]
+        trust_change = -5  # Baseline distrust from being called out
+
+        # Successful pressure yields bigger tells and suspicion shifts
+        if check["success"] or self.rng.random_float() < 0.35:
+            extra_tell = self.rng.choose(self.INFECTED_TELLS if subject.is_infected else self.HUMAN_TELLS)
+            if extra_tell:
+                tells.append(extra_tell)
+            trust_change -= 5  # Greater fallout when you catch them
+            # Tilt trust in player's perception of the subject
+            if hasattr(game_state, "trust_system"):
+                game_state.trust_system.modify_trust(interrogator.name, subject.name, -10)
+            # Amplify global suspicion slightly
+            game_state.paranoia_level = min(100, game_state.paranoia_level + 1)
+            dialogue += " They freeze under questioning."
+        else:
+            dialogue += " They deflect, but you make your concerns clear."
+
+        # Clear the slip so it can't be exploited repeatedly in one loop
+        subject.schedule_slip_flag = False
+
+        result = InterrogationResult(
+            response_type=ResponseType.DEFENSIVE if subject.is_infected else ResponseType.NERVOUS,
+            dialogue=dialogue,
+            tells=tells,
+            trust_change=trust_change
+        )
+
+        event_bus.emit(GameEvent(EventType.INTERROGATION_RESULT, {
+            "interrogator": interrogator.name,
+            "subject": subject.name,
+            "topic": InterrogationTopic.SCHEDULE_SLIP.value,
+            "dialogue": dialogue,
+            "response_type": result.response_type.value,
+            "tells": tells,
+            "trust_change": trust_change,
+            "slip_detected": True
+        }))
+
+        return result
 
     def get_interrogation_topics(self):
         """Return available interrogation topics."""
