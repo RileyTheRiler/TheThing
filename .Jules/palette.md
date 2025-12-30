@@ -6,4 +6,6 @@
 **Action:** Implement context-aware legends that dynamically list the specific names of visible entities (e.g., `[*=Shotgun, Key]`) based on the viewport, rather than a static key.
 # Palette Journal
 
-_No critical UX or accessibility learnings recorded yet._
+## 2024-05-24 - Unicode Icons Accessibility
+**Learning:** Relying on unicode characters for icons (e.g., ✕, ▲) creates unpredictable screen reader experiences (e.g., reading "Multiplication X" instead of "Close").
+**Action:** Always wrap decorative unicode icons in `aria-hidden="true"` and provide explicit `aria-label` for the interactive element.
