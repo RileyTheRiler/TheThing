@@ -162,6 +162,19 @@ class AudioManager:
         # Dialogue
         EventType.DIALOGUE: Sound.BEEP # Simple chirp for text
     }
+
+    ROOM_AMBIENT_MAP = {
+        "Generator": Sound.THRUM,
+        "Hangar": Sound.THRUM,
+        "Rec Room": Sound.THRUM,
+        "Storage": Sound.STATIC,
+        "Radio Room": Sound.STATIC,
+        "Lab": Sound.STATIC,
+        "Infirmary": Sound.STATIC,
+        "Mess Hall": Sound.WIND,
+        "Sleeping Quarters": Sound.WIND,
+        "Kennel": Sound.WIND,
+    }
     
     def __init__(self, enabled=True, rng=None, player_ref=None, station_map=None):
         self.enabled = enabled and AUDIO_AVAILABLE
@@ -185,6 +198,7 @@ class AudioManager:
 
         # Tier 6.4: Subscribe to events
         self._subscribe_to_events()
+        self._prime_room_ambient()
 
     def cleanup(self):
         """Unsubscribe and shutdown."""
@@ -214,6 +228,7 @@ class AudioManager:
         
         # Dynamic Movement Audio
         if event.type == EventType.MOVEMENT:
+            self._update_room_ambient_from_event(event)
             # Check for actor to allow dynamic noise
             # Note: We can't access CrewMember directly from here easily unless passed in event or we lookup
             # But the event usually has 'actor' as a name string.
@@ -260,6 +275,62 @@ class AudioManager:
                     return
                 
         self.play(sound, priority)
+
+    def _prime_room_ambient(self):
+        """Set initial ambient loop based on player's starting room."""
+        if not self.player_ref or not self.station_map:
+            return
+        starting_room = self.station_map.get_room_name(*self.player_ref.location)
+        self._set_room_ambient(starting_room)
+
+    def _update_room_ambient_from_event(self, event: GameEvent):
+        """Adjust ambient loop when the player changes rooms."""
+        if not self.player_ref or not self.station_map:
+            return
+
+        actor_name = event.payload.get("actor")
+        if actor_name != getattr(self.player_ref, "name", None):
+            return
+
+        room_name = event.payload.get("destination")
+        if not room_name:
+            destination_coords = event.payload.get("to")
+            if destination_coords and len(destination_coords) == 2:
+                room_name = self.station_map.get_room_name(*destination_coords)
+
+        if not room_name:
+            room_name = self.station_map.get_room_name(*self.player_ref.location)
+
+        self._set_room_ambient(room_name)
+
+    def _ambient_sound_for_room(self, room_name: str):
+        """Lookup ambient sound for a given room name."""
+        if not room_name:
+            return None
+
+        for key, sound in self.ROOM_AMBIENT_MAP.items():
+            if key in room_name:
+                return sound
+
+        if room_name.startswith("Corridor"):
+            return Sound.WIND
+
+        return Sound.THRUM
+
+    def _set_room_ambient(self, room_name: str):
+        """Switch ambient loop based on room while respecting audio state."""
+        if not self.enabled:
+            return
+
+        ambient_sound = self._ambient_sound_for_room(room_name)
+        if not ambient_sound:
+            self.stop_ambient()
+            return
+
+        if self.ambient_sound == ambient_sound and self.ambient_running:
+            return
+
+        self.ambient_loop(ambient_sound)
     
     def _audio_worker(self):
         """Background thread for processing audio queue."""
