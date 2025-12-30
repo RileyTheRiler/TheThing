@@ -285,12 +285,40 @@ class SaveManager:
         except Exception:
             pass  # Cleanup failure is non-critical
 
+    def _sanitize_slot_name(self, slot_name):
+        """
+        Sanitize slot name to prevent path traversal.
+        Allows alphanumeric, spaces, underscores, and hyphens.
+        Raises ValueError if the resulting name is empty.
+        """
+        # Allow alphanumeric, spaces, underscores, hyphens
+        safe_slot = "".join(c for c in slot_name if c.isalnum() or c in (' ', '_', '-'))
+        # Strip leading/trailing spaces
+        safe_slot = safe_slot.strip()
+
+        if not safe_slot:
+            raise ValueError(f"Invalid save slot name: '{slot_name}' resulted in empty string")
+
+        if safe_slot != slot_name:
+            # We don't want to silently redirect to a different filename if the user
+            # meant a specific file, but for path traversal protection we must.
+            # However, for API usability, we should probably just use the safe version.
+            pass
+
+        return safe_slot
+
     def save_game(self, game_state, slot_name="auto"):
         """
         Saves the game state using to_dict().
         Adds version and checksum for validation.
         Creates backup of existing save before overwriting.
         """
+        try:
+            slot_name = self._sanitize_slot_name(slot_name)
+        except ValueError as e:
+            print(f"Save failed: {e}")
+            return False
+
         filename = f"{slot_name}.json"
         filepath = os.path.join(self.save_dir, filename)
 
@@ -327,6 +355,12 @@ class SaveManager:
         Load and validate a saved game.
         Performs checksum verification and version migration if needed.
         """
+        try:
+            slot_name = self._sanitize_slot_name(slot_name)
+        except ValueError as e:
+            print(f"Load failed: {e}")
+            return None
+
         filename = f"{slot_name}.json"
         filepath = os.path.join(self.save_dir, filename)
 
