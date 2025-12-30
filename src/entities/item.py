@@ -11,9 +11,8 @@ class Item:
     """
 
     def __init__(self, name, description, is_evidence=False, weapon_skill=None, damage=0,
-                 uses=-1, effect=None, effect_value=0, category="misc",
-                 throwable=False, noise_level=0, creates_light=False):
-                 uses=-1, effect=None, effect_value=0, category="misc", cooldown=0):
+                 uses=-1, effect=None, effect_value=0, category="misc", cooldown=0,
+                 throwable=False, noise_level=0, creates_light=False, deployable=False):
         self.name = name
         self.description = description
         self.is_evidence = is_evidence
@@ -29,6 +28,8 @@ class Item:
         self.throwable = throwable
         self.noise_level = noise_level
         self.creates_light = creates_light
+        # Deployable items (tripwires, etc.)
+        self.deployable = deployable
 
     def add_history(self, turn, location):
         """Record an event in the item's chain of custody."""
@@ -64,11 +65,11 @@ class Item:
             "effect": self.effect,
             "effect_value": self.effect_value,
             "category": self.category,
-            "history": self.history,
+            "cooldown": self.cooldown,
             "throwable": self.throwable,
             "noise_level": self.noise_level,
-            "creates_light": self.creates_light
-            "cooldown": self.cooldown,
+            "creates_light": self.creates_light,
+            "deployable": self.deployable,
             "history": self.history
         }
 
@@ -111,10 +112,11 @@ class Item:
             effect=data.get("effect"),
             effect_value=data.get("effect_value", 0),
             category=data.get("category", "misc"),
+            cooldown=data.get("cooldown", 0),
             throwable=data.get("throwable", False),
             noise_level=data.get("noise_level", 0),
-            creates_light=data.get("creates_light", False)
-            cooldown=data.get("cooldown", 0)
+            creates_light=data.get("creates_light", False),
+            deployable=data.get("deployable", False)
         )
         item.history = data.get("history", [])
         return item

@@ -1,6 +1,83 @@
 import json
 import os
+import hashlib
+import shutil
+from datetime import datetime
 from core.event_system import event_bus, EventType, GameEvent
+
+# Current save file version - increment when save format changes
+CURRENT_SAVE_VERSION = 1
+
+# Migration functions for each version upgrade
+MIGRATIONS = {
+    # (from_version, to_version): migration_function
+    # Example: (0, 1): migrate_v0_to_v1
+}
+
+
+def compute_checksum(data: dict) -> str:
+    """
+    Compute a SHA-256 checksum for save data integrity verification.
+    Excludes the checksum field itself from computation.
+    """
+    # Create a copy without checksum to compute hash
+    data_copy = {k: v for k, v in data.items() if k != '_checksum'}
+    json_str = json.dumps(data_copy, sort_keys=True, separators=(',', ':'))
+    return hashlib.sha256(json_str.encode('utf-8')).hexdigest()[:16]
+
+
+def validate_save_data(data: dict) -> tuple:
+    """
+    Validate save data structure and checksum.
+
+    Returns:
+        (is_valid: bool, error_message: str or None)
+    """
+    if not isinstance(data, dict):
+        return False, "Save data is not a valid dictionary"
+
+    # Check for required fields
+    required_fields = ['turn', 'crew', 'player_location']
+    missing = [f for f in required_fields if f not in data]
+    if missing:
+        return False, f"Missing required fields: {', '.join(missing)}"
+
+    # Verify checksum if present
+    stored_checksum = data.get('_checksum')
+    if stored_checksum:
+        computed = compute_checksum(data)
+        if stored_checksum != computed:
+            return False, "Save file checksum mismatch - file may be corrupted"
+
+    return True, None
+
+
+def migrate_save(data: dict, from_version: int, to_version: int) -> dict:
+    """
+    Migrate save data from one version to another.
+    Applies migrations sequentially.
+
+    Args:
+        data: The save data dictionary
+        from_version: Source version number
+        to_version: Target version number
+
+    Returns:
+        Migrated data dictionary
+    """
+    current = from_version
+    migrated_data = data.copy()
+
+    while current < to_version:
+        migration_key = (current, current + 1)
+        if migration_key in MIGRATIONS:
+            migrated_data = MIGRATIONS[migration_key](migrated_data)
+        # Even if no explicit migration, bump version
+        current += 1
+
+    migrated_data['_save_version'] = to_version
+    return migrated_data
+
 
 class SaveManager:
     def __init__(self, save_dir="data/saves", game_state_factory=None):
@@ -26,15 +103,77 @@ class SaveManager:
             except Exception:
                 pass  # Don't interrupt gameplay on save failure
             
+    def backup_save(self, filepath: str) -> bool:
+        """
+        Create a backup of an existing save file before overwriting.
+
+        Args:
+            filepath: Path to the save file to backup
+
+        Returns:
+            True if backup succeeded or no backup needed, False on error
+        """
+        if not os.path.exists(filepath):
+            return True  # No file to backup
+
+        try:
+            backup_dir = os.path.join(self.save_dir, "backups")
+            if not os.path.exists(backup_dir):
+                os.makedirs(backup_dir)
+
+            # Create timestamped backup filename
+            base_name = os.path.basename(filepath)
+            name, ext = os.path.splitext(base_name)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_name = f"{name}_{timestamp}{ext}"
+            backup_path = os.path.join(backup_dir, backup_name)
+
+            shutil.copy2(filepath, backup_path)
+
+            # Keep only last 5 backups per slot
+            self._cleanup_old_backups(backup_dir, name, keep=5)
+
+            return True
+        except Exception:
+            return False  # Backup failed but don't block save
+
+    def _cleanup_old_backups(self, backup_dir: str, slot_prefix: str, keep: int = 5):
+        """Remove old backups, keeping only the most recent ones."""
+        try:
+            backups = [
+                f for f in os.listdir(backup_dir)
+                if f.startswith(slot_prefix) and f.endswith('.json')
+            ]
+            backups.sort(reverse=True)  # Newest first (timestamp in name)
+
+            for old_backup in backups[keep:]:
+                os.remove(os.path.join(backup_dir, old_backup))
+        except Exception:
+            pass  # Cleanup failure is non-critical
+
     def save_game(self, game_state, slot_name="auto"):
         """
         Saves the game state using to_dict().
+        Adds version and checksum for validation.
+        Creates backup of existing save before overwriting.
         """
         filename = f"{slot_name}.json"
         filepath = os.path.join(self.save_dir, filename)
-        
+
         try:
+            # Backup existing save first
+            self.backup_save(filepath)
+
+            # Get game state data
             data = game_state.to_dict()
+
+            # Add save metadata
+            data['_save_version'] = CURRENT_SAVE_VERSION
+            data['_saved_at'] = datetime.now().isoformat()
+
+            # Compute and add checksum (must be last)
+            data['_checksum'] = compute_checksum(data)
+
             with open(filepath, 'w') as f:
                 json.dump(data, f, indent=4)
             print(f"Game saved to {filepath}")
@@ -46,22 +185,42 @@ class SaveManager:
             return False
 
     def load_game(self, slot_name="auto", factory=None):
+        """
+        Load and validate a saved game.
+        Performs checksum verification and version migration if needed.
+        """
         filename = f"{slot_name}.json"
         filepath = os.path.join(self.save_dir, filename)
-        
+
         if not os.path.exists(filepath):
             print(f"Save file not found: {filepath}")
             return None
-            
+
         try:
             with open(filepath, 'r') as f:
                 data = json.load(f)
 
+            # Validate save data structure and checksum
+            is_valid, error = validate_save_data(data)
+            if not is_valid:
+                print(f"Save validation failed: {error}")
+                # Attempt to load from backup if available
+                backup_data = self._try_load_backup(slot_name)
+                if backup_data:
+                    print("Loaded from backup instead.")
+                    data = backup_data
+                else:
+                    return None
+
+            # Check version and migrate if needed
+            save_version = data.get('_save_version', 0)
+            if save_version < CURRENT_SAVE_VERSION:
+                print(f"Migrating save from v{save_version} to v{CURRENT_SAVE_VERSION}...")
+                data = migrate_save(data, save_version, CURRENT_SAVE_VERSION)
+                # Re-save with updated version
+                self._resave_migrated(filepath, data)
+
             # Use provided factory, or instance factory, or return raw data
-            hydrator = factory if factory else self.game_state_factory
-            if hydrator:
-                return hydrator(data)
-            # Use factory if provided to avoid circular dependencies
             hydrator = factory if factory else self.game_state_factory
             if hydrator:
                 try:
@@ -79,6 +238,41 @@ class SaveManager:
         except Exception as e:
             print(f"Failed to load game from {filepath}: {e}")
             return None
+
+    def _try_load_backup(self, slot_name: str) -> dict:
+        """Attempt to load the most recent backup for a slot."""
+        try:
+            backup_dir = os.path.join(self.save_dir, "backups")
+            if not os.path.exists(backup_dir):
+                return None
+
+            backups = [
+                f for f in os.listdir(backup_dir)
+                if f.startswith(slot_name) and f.endswith('.json')
+            ]
+            if not backups:
+                return None
+
+            backups.sort(reverse=True)  # Most recent first
+            backup_path = os.path.join(backup_dir, backups[0])
+
+            with open(backup_path, 'r') as f:
+                data = json.load(f)
+
+            # Validate backup too
+            is_valid, _ = validate_save_data(data)
+            return data if is_valid else None
+        except Exception:
+            return None
+
+    def _resave_migrated(self, filepath: str, data: dict):
+        """Re-save data after migration with updated checksum."""
+        try:
+            data['_checksum'] = compute_checksum(data)
+            with open(filepath, 'w') as f:
+                json.dump(data, f, indent=4)
+        except Exception:
+            pass  # Migration resave failure is non-critical
 
     def apply_suspicion_decay(self, game_state, current_turn=None):
         """

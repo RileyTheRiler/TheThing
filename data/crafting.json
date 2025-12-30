@@ -119,6 +119,64 @@
             "craft_time": 2,
             "effect": "illumination",
             "uses": 1
+        },
+        {
+            "id": "noise_maker",
+            "name": "Noise Maker",
+            "description": "Rattling device that creates loud distracting sounds when thrown.",
+            "category": "throwable",
+            "ingredients": [
+                "Empty Can",
+                "Wire"
+            ],
+            "craft_time": 1,
+            "throwable": true,
+            "noise_level": 8,
+            "uses": 1
+        },
+        {
+            "id": "tripwire_alarm",
+            "name": "Tripwire Alarm",
+            "description": "Deployable wire trap that alerts you when triggered.",
+            "category": "deployable",
+            "ingredients": [
+                "Wire",
+                "Empty Can"
+            ],
+            "craft_time": 2,
+            "deployable": true,
+            "effect": "alerts_on_trigger",
+            "uses": 1
+        },
+        {
+            "id": "thermal_blanket",
+            "name": "Thermal Blanket",
+            "description": "Insulated covering that masks your heat signature from detection.",
+            "category": "equipment",
+            "ingredients": [
+                "Cloth",
+                "Fuel Canister"
+            ],
+            "craft_time": 2,
+            "effect": "masks_heat",
+            "effect_value": 3,
+            "effect_desc": "-3 to thermal detection against you. Masks heat signature.",
+            "uses": 5
+        },
+        {
+            "id": "blood_test_kit",
+            "name": "Portable Blood Test Kit",
+            "description": "Compact kit for conducting blood tests anywhere in the station.",
+            "category": "tool",
+            "ingredients": [
+                "Scalpel",
+                "Copper Wire",
+                "Metal Container"
+            ],
+            "craft_time": 3,
+            "effect": "portable_test",
+            "effect_desc": "Allows blood testing without returning to the Infirmary.",
+            "uses": 3
         }
     ]
 }
