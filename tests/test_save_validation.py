@@ -26,14 +26,23 @@ class MockGameState:
         self.name = name
         self.turn = 1
         self.crew = []
-        self.player_location = (5, 5)
+        self.player_location = [5, 5]
 
     def to_dict(self):
         return {
             "name": self.name,
             "turn": self.turn,
             "crew": self.crew,
-            "player_location": self.player_location
+            "player_location": self.player_location,
+            "difficulty": "NORMAL",
+            "rng": {},
+            "time_system": {},
+            "station_map": {},
+            "journal": [],
+            "trust": {},
+            "crafting": {},
+            "alert_system": {},
+            "security_system": {}
         }
 
     @classmethod
@@ -41,7 +50,7 @@ class MockGameState:
         g = cls(data.get("name", "Restored"))
         g.turn = data.get("turn", 1)
         g.crew = data.get("crew", [])
-        g.player_location = tuple(data.get("player_location", (5, 5)))
+        g.player_location = list(data.get("player_location", [5, 5]))
         return g
 
 
@@ -75,9 +84,24 @@ class TestSaveDataValidation(unittest.TestCase):
 
     def test_valid_save_data_passes(self):
         """Valid save data should pass validation."""
-        data = {"turn": 5, "crew": [], "player_location": [3, 4]}
+        data = {
+            "turn": 5,
+            "crew": [],
+            "player_location": [3, 4],
+            "difficulty": "NORMAL",
+            "rng": {},
+            "time_system": {},
+            "station_map": {},
+            "save_version": 2,
+            "checksum": "mock" # mocked
+        }
+        # We need a real checksum for it to pass if we include it
+        # But validate_save_data checks for required fields first
+        # It calls compute_checksum if checksum is present
+        data["checksum"] = compute_checksum(data)
+
         is_valid, error = validate_save_data(data)
-        self.assertTrue(is_valid)
+        self.assertTrue(is_valid, f"Validation failed: {error}")
         self.assertIsNone(error)
 
     def test_missing_required_fields_fails(self):
@@ -89,18 +113,36 @@ class TestSaveDataValidation(unittest.TestCase):
 
     def test_checksum_mismatch_fails(self):
         """Save data with invalid checksum should fail."""
-        data = {"turn": 5, "crew": [], "player_location": [3, 4]}
-        data["_checksum"] = "invalid_checksum"
+        data = {
+            "turn": 5,
+            "crew": [],
+            "player_location": [3, 4],
+            "difficulty": "NORMAL",
+            "rng": {},
+            "time_system": {},
+            "station_map": {},
+            "save_version": 2
+        }
+        data["checksum"] = "invalid_checksum"
         is_valid, error = validate_save_data(data)
         self.assertFalse(is_valid)
         self.assertIn("checksum mismatch", error)
 
     def test_valid_checksum_passes(self):
         """Save data with valid checksum should pass."""
-        data = {"turn": 5, "crew": [], "player_location": [3, 4]}
-        data["_checksum"] = compute_checksum(data)
+        data = {
+            "turn": 5,
+            "crew": [],
+            "player_location": [3, 4],
+            "difficulty": "NORMAL",
+            "rng": {},
+            "time_system": {},
+            "station_map": {},
+            "save_version": 2
+        }
+        data["checksum"] = compute_checksum(data)
         is_valid, error = validate_save_data(data)
-        self.assertTrue(is_valid)
+        self.assertTrue(is_valid, f"Validation failed: {error}")
         self.assertIsNone(error)
 
     def test_non_dict_data_fails(self):
@@ -156,7 +198,7 @@ class TestSaveManagerWithValidation(unittest.TestCase):
 
         self.assertIn("_save_version", data)
         self.assertEqual(data["_save_version"], CURRENT_SAVE_VERSION)
-        self.assertIn("_checksum", data)
+        self.assertIn("checksum", data)
         self.assertIn("_saved_at", data)
 
     def test_backup_created_on_overwrite(self):
