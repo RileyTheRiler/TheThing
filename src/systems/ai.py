@@ -1,6 +1,7 @@
-from typing import TYPE_CHECKING, Tuple, Optional, List, Dict
+from typing import TYPE_CHECKING, Tuple, Optional, List, Dict, Any
 from core.resolution import Attribute, Skill
 from core.event_system import event_bus, EventType, GameEvent
+from core.perception import normalize_perception_payload
 from systems.pathfinding import pathfinder
 from systems.ai_cache import AICache
 
@@ -25,8 +26,10 @@ class AISystem:
         self.budget_limit = 0
         self.budget_spent = 0
         self.exhaustion_count = 0  # Track how many times budget was denied
+        self.alert_context: Dict[str, Any] = {"active": False, "observation_bonus": 0, "speed_multiplier": 1}
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
         event_bus.subscribe(EventType.PERCEPTION_EVENT, self.on_perception_event)
+        self.security_roles = {"commander", "radio op"}
 
     def cleanup(self):
         event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
@@ -39,7 +42,7 @@ class AISystem:
 
     def on_perception_event(self, event):
         """React to PERCEPTION_EVENT emissions from StealthSystem."""
-        payload = event.payload
+        payload = normalize_perception_payload(event.payload)
         if not payload:
             return
 
@@ -61,8 +64,11 @@ class AISystem:
         event_bus.emit(GameEvent(EventType.DIAGNOSTIC, {
             "type": "AI_PERCEPTION_HOOK",
             "room": payload.get("room"),
+            "location": payload.get("location"),
             "observer": observer.name if hasattr(observer, 'name') else "Unknown",
+            "actor": payload.get("actor"),
             "outcome": outcome,
+            "severity": payload.get("severity"),
             "margin": abs(player_successes - opponent_successes)
         }))
         
@@ -122,6 +128,11 @@ class AISystem:
         # Increase suspicion slightly
         self._apply_suspicion(observer, 1, game_state, reason="evasion")
 
+    def _is_security_officer(self, member: 'CrewMember') -> bool:
+        """Return True if this NPC should respond to security console alerts."""
+        role = getattr(member, "role", "").lower()
+        return role in self.security_roles
+
     def _apply_suspicion(self, observer: 'CrewMember', amount: int, game_state: 'GameState', reason: str = ""):
         """Adjust suspicion and update state transitions."""
         if not hasattr(observer, "increase_suspicion"):
@@ -132,6 +143,14 @@ class AISystem:
 
     def _update_suspicion_state(self, observer: 'CrewMember', player: 'CrewMember', game_state: 'GameState', reason: str = ""):
         """Evaluate suspicion thresholds and trigger dialogue prompts."""
+        # Coordinating infected remain locked to that behavior until cleared.
+        if getattr(observer, "suspicion_state", "idle") == "coordinating":
+            return
+        # Coordination overrides standard suspicion transitions to keep focus on the ambush
+        if getattr(observer, "coordinating_ambush", False) and getattr(observer, "is_infected", False):
+            observer.suspicion_state = "coordinating"
+            return
+
         thresholds = getattr(observer, "suspicion_thresholds", {"question": 4, "follow": 8})
         prev_state = getattr(observer, "suspicion_state", "idle")
         level = getattr(observer, "suspicion_level", 0)
@@ -212,9 +231,12 @@ class AISystem:
         if not infected_allies:
             return  # No allies to coordinate with
 
-        # Calculate flanking positions for each ally
+        # Calculate flanking positions for each ally using pathfinding to ensure reachability
         flank_positions = self._calculate_flanking_positions(
-            player_location, alerter.location, len(infected_allies), station_map
+            player_location, alerter.location, infected_allies, station_map, getattr(game_state, "turn", 0)
+        # Calculate flanking positions for each ally using the pathfinder to ensure opposite approach vectors
+        flank_positions = self._calculate_flanking_positions(
+            player_location, alerter.location, infected_allies, station_map, current_turn=game_state.turn
         )
 
         # Assign flanking positions to allies
@@ -225,6 +247,7 @@ class AISystem:
             ally.flank_position = flank_pos
             ally.coordination_leader = alerter.name
             ally.coordination_turns_remaining = 5  # Coordination expires after 5 turns
+            ally.suspicion_state = "coordinating"
 
         # Alerter also enters coordination mode (approaches directly)
         alerter.coordinating_ambush = True
@@ -232,6 +255,7 @@ class AISystem:
         alerter.flank_position = None  # Leader approaches directly
         alerter.coordination_leader = alerter.name
         alerter.coordination_turns_remaining = 5
+        alerter.suspicion_state = "coordinating"
 
         # Emit coordination event
         event_bus.emit(GameEvent(EventType.INFECTED_COORDINATION, {
@@ -248,54 +272,132 @@ class AISystem:
             }))
 
     def _calculate_flanking_positions(self, target: Tuple[int, int], leader_pos: Tuple[int, int],
-                                       num_flankers: int, station_map: 'StationMap') -> List[Tuple[int, int]]:
+                                       flankers: List['CrewMember'], station_map: 'StationMap',
+                                       current_turn: int = 0) -> List[Tuple[int, int]]:
+                                       allies: List['CrewMember'], station_map: 'StationMap', current_turn: int = 0) -> List[Tuple[int, int]]:
         """Calculate optimal flanking positions around a target for pincer movement.
 
-        Positions allies on opposite sides of the target from the leader.
+        Positions allies on opposite sides of the target from the leader while using the pathfinder
+        to prefer routes that actually connect to the destination.
         """
         tx, ty = target
         lx, ly = leader_pos
 
-        # Calculate direction from leader to target
+        # Calculate normalized direction from leader to target
         dx = tx - lx
         dy = ty - ly
 
         # Flanking positions are perpendicular and opposite to leader's approach
         flank_offsets = [
-            # Perpendicular positions (left and right of approach vector)
             (-dy, dx),   # 90 degrees left
             (dy, -dx),   # 90 degrees right
-            # Opposite position (behind target from leader's perspective)
-            (-dx, -dy),
-            # Diagonal flanking positions
+            (-dx, -dy),  # Opposite (behind target from leader's perspective)
             (-dy - 1, dx + 1),
             (dy + 1, -dx - 1),
         ]
 
-        positions = []
+        # Normalize offsets to reasonable distance (2-4 tiles from target)
+        normalized_offsets = []
         for offset_x, offset_y in flank_offsets:
-            if len(positions) >= num_flankers:
-                break
-
-            # Normalize offset to reasonable distance (2-4 tiles from target)
             if offset_x != 0:
                 offset_x = 3 if offset_x > 0 else -3
             if offset_y != 0:
                 offset_y = 3 if offset_y > 0 else -3
+            normalized_offsets.append((offset_x, offset_y))
 
-            flank_x = tx + offset_x
-            flank_y = ty + offset_y
+        used_positions = set()
+        positions: List[Tuple[int, int]] = []
+        for ally in flankers:
+            best_pos = None
+            best_len = None
 
-            # Ensure position is walkable
-            if station_map.is_walkable(flank_x, flank_y):
-                positions.append((flank_x, flank_y))
+            for offset_x, offset_y in normalized_offsets:
+                flank_x = tx + offset_x
+                flank_y = ty + offset_y
+
+                if not station_map.is_walkable(flank_x, flank_y):
+                    continue
+                if (flank_x, flank_y) in used_positions:
+                    continue
+
+                path = pathfinder.find_path(ally.location, (flank_x, flank_y), station_map, current_turn)
+                if not path:
+                    continue
+
+                path_len = len(path)
+                if best_pos is None or path_len < best_len:
+                    best_pos = (flank_x, flank_y)
+                    best_len = path_len
+
+            if best_pos:
+                used_positions.add(best_pos)
+                positions.append(best_pos)
             else:
-                # Try adjacent tiles if primary position is blocked
+                # Fallback: converge directly on target if no flank is reachable
+                positions.append(target)
+        def _normalize(val: int) -> int:
+            if val > 0:
+                return 1
+            if val < 0:
+                return -1
+            return 0
+
+        dir_x = _normalize(dx)
+        dir_y = _normalize(dy)
+
+        # Primary offsets: opposite side first, then perpendicular lanes
+        base_offsets = [
+            (-dir_x * 3, -dir_y * 3),  # Directly opposite the leader's approach
+            (-dir_y * 3, dir_x * 3),   # Perpendicular left
+            (dir_y * 3, -dir_x * 3),   # Perpendicular right
+            (-dir_x * 2, -dir_y * 2),  # Closer opposite position
+            (-dir_y * 2, dir_x * 2),   # Closer perpendicular
+            (dir_y * 2, -dir_x * 2),
+        ]
+
+        positions: List[Tuple[int, int]] = []
+        tested_positions = set()
+        for ally in allies:
+            if len(positions) >= len(allies):
+                break
+
+            # Try offsets in priority order until we find a reachable flank for this ally
+            for offset_x, offset_y in base_offsets:
+                flank_x = tx + offset_x
+                flank_y = ty + offset_y
+                candidate = (flank_x, flank_y)
+
+                if candidate in tested_positions:
+                    continue
+                if candidate == target:
+                    continue
+                tested_positions.add(candidate)
+
+                # Ensure position is walkable and reachable from this ally
+                if not station_map.is_walkable(flank_x, flank_y):
+                    continue
+
+                path = pathfinder.find_path(ally.location, candidate, station_map, current_turn)
+                if path:
+                    positions.append(candidate)
+                    break
+
+                # Try nearby adjustments if primary spot is not reachable
                 for adj_x, adj_y in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
                     alt_x, alt_y = flank_x + adj_x, flank_y + adj_y
-                    if station_map.is_walkable(alt_x, alt_y):
-                        positions.append((alt_x, alt_y))
+                    if not station_map.is_walkable(alt_x, alt_y):
+                        continue
+                    alt_candidate = (alt_x, alt_y)
+                    if alt_candidate in tested_positions:
+                        continue
+                    tested_positions.add(alt_candidate)
+                    path = pathfinder.find_path(ally.location, alt_candidate, station_map, current_turn)
+                    if path:
+                        positions.append(alt_candidate)
                         break
+
+                if len(positions) >= len(allies):
+                    break
 
         return positions
 
@@ -304,6 +406,10 @@ class AISystem:
 
         Returns True if the NPC took a coordination action this turn.
         """
+        if getattr(member, "suspicion_state", "idle") != "coordinating":
+            member.suspicion_state = "coordinating"
+        member.suspicion_state = "coordinating"
+
         # Decay coordination timer
         if member.coordination_turns_remaining > 0:
             member.coordination_turns_remaining -= 1
@@ -332,7 +438,8 @@ class AISystem:
                             break
                     if leader:
                         flank_positions = self._calculate_flanking_positions(
-                            player_loc, leader.location, 1, game_state.station_map
+                            player_loc, leader.location, [member], game_state.station_map, getattr(game_state, "turn", 0)
+                            player_loc, leader.location, [member], game_state.station_map, current_turn=game_state.turn
                         )
                         if flank_positions:
                             member.flank_position = flank_positions[0]
@@ -355,22 +462,24 @@ class AISystem:
             # Close enough - coordination complete, attack!
             self._clear_coordination(member)
             # Trigger a stealth detection (the infected has cornered the player)
-            event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, {
-                "room": game_state.station_map.get_room_name(*player_loc),
-                "opponent": member.name,
-                "opponent_ref": member,
-                "player_ref": player,
-                "game_state": game_state,
-                "outcome": "detected",
-                "player_successes": 0,
-                "opponent_successes": 3,
-                "subject_pool": 0,
-                "observer_pool": 3
-            }))
+        event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, normalize_perception_payload({
+            "room": game_state.station_map.get_room_name(*player_loc),
+            "location": player_loc,
+            "opponent": member.name,
+            "opponent_ref": member,
+            "player_ref": player,
+            "actor": getattr(player, "name", None),
+            "game_state": game_state,
+            "outcome": "detected",
+            "player_successes": 0,
+            "opponent_successes": 3,
+            "subject_pool": 0,
+            "observer_pool": 3,
+        })))
             return True
 
         # Move toward target
-        self._pathfind_step(member, target_pos[0], target_pos[1], game_state)
+        self._pathfind_step(member, target_pos[0], target_pos[1], game_state, steps=self._get_alert_steps())
         return True
 
     def _clear_coordination(self, member: 'CrewMember'):
@@ -380,6 +489,31 @@ class AISystem:
         member.flank_position = None
         member.coordination_leader = None
         member.coordination_turns_remaining = 0
+        if getattr(member, "suspicion_state", "idle") == "coordinating":
+            member.suspicion_state = "idle"
+        if getattr(member, "suspicion_state", None) == "coordinating":
+            member.suspicion_state = "idle"
+
+    def _build_alert_context(self, game_state: 'GameState') -> Dict[str, Any]:
+        """Capture alert modifiers for this turn."""
+        alert_system = getattr(game_state, "alert_system", None)
+        alert_active = False
+        observation_bonus = 0
+        speed_multiplier = 1
+
+        if alert_system and alert_system.is_active:
+            alert_active = True
+            observation_bonus = alert_system.get_observation_bonus()
+            speed_multiplier = alert_system.get_speed_multiplier()
+        elif getattr(game_state, "alert_status", "").upper() == "ALERT":
+            alert_active = True
+            observation_bonus = max(observation_bonus, 1 if getattr(game_state, "alert_turns_remaining", 0) > 0 else 0)
+
+        return {
+            "active": alert_active,
+            "observation_bonus": observation_bonus,
+            "speed_multiplier": max(1, speed_multiplier)
+        }
 
     def update(self, game_state: 'GameState'):
         """Updates AI for all crew members with per-turn caching and action budget."""
@@ -388,6 +522,11 @@ class AISystem:
         self.budget_limit = 15 + (5 * len(game_state.crew))
         self.budget_spent = 0
         self.exhaustion_count = 0
+        self.alert_speed_bonus = 0
+        alert_system = getattr(game_state, "alert_system", None)
+        if alert_system and alert_system.is_active:
+            self.alert_speed_bonus = alert_system.get_speed_bonus()
+        self.alert_context = self._build_alert_context(game_state)
         
         for member in game_state.crew:
             if member != game_state.player:
@@ -410,6 +549,10 @@ class AISystem:
         self.exhaustion_count += 1
         return False
 
+    def _get_alert_steps(self) -> int:
+        """Return movement steps NPCs can take this turn, factoring alert state."""
+        return 1 + max(0, self.alert_speed_bonus)
+
     def update_member_ai(self, member: 'CrewMember', game_state: 'GameState'):
         """
         Agent 2/8: NPC AI Logic.
@@ -417,12 +560,17 @@ class AISystem:
         """
         if not member.is_alive:
             return
+        if not self.alert_context.get("active") and getattr(member, "alerted_to_player", False):
+            member.alerted_to_player = False
         self._expire_investigation(member, game_state)
         current_turn = getattr(game_state, "turn", 0)
         if hasattr(member, "decay_suspicion"):
             member.decay_suspicion(current_turn)
         if hasattr(member, "suspicion_state"):
             self._update_suspicion_state(member, game_state.player, game_state)
+        alert_system = getattr(game_state, "alert_system", None)
+        if alert_system and not alert_system.is_active:
+            member.alerted_to_player = False
 
         # 0. PRIORITY: Thing AI (Agent 3) - Revealed Things actively hunt
         if getattr(member, 'is_revealed', False):
@@ -454,16 +602,51 @@ class AISystem:
         if getattr(member, 'investigating', False) and hasattr(member, 'last_known_player_location'):
             target_loc = getattr(member, "investigation_goal", None) or member.last_known_player_location
             if member.location == target_loc:
-                # Arrived at investigation spot
+                linger = getattr(member, "investigation_loops", 0)
+                if linger > 0:
+                    member.investigation_loops = linger - 1
+                    event_bus.emit(GameEvent(EventType.MESSAGE, {
+                        "text": f"{member.name} scans the area for clues..."
+                    }))
+                else:
+                    member.investigating = False
+                    member.investigation_goal = None
+                    member.investigation_priority = 0
+                    member.investigation_source = None
+                    event_bus.emit(GameEvent(EventType.MESSAGE, {
+                        "text": f"{member.name} checks the area but finds nothing."
+                    }))
+                linger_turns = getattr(member, "investigation_linger_turns", 0)
+                arrival_announced = getattr(member, "investigation_arrival_reported", False)
+                if linger_turns > 0:
+                    if not arrival_announced:
+                        event_bus.emit(GameEvent(EventType.MESSAGE, {
+                            "text": f"{member.name} reaches the noise and starts looking around."
+                        }))
+                        member.investigation_arrival_reported = True
+                    neighbors = game_state.station_map.get_walkable_neighbors(*target_loc)
+                    if neighbors:
+                        patrol_target = game_state.rng.choose(neighbors) if hasattr(game_state, "rng") else neighbors[0]
+                        if patrol_target != member.location:
+                            self._pathfind_step(member, patrol_target[0], patrol_target[1], game_state)
+                            member.investigation_linger_turns = max(0, linger_turns - 1)
+                            return
+                    member.investigation_linger_turns = max(0, linger_turns - 1)
+                    return
+                # Arrived and finished lingering
                 member.investigating = False
                 member.investigation_goal = None
                 member.investigation_priority = 0
                 member.investigation_source = None
+                member.investigation_linger_turns = 0
+                member.investigation_arrival_reported = False
                 event_bus.emit(GameEvent(EventType.MESSAGE, {
                     "text": f"{member.name} checks the area but finds nothing."
                 }))
             else:
                 # Move toward investigation spot
+                self._pathfind_step(member, target_loc[0], target_loc[1], game_state, steps=self._get_alert_steps())
+                member.investigation_arrival_reported = False
                 self._pathfind_step(member, target_loc[0], target_loc[1], game_state)
                 return
 
@@ -476,7 +659,7 @@ class AISystem:
                 member.target_room = game_state.station_map.get_room_name(*target.location)
                 # Move toward the lynch target
                 tx, ty = target.location
-                self._pathfind_step(member, tx, ty, game_state)
+                self._pathfind_step(member, tx, ty, game_state, steps=self._get_alert_steps())
                 return
         else:
             member.in_lynch_mob = False
@@ -484,6 +667,11 @@ class AISystem:
         # Search mode: sweep around last seen room/corridors
         if getattr(member, "search_turns_remaining", 0) > 0:
             if self._execute_search(member, game_state):
+                return
+
+        # 2.5 SECURITY: Console checks for roles tasked with monitoring cameras
+        if self._is_security_officer(member):
+            if self._handle_security_console(member, game_state):
                 return
 
         # 3. Check Schedule
@@ -510,7 +698,7 @@ class AISystem:
             target_pos = game_state.station_map.rooms.get(destination)
             if target_pos:
                 tx, ty, _, _ = target_pos
-                self._pathfind_step(member, tx, ty, game_state)
+                self._pathfind_step(member, tx, ty, game_state, steps=self._get_alert_steps())
                 return
 
         # 4. Idling / Wandering
@@ -574,7 +762,7 @@ class AISystem:
 
         # Default: Move toward closest human
         tx, ty = closest.location
-        self._pathfind_step(member, tx, ty, game_state)
+        self._pathfind_step(member, tx, ty, game_state, steps=self._get_alert_steps())
 
     def _thing_attack(self, attacker: 'CrewMember', target: 'CrewMember', game_state: 'GameState'):
         """The Thing attacks a human target."""
@@ -641,66 +829,112 @@ class AISystem:
         noise = self.cache.player_noise if self.cache else player.get_noise_level()
         if in_vent:
             noise += 3  # Vents amplify scraping sounds
+        alert_system = getattr(game_state, "alert_system", None)
+        if alert_system and alert_system.is_active:
+            noise += max(0, alert_system.get_observation_bonus() // 2)
         # Use cached visibility modifier if available
         vis_mod = self.cache.get_visibility_modifier(player_room, game_state) if self.cache else None
         
         # We need a small update to StealthSystem to accept vis_mod, or just pass normal
-        detected = stealth.evaluate_detection(member, player, game_state, noise_level=noise)
+        alert_bonus = self.alert_context.get("observation_bonus", 0) if self.alert_context else 0
+        detected = stealth.evaluate_detection(member, player, game_state, noise_level=noise, alert_bonus=alert_bonus)
         if detected and hasattr(member, "add_knowledge_tag"):
             member.add_knowledge_tag(f"Spotted {player.name} in {player_room}")
             room = self._record_last_seen(member, player.location, game_state, player_room)
             self._enter_search_mode(member, player.location, room, game_state)
         return detected
 
-    def _pathfind_step(self, member: 'CrewMember', target_x: int, target_y: int, game_state: 'GameState'):
-        """Take one step toward target using A* pathfinding with cache and budget."""
+    def _pathfind_step(self, member: 'CrewMember', target_x: int, target_y: int, game_state: 'GameState', steps: int = 1):
+        """Take one or more steps toward target using A* pathfinding with cache and budget."""
         goal = (target_x, target_y)
         station_map = game_state.station_map
         current_turn = game_state.turn
 
         # 1. Budget check for pathfinding
         # Check cache first to determine cost
-        cache_key = (member.location, goal)
-        use_astar = True
-        if hasattr(pathfinder, '_path_cache') and cache_key in pathfinder._path_cache:
-            use_astar = False
+        steps = max(1, self.alert_context.get("speed_multiplier", 1) if self.alert_context else 1)
+        budget_used = False
+
+        for _ in range(steps):
+            cache_key = (member.location, goal)
+            use_astar = True
+            if hasattr(pathfinder, '_path_cache') and cache_key in pathfinder._path_cache:
+                use_astar = False
+
+            cost = self.COST_ASTAR if use_astar else self.COST_PATH_CACHE
+            
+            dx, dy = 0, 0
+            if not budget_used and self._request_budget(cost):
+                # Try A* pathfinding
+                dx, dy = pathfinder.get_move_delta(member.location, goal, station_map, current_turn)
+                budget_used = True
+            else:
+                # Budget exhausted or already spent - fall back to greedy movement (0 cost)
+                dx = 1 if target_x > member.location[0] else -1 if target_x < member.location[0] else 0
+                dy = 1 if target_y > member.location[1] else -1 if target_y < member.location[1] else 0
+
+            # Check for barricades at destination
+            new_x = member.location[0] + dx
+            new_y = member.location[1] + dy
+
+            if station_map.is_walkable(new_x, new_y):
+                target_room = station_map.get_room_name(new_x, new_y)
+                current_room = station_map.get_room_name(*member.location)
+
+                if hasattr(game_state, 'room_states') and game_state.room_states.is_entry_blocked(target_room) and target_room != current_room:
+                    if getattr(member, 'is_revealed', False):
+                        # Revealed Things try to break barricades
+                        success, msg, _ = game_state.room_states.attempt_break_barricade(
+                            target_room, member, game_state.rng, is_thing=True
+                        )
+                        if not success:
+                            return  # Can't move this turn
+                        # else fall through to move
+                    else:
+                        # Regular NPCs respect barricades
+                        return
 
         cost = self.COST_ASTAR if use_astar else self.COST_PATH_CACHE
         
-        dx, dy = 0, 0
-        if self._request_budget(cost):
-            # Try A* pathfinding
-            dx, dy = pathfinder.get_move_delta(member.location, goal, station_map, current_turn)
-        else:
-            # Budget exhausted - fall back to greedy movement (0 cost)
-            dx = 1 if target_x > member.location[0] else -1 if target_x < member.location[0] else 0
-            dy = 1 if target_y > member.location[1] else -1 if target_y < member.location[1] else 0
+        for _ in range(max(1, steps)):
+            dx, dy = 0, 0
+            if self._request_budget(cost):
+                # Try A* pathfinding
+                dx, dy = pathfinder.get_move_delta(member.location, goal, station_map, current_turn)
+            else:
+                # Budget exhausted - fall back to greedy movement (0 cost)
+                dx = 1 if target_x > member.location[0] else -1 if target_x < member.location[0] else 0
+                dy = 1 if target_y > member.location[1] else -1 if target_y < member.location[1] else 0
 
-        # Check for barricades at destination
-        new_x = member.location[0] + dx
-        new_y = member.location[1] + dy
+            # Check for barricades at destination
+            new_x = member.location[0] + dx
+            new_y = member.location[1] + dy
 
-        if station_map.is_walkable(new_x, new_y):
-            target_room = station_map.get_room_name(new_x, new_y)
-            current_room = station_map.get_room_name(*member.location)
+            if station_map.is_walkable(new_x, new_y):
+                target_room = station_map.get_room_name(new_x, new_y)
+                current_room = station_map.get_room_name(*member.location)
 
-            if hasattr(game_state, 'room_states') and game_state.room_states.is_entry_blocked(target_room) and target_room != current_room:
-                if getattr(member, 'is_revealed', False):
-                    # Revealed Things try to break barricades
-                    success, msg, _ = game_state.room_states.attempt_break_barricade(
-                        target_room, member, game_state.rng, is_thing=True
-                    )
-                    if not success:
-                        return  # Can't move this turn
-                    # else fall through to move
-                else:
-                    # Regular NPCs respect barricades
-                    return
+                if hasattr(game_state, 'room_states') and game_state.room_states.is_entry_blocked(target_room) and target_room != current_room:
+                    if getattr(member, 'is_revealed', False):
+                        # Revealed Things try to break barricades
+                        success, msg, _ = game_state.room_states.attempt_break_barricade(
+                            target_room, member, game_state.rng, is_thing=True
+                        )
+                        if not success:
+                            return  # Can't move this turn
+                        # else fall through to move
+                    else:
+                        # Regular NPCs respect barricades
+                        return
 
-        member.move(dx, dy, station_map)
+            member.move(dx, dy, station_map)
 
-        # Check for tripwire triggers at new location
-        self._check_tripwire_trigger(member, game_state)
+            # Check for tripwire triggers at new location
+            self._check_tripwire_trigger(member, game_state)
+
+            # Early exit if already at goal
+            if member.location == goal:
+                break
 
     def _check_tripwire_trigger(self, member: 'CrewMember', game_state: 'GameState'):
         """Check if NPC stepped on a deployed tripwire and trigger it."""
@@ -722,6 +956,7 @@ class AISystem:
 
         item_name = deployed['item_name']
         room = deployed['room']
+        noise_level = deployed.get('noise_level', 6)
 
         # Emit alert to player
         event_bus.emit(GameEvent(EventType.WARNING, {
@@ -734,8 +969,12 @@ class AISystem:
             "item": item_name,
             "triggered_by": member.name,
             "location": member_pos,
+            "target_location": member_pos,
             "room": room,
-            "noise_level": 6,  # Tripwires are loud
+            "noise_level": noise_level,  # Tripwires are loud
+            "intensity": noise_level,
+            "priority_override": 2,
+            "linger_turns": 2,
             "game_state": game_state
         }))
 
@@ -749,7 +988,47 @@ class AISystem:
     def _pursue_player(self, member: 'CrewMember', game_state: 'GameState'):
         """Move one step toward the player when detected via perception."""
         player_loc = self.cache.player_location if self.cache else game_state.player.location
-        self._pathfind_step(member, player_loc[0], player_loc[1], game_state)
+        self._pathfind_step(member, player_loc[0], player_loc[1], game_state, steps=self._get_alert_steps())
+
+    def _handle_security_console(self, member: 'CrewMember', game_state: 'GameState') -> bool:
+        """Send security-focused NPCs to the console and react to alerts."""
+        if getattr(member, "investigating", False) or getattr(member, "search_turns_remaining", 0) > 0:
+            return False
+
+        security_sys = getattr(game_state, "security_system", None)
+        if not security_sys or not security_sys.has_unread_alerts():
+            return False
+
+        console_room = getattr(security_sys, "console_room", "Radio Room")
+        member_room = game_state.station_map.get_room_name(*member.location)
+
+        # Move toward the console if not present
+        if member_room != console_room:
+            target_pos = game_state.station_map.rooms.get(console_room)
+            if target_pos:
+                tx, ty, _, _ = target_pos
+                self._pathfind_step(member, tx, ty, game_state)
+                return True
+            return False
+
+        # At console: read alerts and set investigation target
+        alerts = security_sys.check_console(npc=member)
+        if not alerts:
+            return True
+
+        latest = alerts[-1]
+        target_pos = latest.get("position") or latest.get("location")
+        if isinstance(target_pos, (list, tuple)) and len(target_pos) >= 2:
+            member.investigating = True
+            member.investigation_goal = (target_pos[0], target_pos[1])
+            member.investigation_priority = max(getattr(member, "investigation_priority", 0), 3)
+            member.investigation_expires = game_state.turn + 4
+            member.investigation_source = "security_console"
+            member.last_known_player_location = member.investigation_goal
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": f"{member.name} leaves the console to investigate a security alert in {game_state.station_map.get_room_name(*member.investigation_goal)}."
+            }))
+        return True
 
     def _handle_investigation_ping(self, payload: Dict):
         """Handle PERCEPTION_EVENT payloads that mark a noisy distraction."""
@@ -761,9 +1040,10 @@ class AISystem:
         station_map = game_state.station_map
         target_room = station_map.get_room_name(*target_loc)
         priority = payload.get("priority_override", 1)
-        duration = max(1, payload.get("linger_turns", 2))
+        duration = max(3, payload.get("investigation_turns", 4))
         source = payload.get("source", "noise")
         intensity = payload.get("intensity", 1)
+        linger_turns = payload.get("linger_turns", 2)
 
         for npc in game_state.crew:
             if npc == game_state.player or not npc.is_alive:
@@ -775,7 +1055,15 @@ class AISystem:
                 npc.last_known_player_location = target_loc
                 npc.investigation_priority = max(getattr(npc, "investigation_priority", 0), priority)
                 npc.investigation_expires = game_state.turn + duration
+                npc.investigation_loops = duration
                 npc.investigation_source = source
+                if getattr(npc, "coordinating_ambush", False):
+                    self._clear_coordination(npc)
+                npc.suspicion_state = getattr(npc, "suspicion_state", "idle")
+                npc.investigation_linger_turns = max(getattr(npc, "investigation_linger_turns", 0), linger_turns)
+                npc.investigation_arrival_reported = False
+                npc.search_turns_remaining = 0
+                npc.current_search_target = None
 
         event_bus.emit(GameEvent(EventType.DIAGNOSTIC, {
             "type": "AI_INVESTIGATION_PING",
@@ -794,7 +1082,10 @@ class AISystem:
             member.investigation_priority = 0
             member.investigation_source = None
             member.investigation_expires = 0
+            member.investigation_loops = 0
             member.last_known_player_location = None
+            member.investigation_linger_turns = 0
+            member.investigation_arrival_reported = False
     def _record_last_seen(self, member: 'CrewMember', location: Tuple[int, int], game_state: 'GameState', room_name: Optional[str] = None) -> str:
         """Store last-seen player data on the NPC for later search behavior."""
         room = room_name or game_state.station_map.get_room_name(*location)
@@ -889,7 +1180,7 @@ class AISystem:
 
         if member.current_search_target:
             tx, ty = member.current_search_target
-            self._pathfind_step(member, tx, ty, game_state)
+            self._pathfind_step(member, tx, ty, game_state, steps=self._get_alert_steps())
             member.search_turns_remaining -= 1
             if member.search_turns_remaining <= 0:
                 member.search_targets = []

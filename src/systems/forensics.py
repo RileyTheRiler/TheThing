@@ -1,6 +1,7 @@
 import time
 from core.event_system import event_bus, EventType, GameEvent
 from systems.architect import RandomnessEngine
+from core.perception import normalize_perception_payload
 
 class BiologicalSlipGenerator:
     """
@@ -195,6 +196,7 @@ class ForensicsSystem:
         self.blood_test = BloodTestSim(rng=self.rng)
         # Register for turn advance if we want things to happen over time
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+        event_bus.subscribe(EventType.PERCEPTION_EVENT, self.on_perception_event)
 
     def on_turn_advance(self, event: GameEvent):
         """
@@ -204,6 +206,42 @@ class ForensicsSystem:
         """
         if self.blood_test.active:
             self.blood_test.cool_down()
+
+    def cleanup(self):
+        event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
+        event_bus.unsubscribe(EventType.PERCEPTION_EVENT, self.on_perception_event)
+
+    def on_perception_event(self, event: GameEvent):
+        """Append forensic logs when detections occur."""
+        payload = normalize_perception_payload(event.payload)
+        if not payload or payload.get("outcome") not in {"detected", "thermal_detected"}:
+            return
+
+        # Basic guard against missing state
+        game_state = payload.get("game_state")
+        if not game_state or not hasattr(game_state, "forensic_db"):
+            return
+
+        actor_name = payload.get("actor") or getattr(payload.get("player_ref"), "name", None)
+        observer_name = payload.get("observer") or getattr(payload.get("opponent_ref"), "name", None)
+        room = payload.get("room") or "Unknown"
+        location = payload.get("location")
+        noise = payload.get("noise_level")
+        severity = payload.get("severity", "low").upper()
+
+        note_parts = [f"Detected by {observer_name}" if observer_name else "Detection"]
+        if location:
+            note_parts.append(f"at {location}")
+        note_parts.append(f"room: {room}")
+        if noise is not None:
+            note_parts.append(f"noise={noise}")
+
+        note = " | ".join(note_parts)
+        game_state.forensic_db.add_tag(actor_name or "Unknown", "DETECTION", note, getattr(game_state, "turn", 0))
+        if hasattr(game_state, "evidence_log"):
+            game_state.evidence_log.record_event(
+                actor_name or "Unknown", "DETECTED", observer_name or "Unknown", room, getattr(game_state, "turn", 0)
+            )
 
     def get_status(self):
         if self.blood_test.active:

@@ -10,13 +10,13 @@ from core.event_system import event_bus, EventType, GameEvent
 from core.resolution import Attribute, Skill, ResolutionSystem
 from core.design_briefs import DesignBriefRegistry
 
-from entities.crew_member import CrewMember
+from entities.crew_member import CrewMember as EntityCrewMember
 from entities.item import Item
 from entities.station_map import StationMap
 
 from systems.ai import AISystem
 from systems.alert import AlertSystem
-from systems.security import SecuritySystem
+from systems.security import SecuritySystem, SecurityLog
 from systems.architect import RandomnessEngine, GameMode, TimeSystem, Difficulty, DifficultySettings, Verbosity
 from systems.architect import RandomnessEngine, GameMode, TimeSystem, Difficulty, DifficultySettings
 from systems.commands import CommandDispatcher, GameContext
@@ -36,6 +36,7 @@ from systems.progression import ProgressionSystem
 from systems.weather import WeatherSystem
 from systems.environmental_coordinator import EnvironmentalCoordinator
 from systems.dialogue import DialogueSystem
+from systems.dialogue_system import DialogueBranchingSystem
 
 from ui.renderer import TerminalRenderer
 from ui.crt_effects import CRTOutput
@@ -43,6 +44,108 @@ from ui.command_parser import CommandParser
 from ui.message_reporter import MessageReporter
 from audio.audio_manager import AudioManager, Sound
 
+
+class CrewMember:
+    def __init__(self, name, role, behavior_type, attributes=None, skills=None, schedule=None, invariants=None):
+        self.name = name
+        self.role = role
+        self.behavior_type = behavior_type
+        self.is_infected = False  # The "Truth" hidden from the player
+        self.trust_score = 50      # 0 to 100
+        self.location = (0, 0)
+        self.is_alive = True
+        
+        # Stats
+        self.attributes = attributes if attributes else {}
+        self.skills = skills if skills else {}
+        self.schedule = schedule if schedule else []
+        self.invariants = invariants if invariants else []
+        self.forbidden_rooms = [] # Hydrated from JSON
+        self.stress = 0
+        self.inventory = []
+        self.health = 3 # Base health
+        self.mask_integrity = 100.0 # Agent 3: Mask Tracking
+        self.is_revealed = False    # Agent 3: Violent Reveal
+        self.slipped_vapor = False  # Hook: Biological Slip flag
+
+    def take_damage(self, amount):
+        self.health -= amount
+        if self.health <= 0:
+            self.health = 0
+            self.is_alive = False
+            return True # Died
+        return False
+
+    def add_item(self, item, turn=0):
+        self.inventory.append(item)
+        item.add_history(turn, f"Picked up by {self.name}")
+    
+    def remove_item(self, item_name):
+        for i, item in enumerate(self.inventory):
+            if item.name.upper() == item_name.upper():
+                return self.inventory.pop(i)
+        return None
+
+    def roll_check(self, attribute, skill=None, rng=None, resolution_system=None):
+        attr_val = self.attributes.get(attribute, 1) 
+        skill_val = self.skills.get(skill, 0)
+        pool_size = attr_val + skill_val
+        
+        # Use provided ResolutionSystem or fallback to static class method
+        if resolution_system:
+            return resolution_system.roll_check(pool_size, rng)
+        return ResolutionSystem.roll_check(pool_size, rng)
+
+    def move(self, dx, dy, station_map):
+        new_x = self.location[0] + dx
+        new_y = self.location[1] + dy
+        if station_map.is_walkable(new_x, new_y):
+            self.location = (new_x, new_y)
+            return True
+        return False
+
+    def get_description(self, game_state):
+        rng = game_state.rng
+        desc = [f"This is {self.name}, the {self.role}."]
+        
+        # 1. Spatial Slip Check
+        current_room = game_state.station_map.get_room_name(*self.location)
+        if hasattr(self, 'forbidden_rooms') and current_room in self.forbidden_rooms:
+            desc.append(f"Something is wrong. {self.name} shouldn't be in the {current_room}. They look out of place, almost defensive.")
+
+        # 2. Invariant Visual Slips (Base Behavioral Patterns)
+        for inv in [i for i in self.invariants if i.get('type') == 'visual']:
+            if self.is_infected and rng.random_float() < inv.get('slip_chance', 0.5):
+                desc.append(inv['slip_desc'])
+            else:
+                desc.append(inv['baseline'])
+
+        # 3. Agent 3/4 biological slips and sensory tells
+        if self.is_infected and not self.is_revealed:
+            # Chance to show a sensory tell increases as mask integrity drops
+            if self.mask_integrity < 80:
+                slip_chance = (80 - self.mask_integrity) / 80.0
+                if rng.random_float() < slip_chance:
+                    slip = BiologicalSlipGenerator.get_visual_slip(rng)
+                    desc.append(f"You notice they are {slip}.")
+            
+            # Specific hint for infected NPCs
+            if self.mask_integrity < 50 and rng.random_float() < 0.3:
+                 desc.append("Their eyes seem strange... almost like lusterless black spheres.")
+        
+        # 4. State based on stress and environment
+        state = "shivering in the cold"
+        if self.stress > 3:
+            state = "visibly shaking and hyperventilating"
+        elif self.is_infected and self.mask_integrity < 40:
+             state = "unnaturally still, staring through you"
+             
+        desc.append(f"State: {state.capitalize()}.")
+        
+        return " ".join(desc)
+
+# Ensure the engine uses the primary CrewMember implementation from entities
+CrewMember = EntityCrewMember
 
 class GameState:
     @property
@@ -75,6 +178,54 @@ class GameState:
                 "direction": direction,
                 "threshold": self.social_thresholds.paranoia_thresholds[new_bucket-1] if direction == "UP" else self.social_thresholds.paranoia_thresholds[new_bucket]
             }))
+        if not hasattr(self, "schedule"):
+            return
+
+        # 0. PRIORITY: Lynch Mob Hunting (Agent 2)
+        if hasattr(self, "lynch_mob") and hasattr(self, "station_map") and self.lynch_mob.active_mob and self.lynch_mob.target:
+        if hasattr(self, "lynch_mob") and self.lynch_mob.active_mob and self.lynch_mob.target:
+            target = self.lynch_mob.target
+            if target != self and target.is_alive:
+                # Move toward the lynch target
+                tx, ty = target.location
+                self._pathfind_step(tx, ty, self.station_map)
+                return
+
+        # 1. Check Schedule
+        # Schedule entries: {"start": 8, "end": 20, "room": "Rec Room"}
+        # Fix: TimeSystem lacks 'hour' property, calculate manually (Start 08:00)
+        if not hasattr(self, "schedule"):
+            return
+        current_hour = (self.time_system.turn_count + 8) % 24
+        destination = None
+        for entry in self.schedule:
+            start = entry.get("start", 0)
+            end = entry.get("end", 24)
+            room = entry.get("room")
+            
+            # Handle wrap-around schedules (e.g., 20:00 to 08:00)
+            if start < end:
+                if start <= current_hour < end:
+                    destination = room
+                    break
+            else: # Wrap around midnight
+                if current_hour >= start or current_hour < end:
+                    destination = room
+                    break
+        
+        if destination:
+            # Move towards destination room
+            target_pos = self.station_map.rooms.get(destination)
+            if target_pos:
+                tx, ty, _, _ = target_pos
+                self._pathfind_step(tx, ty, self.station_map)
+                return
+
+        # 2. Idling / Wandering
+        if self.rng.random_float() < 0.3:
+            dx = self.rng.choose([-1, 0, 1])
+            dy = self.rng.choose([-1, 0, 1])
+            self.move(dx, dy, self.station_map)
 
     def _pathfind_step(self, target_x, target_y, station_map):
         """Simple greedy step towards target."""
@@ -151,14 +302,19 @@ class GameState:
         # 4. Global State
         self.power_on = True
         self.blood_bank_destroyed = False
+        self.alert_status = "CALM"
+        self.alert_turns_remaining = 0
         self.paranoia_level = self.difficulty_settings["starting_paranoia"]
         self.mode = GameMode.INVESTIGATIVE
+        self.security_log = SecurityLog()
         # self.verbosity = Verbosity.STANDARD
 
         # 5. Core Simulation Systems
         self.station_map = StationMap()
         self.weather = WeatherSystem()
         self.sabotage = SabotageManager(self.difficulty_settings)
+        self.radio_operational = self.sabotage.radio_operational
+        self.helicopter_operational = self.sabotage.chopper_operational
         self.random_events = RandomEventSystem(self.rng, config_registry=self.design_registry)
         self.environmental_coordinator = EnvironmentalCoordinator()
         self.room_states = RoomStateManager(list(self.station_map.rooms.keys()))
@@ -179,6 +335,7 @@ class GameState:
         self.lynch_mob = LynchMobSystem(self.trust_system)
         self.dialogue = DialogueManager()
         self.dialogue_system = DialogueSystem(rng=self.rng)
+        self.dialogue_branching = DialogueBranchingSystem(rng=self.rng)
         self.stealth = StealthSystem()
         self.stealth_system = self.stealth  # Alias for systems expecting stealth_system attr
         self.alert_system = AlertSystem(self)
@@ -202,8 +359,13 @@ class GameState:
 
         # 9. Narrative/Persistence
         self.helicopter_status = "BROKEN"
+        self.escape_route = None  # helicopter | overland
+        self.overland_escape_turns = None
         self.rescue_signal_active = False
         self.rescue_turns_remaining = None 
+        self.rescue_eta_turns = 20
+        self.alert_status = "calm"
+        self.alert_turns_remaining = 0
         self.journal = []
         self.evidence_log = EvidenceLog()
         self.forensic_db = ForensicDatabase()
@@ -300,6 +462,8 @@ class GameState:
         
         for member in self.crew:
             member.slipped_vapor = False
+            if hasattr(member, "record_movement"):
+                member.record_movement(self)
         
         self.paranoia_level = min(100, self.paranoia_level + 1)
         
@@ -314,7 +478,8 @@ class GameState:
         event_bus.emit(GameEvent(EventType.TURN_ADVANCE, {
             "game_state": self,
             "rng": self.rng,
-            "turn": self.turn
+            "turn": self.turn,
+            "turn_inventory": turn_inventory
         }))
         
         player_room = self.station_map.get_room_name(*self.player.location)
@@ -336,16 +501,36 @@ class GameState:
         self.turn_behavior_inventory = turn_inventory
 
         if self.rescue_signal_active and self.rescue_turns_remaining is not None:
-            self.rescue_turns_remaining -= 1
-            if self.rescue_turns_remaining == 5:
-                event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "Rescue ETA updated: 5 hours out."}))
-            elif self.rescue_turns_remaining == 1:
-                event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "Rescue team landing imminent!"}))
-            if self.rescue_turns_remaining <= 0:
-                self.rescue_turns_remaining = 0
-                event_bus.emit(GameEvent(EventType.REPAIR_COMPLETE, {
-                    "status": self.helicopter_status,
-                    "turn": self.turn
+            if not self.radio_operational:
+                event_bus.emit(GameEvent(EventType.WARNING, {"text": "The radio is dead. Your SOS beacon fails."}))
+                self.rescue_signal_active = False
+                self.rescue_turns_remaining = None
+            else:
+                self.rescue_turns_remaining -= 1
+                if self.rescue_turns_remaining == 5:
+                    event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "Rescue ETA updated: 5 hours out."}))
+                elif self.rescue_turns_remaining == 1:
+                    event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "Rescue team landing imminent!"}))
+                if self.rescue_turns_remaining <= 0:
+                    self.rescue_turns_remaining = 0
+                    event_bus.emit(GameEvent(EventType.SOS_SENT, {
+                        "game_state": self,
+                        "arrived": True,
+                        "turn": self.turn
+                    }))
+
+        if self.escape_route == "overland" and self.overland_escape_turns is not None:
+            self.overland_escape_turns -= 1
+            if self.overland_escape_turns <= 0:
+                self.overland_escape_turns = 0
+                self.helicopter_status = "ESCAPED"
+                event_bus.emit(GameEvent(EventType.ESCAPE_SUCCESS, {
+                    "game_state": self,
+                    "route": "overland"
+                }))
+            else:
+                event_bus.emit(GameEvent(EventType.MESSAGE, {
+                    "text": f"The whiteout howls. {self.overland_escape_turns} hours until you reach the rendezvous grid."
                 }))
 
         if self.turn % 5 == 0 and hasattr(self, 'save_manager'):
@@ -368,6 +553,88 @@ class GameState:
             "paranoia_level": self.paranoia_level,
             "turn": self.turn
         }))
+
+    def attempt_repair_radio(self):
+        player_room = self.station_map.get_room_name(*self.player.location)
+        if player_room != "Radio Room":
+            return False, "You must be in the Radio Room to repair the radio.", EventType.WARNING
+        if self.radio_operational:
+            return False, "The radio is already operational.", EventType.MESSAGE
+
+        tools = next((i for i in self.player.inventory if "TOOL" in i.name.upper()), None)
+        if not tools:
+            return False, "You need TOOLS to repair the radio.", EventType.WARNING
+
+        self.radio_operational = True
+        if hasattr(self, "sabotage"):
+            self.sabotage.radio_operational = True
+            self.sabotage.radio_working = True
+        return True, "You spend some time rewiring the radio. It's working again.", EventType.MESSAGE
+
+    def attempt_repair_helicopter(self):
+        player_room = self.station_map.get_room_name(*self.player.location)
+        if player_room != "Hangar":
+            return False, "You must be in the Hangar to repair the helicopter.", EventType.WARNING
+        if self.helicopter_status == "ESCAPED":
+            return False, "There's no helicopter left to repair.", EventType.WARNING
+        if self.helicopter_status == "FIXED" and self.helicopter_operational:
+            return False, "The helicopter is already fixed.", EventType.MESSAGE
+
+        tools = next((i for i in self.player.inventory if "TOOL" in i.name.upper()), None)
+        parts = next((i for i in self.player.inventory if "PART" in i.name.upper()), None)
+        if not tools or not parts:
+            return False, "You need TOOLS and REPLACEMENT PARTS to fix the helicopter.", EventType.WARNING
+
+        self.helicopter_operational = True
+        self.helicopter_status = "FIXED"
+        if hasattr(self, "sabotage"):
+            self.sabotage.chopper_operational = True
+            self.sabotage.helicopter_working = True
+        event_bus.emit(GameEvent(EventType.HELICOPTER_REPAIRED, {"game_state": self}))
+        return True, "The engine roars to life. The helicopter is ready for takeoff.", EventType.MESSAGE
+
+    def attempt_radio_signal(self):
+        player_room = self.station_map.get_room_name(*self.player.location)
+        if player_room != "Radio Room":
+            return False, "You must be in the Radio Room to send an SOS.", EventType.WARNING
+        if not self.radio_operational:
+            return False, "The radio is damaged. It needs repairs first.", EventType.WARNING
+        if getattr(self, "rescue_signal_active", False):
+            return False, "The SOS signal is already broadcasting.", EventType.MESSAGE
+
+        self.rescue_signal_active = True
+        self.rescue_turns_remaining = self.rescue_eta_turns
+        event_bus.emit(GameEvent(EventType.SOS_EMITTED, {"game_state": self}))
+        return True, f"You broadcast a high-frequency SOS. Rescue ETA: {self.rescue_eta_turns} hours.", EventType.MESSAGE
+
+    def attempt_escape(self):
+        player_room = self.station_map.get_room_name(*self.player.location)
+        if player_room != "Hangar":
+            return False, "You must be in the Hangar to attempt an escape.", EventType.WARNING
+
+        if self.escape_route == "overland":
+            return False, "You are already trekking into the storm. Keep moving.", EventType.MESSAGE
+
+        if self.helicopter_operational and self.helicopter_status == "FIXED":
+            pilot_skill = getattr(self.player, "skills", {}).get(Skill.PILOT, 0)
+            roll = self.rng.calculate_success(max(1, 1 + pilot_skill))
+            if roll.get("success"):
+                self.escape_route = "helicopter"
+                self.helicopter_status = "ESCAPED"
+                event_bus.emit(GameEvent(EventType.ESCAPE_SUCCESS, {
+                    "game_state": self,
+                    "route": "helicopter"
+                }))
+                return True, "You climb into the cockpit and gun the throttle. The chopper claws into the sky.", EventType.MESSAGE
+            return False, "The engines cough and stall. You'll need to try again.", EventType.WARNING
+
+        # Overland escape is only viable when the station is dark and no evac routes remain
+        if not self.power_on and not self.radio_operational and not self.helicopter_operational:
+            self.escape_route = "overland"
+            self.overland_escape_turns = 3
+            return True, "With Outpost 31 lost, you shoulder your pack and start the long walk into the ice. Survive 3 more hours.", EventType.MESSAGE
+
+        return False, "The helicopter is down and the station isn't abandoned enough to risk an overland escape.", EventType.WARNING
 
     def cleanup(self):
         """Clean up game state and unsubscribe from events."""
@@ -418,9 +685,14 @@ class GameState:
             return False, None
 
         if self.helicopter_status == "ESCAPED":
+            if self.escape_route == "overland":
+                return True, "With the generators dead and the station ruined, you vanish into the whiteout."
             return True, "You pilot the chopper through the storm, leaving the nightmare of Outpost 31 behind."
 
-        if self.rescue_signal_active and self.rescue_turns_remaining <= 0:
+        if self.escape_route == "overland" and self.overland_escape_turns == 0:
+            return True, "With the generators dead and the station ruined, you vanish into the whiteout."
+
+        if self.rescue_signal_active and self.rescue_turns_remaining is not None and self.rescue_turns_remaining <= 0:
             return True, "Lights cut through the storm. The rescue team has arrived to extract you."
 
         living_crew = [m for m in self.crew if m.is_alive]
@@ -465,6 +737,10 @@ class GameState:
 
     def to_dict(self):
         """Serialize game state to dictionary for saving."""
+        if hasattr(self, "alert_system") and self.alert_system:
+            # Mirror alert system fields for save visibility
+            self.alert_status = "alert" if self.alert_system.is_active else "calm"
+            self.alert_turns_remaining = self.alert_system.turns_remaining
         return {
             "_save_version": CURRENT_SAVE_VERSION,
             "save_version": CURRENT_SAVE_VERSION,
@@ -474,8 +750,15 @@ class GameState:
             "paranoia_level": self.paranoia_level,
             "mode": self.mode.value,
             "helicopter_status": self.helicopter_status,
+            "helicopter_operational": self.helicopter_operational,
+            "radio_operational": self.radio_operational,
+            "escape_route": self.escape_route,
+            "overland_escape_turns": self.overland_escape_turns,
             "rescue_signal_active": self.rescue_signal_active,
             "rescue_turns_remaining": self.rescue_turns_remaining,
+            "rescue_eta_turns": self.rescue_eta_turns,
+            "alert_status": self.alert_status,
+            "alert_turns_remaining": self.alert_turns_remaining,
             "rng": self.rng.to_dict(),
             "time_system": self.time_system.to_dict(),
             "station_map": self.station_map.to_dict(),
@@ -485,7 +768,8 @@ class GameState:
             "trust": self.trust_system.matrix if hasattr(self, "trust_system") else {},
             "crafting": self.crafting.to_dict() if hasattr(self.crafting, "to_dict") else {},
             "alert_system": self.alert_system.to_dict() if hasattr(self, "alert_system") else {},
-            "security_system": self.security_system.to_dict() if hasattr(self, "security_system") else {}
+            "security_system": self.security_system.to_dict() if hasattr(self, "security_system") else {},
+            "security_log": self.security_log.to_dict() if hasattr(self, "security_log") else {}
         }
 
     @classmethod
@@ -514,9 +798,17 @@ class GameState:
             game.mode = GameMode.INVESTIGATIVE
 
         game.helicopter_status = data.get("helicopter_status", "BROKEN")
+        game.helicopter_operational = data.get("helicopter_operational", game.helicopter_operational)
+        game.radio_operational = data.get("radio_operational", game.radio_operational)
+        game.escape_route = data.get("escape_route")
+        game.overland_escape_turns = data.get("overland_escape_turns")
         game.rescue_signal_active = data.get("rescue_signal_active", False)
         game.rescue_turns_remaining = data.get("rescue_turns_remaining")
         game.turn = data.get("turn", getattr(game, "turn", 1))
+        game.rescue_eta_turns = data.get("rescue_eta_turns", game.rescue_eta_turns)
+        game.alert_status = data.get("alert_status", "calm")
+        game.alert_status = data.get("alert_status", "CALM")
+        game.alert_turns_remaining = data.get("alert_turns_remaining", 0)
 
         if "rng" in data:
             game.rng.from_dict(data["rng"])
@@ -569,6 +861,35 @@ class GameState:
         game.parser.set_known_names([m.name for m in game.crew])
         game.room_states = RoomStateManager(list(game.station_map.rooms.keys()))
         game.crafting = CraftingSystem.from_dict(data.get("crafting"), game)
+        game.security_log = SecurityLog.from_dict(data.get("security_log", {}))
+
+        # Rehydrate security system state
+        security_data = data.get("security_system")
+        if security_data:
+            if hasattr(game, "security_system") and game.security_system:
+                game.security_system = SecuritySystem.from_dict(
+                    security_data,
+                    game_state=game,
+                    existing_system=game.security_system
+                )
+            else:
+                game.security_system = SecuritySystem.from_dict(security_data, game_state=game)
+
+        if hasattr(game, "sabotage"):
+            game.sabotage.radio_operational = game.radio_operational
+            game.sabotage.radio_working = game.radio_operational
+            game.sabotage.chopper_operational = game.helicopter_operational
+            game.sabotage.helicopter_working = game.helicopter_operational
+        # Restore alert system/state
+        alert_data = data.get("alert_system", {})
+        if hasattr(game, "alert_system") and game.alert_system:
+            game.alert_system.cleanup()
+        game.alert_system = AlertSystem.from_dict(alert_data, game)
+        game.alert_status = data.get("alert_status", game.alert_status)
+        game.alert_turns_remaining = data.get("alert_turns_remaining", game.alert_turns_remaining)
+        if hasattr(game, "alert_system") and game.alert_system:
+            game.alert_system.cleanup()
+        game.alert_system = AlertSystem.from_dict(data.get("alert_system"), game)
 
         return game
 
@@ -642,9 +963,10 @@ def main():
             game.save_manager.save_game(game, slot)
         elif action == "LOAD":
             slot = cmd[1] if len(cmd) > 1 else "auto"
-            data = game.save_manager.load_game(slot)
-            if data:
-                game = GameState.from_dict(data)
+            loaded_game = game.save_manager.load_game(slot)
+            if loaded_game:
+                game.cleanup()
+                game = loaded_game
                 print("*** GAME LOADED ***")
         elif action == "STATUS":
             for m in game.crew:

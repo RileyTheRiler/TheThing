@@ -33,6 +33,16 @@ STRUCTURAL_DEFAULTS = {
     "security_system": {}
 }
 
+REQUIRED_FIELDS = [
+    "difficulty",
+    "rng",
+    "time_system",
+    "station_map",
+    "crew",
+    "save_version",
+    "checksum",
+]
+
 
 def compute_checksum(data: dict) -> str:
     """
@@ -43,12 +53,20 @@ def compute_checksum(data: dict) -> str:
     data_copy = {
         k: v for k, v in data.items()
         if k not in {"_checksum", "checksum"}
+        if k not in {'_checksum', 'checksum'}
     }
     json_str = json.dumps(data_copy, sort_keys=True, separators=(',', ':'))
     return hashlib.sha256(json_str.encode('utf-8')).hexdigest()[:16]
 
 
-def validate_save_data(data: dict) -> tuple:
+def _extract_version(data: dict) -> int:
+    """Return the version value from known metadata keys."""
+    if not isinstance(data, dict):
+        return 0
+    return int(data.get('save_version') or data.get('_save_version') or 0)
+
+
+def validate_save_data(data: dict, required_fields=None) -> tuple:
     """
     Validate save data structure and checksum.
 
@@ -58,8 +76,20 @@ def validate_save_data(data: dict) -> tuple:
     if not isinstance(data, dict):
         return False, "Save data is not a valid dictionary"
 
+    required = required_fields if required_fields is not None else REQUIRED_FIELDS
+
     # Check for required fields
     missing = [f for f in DEFAULT_REQUIRED_FIELDS.keys() if f not in data]
+    missing = []
+    for field in required:
+        if field == "save_version":
+            if 'save_version' not in data and '_save_version' not in data:
+                missing.append(field)
+        elif field == "checksum":
+            if 'checksum' not in data and '_checksum' not in data:
+                missing.append(field)
+        elif field not in data:
+            missing.append(field)
     if missing:
         return False, f"Missing required fields: {', '.join(missing)}"
 
@@ -78,6 +108,7 @@ def validate_save_data(data: dict) -> tuple:
 
     # Verify checksum if present
     stored_checksum = data.get('_checksum') or data.get('checksum')
+    stored_checksum = data.get('checksum') or data.get('_checksum')
     if stored_checksum:
         computed = compute_checksum(data)
         if stored_checksum != computed:
@@ -133,16 +164,46 @@ def migrate_save(data: dict, from_version: int, to_version: int) -> dict:
     if isinstance(migrated_data.get("player_location"), tuple):
         migrated_data["player_location"] = list(migrated_data["player_location"])
 
+    # Normalize legacy metadata keys early
+    if '_save_version' in migrated_data and 'save_version' not in migrated_data:
+        migrated_data['save_version'] = migrated_data.pop('_save_version')
+    if '_saved_at' in migrated_data and 'saved_at' not in migrated_data:
+        migrated_data['saved_at'] = migrated_data.pop('_saved_at')
+    if '_checksum' in migrated_data and 'checksum' not in migrated_data:
+        migrated_data['checksum'] = migrated_data.pop('_checksum')
+
+    # Fill defensive defaults for required structures
+    defaults = {
+        "crew": [],
+        "journal": [],
+        "trust": {},
+        "crafting": {},
+        "alert_system": {},
+        "security_system": {},
+        "rescue_signal_active": False,
+        "rescue_turns_remaining": None,
+        "helicopter_status": "BROKEN",
+        "power_on": True,
+        "paranoia_level": 0,
+        "difficulty": "Normal",
+        "mode": "Investigative",
+        "rng": {"seed": None, "rng_state": None},
+        "time_system": {"temperature": -40, "turn_count": 0, "start_hour": 19, "hour": 19},
+        "station_map": {}
+    }
+    for key, default in defaults.items():
+        migrated_data.setdefault(key, default)
+
     while current < to_version:
         migration_key = (current, current + 1)
         if migration_key in MIGRATIONS:
             migrated_data = MIGRATIONS[migration_key](migrated_data)
-        # Even if no explicit migration, bump version
         current += 1
 
     migrated_data['_save_version'] = to_version
     migrated_data['save_version'] = to_version
     migrated_data.setdefault('_saved_at', datetime.now().isoformat())
+    migrated_data['save_version'] = to_version
     return migrated_data
 
 
@@ -152,7 +213,7 @@ class SaveManager:
         self.game_state_factory = game_state_factory
         if not os.path.exists(self.save_dir):
             os.makedirs(self.save_dir)
-            
+
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
 
     def cleanup(self):
@@ -239,9 +300,11 @@ class SaveManager:
             data['_save_version'] = CURRENT_SAVE_VERSION
             data['save_version'] = CURRENT_SAVE_VERSION
             data['_saved_at'] = datetime.now().isoformat()
+            data['save_version'] = CURRENT_SAVE_VERSION
+            data['saved_at'] = datetime.now().isoformat()
 
             # Compute and add checksum (must be last)
-            data['_checksum'] = compute_checksum(data)
+            data['checksum'] = compute_checksum(data)
 
             with open(filepath, 'w') as f:
                 json.dump(data, f, indent=4)
@@ -273,6 +336,11 @@ class SaveManager:
             stored_checksum = data.get('_checksum') or data.get('checksum')
             if stored_checksum and compute_checksum(data) != stored_checksum:
                 print("Save validation failed: Save file checksum mismatch - file may be corrupted")
+            # Initial checksum verification on raw data
+            is_valid, error = validate_save_data(data, required_fields=[])
+            if not is_valid:
+                print(f"Save validation failed: {error}")
+                # Attempt to load from backup if available
                 backup_data = self._try_load_backup(slot_name)
                 if backup_data:
                     print("Loaded from backup instead.")
@@ -294,6 +362,8 @@ class SaveManager:
             )
             data['_checksum'] = new_checksum
 
+            # Check version and migrate if needed
+            save_version = _extract_version(data)
             if save_version < CURRENT_SAVE_VERSION:
                 print(f"Migrating save from v{save_version} to v{CURRENT_SAVE_VERSION}...")
 
@@ -305,6 +375,15 @@ class SaveManager:
             if not is_valid:
                 print(f"Post-migration validation failed: {error}")
                 return None
+
+            # Validate schema after migration
+            is_valid, error = validate_save_data(data)
+            if not is_valid:
+                print(f"Save validation failed post-migration: {error}")
+                return None
+
+            # Ensure checksum is up to date
+            data['checksum'] = compute_checksum(data)
 
             # Use provided factory, or instance factory, or return raw data
             hydrator = factory if factory else self.game_state_factory
@@ -345,7 +424,16 @@ class SaveManager:
             with open(backup_path, 'r') as f:
                 data = json.load(f)
 
-            # Validate backup too
+            # Validate backup too (legacy-friendly first pass)
+            is_valid, _ = validate_save_data(data, required_fields=[])
+            if not is_valid:
+                return None
+
+            backup_version = _extract_version(data)
+            if backup_version < CURRENT_SAVE_VERSION:
+                data = migrate_save(data, backup_version, CURRENT_SAVE_VERSION)
+                data['checksum'] = compute_checksum(data)
+
             is_valid, _ = validate_save_data(data)
             return data if is_valid else None
         except Exception:
@@ -362,6 +450,9 @@ class SaveManager:
             data['_checksum'] = compute_checksum(data)
             # Backup before writing migrated data
             self.backup_save(filepath)
+            # Preserve existing save before overwriting with migrated data
+            self.backup_save(filepath)
+            data['checksum'] = compute_checksum(data)
             with open(filepath, 'w') as f:
                 json.dump(data, f, indent=4)
         except Exception:
