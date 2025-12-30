@@ -203,6 +203,14 @@
             "category": "material",
             "uses": -1,
             "spawn_room": "Generator"
+        },
+        {
+            "id": "blowtorch",
+            "name": "Blowtorch",
+            "description": "High-heat industrial torch. Useful for cutting or welding.",
+            "category": "tool",
+            "uses": 5,
+            "spawn_room": "Hangar"
         }
     ]
 }

@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, TYPE_CHECKING
+from enum import Enum, auto
 
 from core.event_system import event_bus, EventType, GameEvent
 from core.resolution import Attribute, Skill
@@ -8,7 +9,17 @@ if TYPE_CHECKING:
     from engine import GameState, CrewMember
 
 __all__ = ['TrustMatrix', 'LynchMobSystem', 'DialogueManager', 'SocialThresholds',
-           'bucket_for_thresholds', 'bucket_label', 'ExplainAwaySystem', 'ExplainResult']
+           'bucket_for_thresholds', 'bucket_label', 'ExplainAwaySystem', 'ExplainResult',
+           'MutinyPhase']
+
+
+class MutinyPhase(Enum):
+    """Phases of player mutiny progression."""
+    NONE = auto()          # No mutiny active
+    WARNING = auto()       # Verbal confrontation, NPCs express distrust
+    LOCKOUT = auto()       # NPCs refuse ORDER commands
+    IMPRISONMENT = auto()  # Player locked in Generator Room
+    EXECUTION = auto()     # NPCs attack player on sight
 
 
 def bucket_for_thresholds(value: float, thresholds: List[int]) -> int:
@@ -64,6 +75,7 @@ class TrustMatrix:
         # Dictionary of dictionaries: self.matrix[observer][subject] = trust_value
         # Default trust is 50
         self.matrix = {m.name: {other.name: 50 for other in crew} for m in crew}
+        self.crew_ref = {m.name: m for m in crew} # Keep reference for tag updates
         self.thresholds = thresholds or SocialThresholds()
         self._set_initial_biases()
         self._trust_buckets: Dict[str, Dict[str, int]] = {
@@ -146,6 +158,7 @@ class TrustMatrix:
             for name, avg in self._average_values.items()
         }
 
+
     def _maybe_emit_trust_threshold(self, observer_name: str, subject_name: str, previous_value: float, new_value: float):
         previous_bucket = self._trust_buckets.get(observer_name, {}).get(
             subject_name, bucket_for_thresholds(previous_value, self.thresholds.trust_thresholds)
@@ -153,19 +166,20 @@ class TrustMatrix:
         new_bucket = bucket_for_thresholds(new_value, self.thresholds.trust_thresholds)
 
         if new_bucket != previous_bucket:
+
             self._trust_buckets.setdefault(observer_name, {})[subject_name] = new_bucket
             
             # Find the specific threshold crossed
             crossed_threshold = None
             thresholds = sorted(self.thresholds.trust_thresholds)
-            if new_value < previous_value: # DOWN
-                 direction = "DOWN"
+            direction = "UP" if new_value > previous_value else "DOWN"
+
+            if direction == "DOWN":
                  for t in reversed(thresholds):
                      if previous_value >= t and new_value < t:
                          crossed_threshold = t
                          break
             else: # UP
-                 direction = "UP"
                  for t in thresholds:
                      if previous_value < t and new_value >= t:
                          crossed_threshold = t
@@ -183,6 +197,29 @@ class TrustMatrix:
                 "bucket": bucket_label(new_bucket),
                 "direction": direction
             }))
+
+            # Update Relationship Tags
+            self._update_relationship_tags(observer_name, subject_name, new_bucket)
+
+    def _update_relationship_tags(self, observer_name: str, subject_name: str, bucket: int):
+        """Update Friend/Rival tags based on trust bucket."""
+        observer = self.crew_ref.get(observer_name)
+        if not observer:
+            return
+
+        # Clear existing tags for this subject
+        observer.relationship_tags = [t for t in observer.relationship_tags 
+                                    if not t.endswith(f":{subject_name}")]
+
+        # Add new tag if applicable
+        label = bucket_label(bucket)
+        if label in ["trusted", "bonded"]: # > 60 or > 80 depending on config, label mapping: 3=steady, 4=trusted
+            # Let's use bucket index for stricter control if needed, but label is readable.
+            # Bucket 3 (60-80) = steady, Bucket 4 (>80) = trusted
+            if bucket >= 4:
+                observer.relationship_tags.append(f"Friend:{subject_name}")
+        elif label == "critical": # < 20
+             observer.relationship_tags.append(f"Rival:{subject_name}")
 
     def _track_average_threshold(self, member_name: str, average_value: float):
         previous_value = self._average_values.get(member_name, average_value)
@@ -308,11 +345,19 @@ class LynchMobSystem:
         self.active_mob = False
         self.target = None
         
+        # Tier 8: Mutiny phase tracking
+        self.mutiny_phase = MutinyPhase.NONE
+        self.mutiny_turns_in_phase = 0
+        self.mutiny_target = None  # Usually the player
+        
         # Load gathering location from config
         self.gathering_location = self._load_gathering_location()
         
-        # Subscribe to trigger
+        # Subscribe to triggers
         event_bus.subscribe(EventType.LYNCH_MOB_TRIGGER, self.on_lynch_mob_trigger)
+        event_bus.subscribe(EventType.CREW_DEATH, self.on_crew_death)
+        event_bus.subscribe(EventType.TEST_RESULT, self.on_blood_test_result)
+        event_bus.subscribe(EventType.TURN_ADVANCE, self.on_mutiny_turn_advance)
 
     def _load_gathering_location(self):
         """Load lynch mob gathering location from config, default to Rec Room."""
@@ -328,6 +373,9 @@ class LynchMobSystem:
 
     def cleanup(self):
         event_bus.unsubscribe(EventType.LYNCH_MOB_TRIGGER, self.on_lynch_mob_trigger)
+        event_bus.unsubscribe(EventType.CREW_DEATH, self.on_crew_death)
+        event_bus.unsubscribe(EventType.TEST_RESULT, self.on_blood_test_result)
+        event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_mutiny_turn_advance)
         
     def check_thresholds(self, crew, current_paranoia: Optional[int] = None):
         """Check if any crew member has fallen below the lynch threshold."""
@@ -349,6 +397,10 @@ class LynchMobSystem:
                 }))
             return None
 
+        # Check for Mutiny against Player
+        if self.check_player_mutiny(crew, current_paranoia):
+            return None
+
         potential_target = self.trust_system.check_for_lynch_mob(
             crew, lynch_threshold=self.thresholds.lynch_average_threshold
         )
@@ -356,6 +408,202 @@ class LynchMobSystem:
             self.form_mob(potential_target)
             return potential_target
         return None
+
+    def check_player_mutiny(self, crew, current_paranoia: Optional[int] = None, game_state=None) -> bool:
+        """Check if the crew mutinies against the player."""
+        if current_paranoia is None or current_paranoia < 60:
+            return False
+
+        # Find player
+        player = next((m for m in crew if m.name == "MacReady"), None)
+        if not player:
+            return False
+
+        avg_trust = self.trust_system.get_average_trust("MacReady")
+        innocent_kills = getattr(player, "innocent_kills", 0)
+        refused_test = getattr(player, "refused_blood_test", False)
+        
+        # Count NPCs with trust < 20 toward player (for 3+ NPC condition)
+        low_trust_count = sum(
+            1 for m in crew 
+            if m.name != "MacReady" and m.is_alive 
+            and self.trust_system.get_trust(m.name, "MacReady") < 20
+        )
+        
+        # Trigger conditions:
+        # 1. Trust < 20 with 3+ NPCs
+        # 2. Player killed 2+ innocents
+        # 3. Player refused blood test
+        should_trigger = (
+            (low_trust_count >= 3) or
+            (innocent_kills >= 2) or
+            (refused_test and low_trust_count >= 2)
+        )
+        
+        if should_trigger and self.mutiny_phase == MutinyPhase.NONE:
+            self._enter_mutiny_phase(MutinyPhase.WARNING, player, game_state)
+            return True
+            
+        return False
+    
+    def _enter_mutiny_phase(self, phase: MutinyPhase, target: 'CrewMember', game_state=None):
+        """Transition to a new mutiny phase."""
+        old_phase = self.mutiny_phase
+        self.mutiny_phase = phase
+        self.mutiny_turns_in_phase = 0
+        self.mutiny_target = target
+        
+        from ui.message_reporter import emit_warning, emit_message
+        
+        if phase == MutinyPhase.WARNING:
+            emit_warning("The crew is losing faith in you. They're starting to talk...")
+            emit_message("NPCs gather in small groups, casting suspicious glances your way.", crawl=True)
+            event_bus.emit(GameEvent(EventType.MUTINY_WARNING, {
+                "target": target.name,
+                "phase": "WARNING"
+            }))
+            
+        elif phase == MutinyPhase.LOCKOUT:
+            emit_warning("LOCKOUT: The crew no longer trusts your leadership!")
+            emit_message("NPCs will refuse your orders. You need to regain their trust.", crawl=True)
+            event_bus.emit(GameEvent(EventType.MUTINY_LOCKOUT, {
+                "target": target.name,
+                "phase": "LOCKOUT"
+            }))
+            
+        elif phase == MutinyPhase.IMPRISONMENT:
+            emit_warning("MUTINY! The crew drags you to the Generator Room!")
+            emit_message("You've been locked in. Find a way to escape or wait for rescue.", crawl=True)
+            # Move player to Generator Room
+            if game_state:
+                gen_room = game_state.station_map.rooms.get("Generator Room")
+                if gen_room:
+                    target.location = (gen_room[0], gen_room[1])
+            event_bus.emit(GameEvent(EventType.MUTINY_IMPRISONMENT, {
+                "target": target.name,
+                "phase": "IMPRISONMENT",
+                "location": "Generator Room"
+            }))
+            
+        elif phase == MutinyPhase.EXECUTION:
+            emit_warning("EXECUTION ORDER! The crew has decided you're too dangerous!")
+            emit_message("All NPCs will attack you on sight. Run or fight!", crawl=True)
+            event_bus.emit(GameEvent(EventType.MUTINY_TRIGGERED, {
+                "target": target.name,
+                "phase": "EXECUTION"
+            }))
+    
+    def on_mutiny_turn_advance(self, event: GameEvent):
+        """Progress mutiny phases over time."""
+        if self.mutiny_phase == MutinyPhase.NONE:
+            return
+            
+        game_state = event.payload.get("game_state")
+        self.mutiny_turns_in_phase += 1
+        
+        # Phase progression based on turns
+        if self.mutiny_phase == MutinyPhase.WARNING and self.mutiny_turns_in_phase >= 3:
+            self._enter_mutiny_phase(MutinyPhase.LOCKOUT, self.mutiny_target, game_state)
+        elif self.mutiny_phase == MutinyPhase.LOCKOUT and self.mutiny_turns_in_phase >= 2:
+            self._enter_mutiny_phase(MutinyPhase.IMPRISONMENT, self.mutiny_target, game_state)
+    
+    def on_crew_death(self, event: GameEvent):
+        """Track player innocent kills for mutiny trigger."""
+        game_state = event.payload.get("game_state")
+        if not game_state:
+            return
+            
+        dead_name = event.payload.get("name")
+        dead_member = next((m for m in game_state.crew if m.name == dead_name), None)
+        
+        # If the dead NPC was NOT infected, count as innocent kill
+        if dead_member and not getattr(dead_member, "is_infected", False):
+            player = game_state.player
+            if player:
+                player.innocent_kills = getattr(player, "innocent_kills", 0) + 1
+                
+                from ui.message_reporter import emit_warning
+                if player.innocent_kills >= 2:
+                    emit_warning(f"You've killed {player.innocent_kills} innocent crew members. The crew is getting suspicious...")
+    
+    def on_blood_test_result(self, event: GameEvent):
+        """Track if player refuses blood test."""
+        payload = event.payload
+        if payload.get("refused") and payload.get("target") == "MacReady":
+            game_state = payload.get("game_state")
+            if game_state and game_state.player:
+                game_state.player.refused_blood_test = True
+                from ui.message_reporter import emit_warning
+                emit_warning("You refused the blood test! The crew's suspicion of you grows...")
+    
+    def attempt_escape(self, player: 'CrewMember', method: str, game_state) -> bool:
+        """
+        Attempt to escape from imprisonment.
+        Methods: 'lockpick', 'vent', 'force'
+        """
+        if self.mutiny_phase != MutinyPhase.IMPRISONMENT:
+            return False
+            
+        rng = game_state.rng
+        success = False
+        
+        event_bus.emit(GameEvent(EventType.ESCAPE_ATTEMPT, {
+            "target": player.name,
+            "method": method
+        }))
+        
+        from ui.message_reporter import emit_message, emit_warning
+        
+        if method == "lockpick":
+            # LOGIC + REPAIR skill check
+            pool = player.attributes.get(Attribute.LOGIC, 2) + player.skills.get(Skill.REPAIR, 0)
+            result = rng.calculate_success(pool)
+            if result['success_count'] >= 2:
+                success = True
+                emit_message("You carefully pick the lock and slip out of the Generator Room.")
+        
+        elif method == "vent":
+            # PROWESS + STEALTH skill check  
+            pool = player.attributes.get(Attribute.PROWESS, 2) + player.skills.get(Skill.STEALTH, 0)
+            result = rng.calculate_success(pool)
+            if result['success_count'] >= 1:
+                success = True
+                player.in_vent = True
+                emit_message("You squeeze into the ventilation system and begin crawling.")
+        
+        elif method == "force":
+            # PROWESS check, but loud - alerts everyone
+            pool = player.attributes.get(Attribute.PROWESS, 2)
+            result = rng.calculate_success(pool)
+            if result['success_count'] >= 3:
+                success = True
+                emit_warning("You break down the door! The noise alerts the entire station!")
+                # Skip to execution phase if forced
+                self._enter_mutiny_phase(MutinyPhase.EXECUTION, player, game_state)
+                return True
+        
+        if success and self.mutiny_phase == MutinyPhase.IMPRISONMENT:
+            # Successful silent escape - advance to execution if caught later
+            self._enter_mutiny_phase(MutinyPhase.EXECUTION, player, game_state)
+            return True
+        elif not success:
+            emit_message("Your escape attempt fails. You're still trapped in the Generator Room.")
+            
+        return success
+    
+    def is_order_blocked(self) -> bool:
+        """Check if player orders should be blocked due to mutiny."""
+        return self.mutiny_phase in (MutinyPhase.LOCKOUT, MutinyPhase.IMPRISONMENT, MutinyPhase.EXECUTION)
+    
+    def is_player_imprisoned(self) -> bool:
+        """Check if player is currently imprisoned."""
+        return self.mutiny_phase == MutinyPhase.IMPRISONMENT
+    
+    def reset_mutiny(self):
+        """Reset mutiny state (e.g., if player regains trust)."""
+        self.mutiny_phase = MutinyPhase.NONE
+        self.mutiny_turns_in_phase = 0
+        self.mutiny_target = None
 
     def on_lynch_mob_trigger(self, event: GameEvent):
         target_name = event.payload.get("target")

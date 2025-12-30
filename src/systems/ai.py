@@ -235,12 +235,9 @@ class AISystem:
         if not infected_allies:
             return  # No allies to coordinate with
 
-        # Calculate flanking positions for each ally using pathfinding to ensure reachability
-        flank_positions = self._calculate_flanking_positions(
-            player_location, alerter.location, infected_allies, station_map, getattr(game_state, "turn", 0)
         # Calculate flanking positions for each ally using the pathfinder to ensure opposite approach vectors
         flank_positions = self._calculate_flanking_positions(
-            player_location, alerter.location, infected_allies, station_map, current_turn=game_state.turn
+            player_location, alerter.location, infected_allies, station_map, current_turn=getattr(game_state, "turn", 0)
         )
 
         # Assign flanking positions to allies
@@ -276,8 +273,6 @@ class AISystem:
             }))
 
     def _calculate_flanking_positions(self, target: Tuple[int, int], leader_pos: Tuple[int, int],
-                                       flankers: List['CrewMember'], station_map: 'StationMap',
-                                       current_turn: int = 0) -> List[Tuple[int, int]]:
                                        allies: List['CrewMember'], station_map: 'StationMap', current_turn: int = 0) -> List[Tuple[int, int]]:
         """Calculate optimal flanking positions around a target for pincer movement.
 
@@ -442,8 +437,7 @@ class AISystem:
                             break
                     if leader:
                         flank_positions = self._calculate_flanking_positions(
-                            player_loc, leader.location, [member], game_state.station_map, getattr(game_state, "turn", 0)
-                            player_loc, leader.location, [member], game_state.station_map, current_turn=game_state.turn
+                            player_loc, leader.location, [member], game_state.station_map, current_turn=getattr(game_state, "turn", 0)
                         )
                         if flank_positions:
                             member.flank_position = flank_positions[0]
@@ -466,20 +460,20 @@ class AISystem:
             # Close enough - coordination complete, attack!
             self._clear_coordination(member)
             # Trigger a stealth detection (the infected has cornered the player)
-        event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, normalize_perception_payload({
-            "room": game_state.station_map.get_room_name(*player_loc),
-            "location": player_loc,
-            "opponent": member.name,
-            "opponent_ref": member,
-            "player_ref": player,
-            "actor": getattr(player, "name", None),
-            "game_state": game_state,
-            "outcome": "detected",
-            "player_successes": 0,
-            "opponent_successes": 3,
-            "subject_pool": 0,
-            "observer_pool": 3,
-        })))
+            event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, normalize_perception_payload({
+                "room": game_state.station_map.get_room_name(*player_loc),
+                "location": player_loc,
+                "opponent": member.name,
+                "opponent_ref": member,
+                "player_ref": player,
+                "actor": getattr(player, "name", None),
+                "game_state": game_state,
+                "outcome": "detected",
+                "player_successes": 0,
+                "opponent_successes": 3,
+                "subject_pool": 0,
+                "observer_pool": 3,
+            })))
             return True
 
         # Move toward target
@@ -493,8 +487,6 @@ class AISystem:
         member.flank_position = None
         member.coordination_leader = None
         member.coordination_turns_remaining = 0
-        if getattr(member, "suspicion_state", "idle") == "coordinating":
-            member.suspicion_state = "idle"
         if getattr(member, "suspicion_state", None) == "coordinating":
             member.suspicion_state = "idle"
 
@@ -662,6 +654,11 @@ class AISystem:
         # 0.5. PRIORITY: Infected Coordination - Hidden infected executing pincer movement
         if getattr(member, 'coordinating_ambush', False) and getattr(member, 'is_infected', False):
             if self._execute_coordinated_ambush(member, game_state):
+                return
+        
+        # Tier 8: MIMICRY BEHAVIOR (Hidden Infected)
+        if getattr(member, 'is_infected', False) and not getattr(member, 'is_revealed', False):
+            if self._update_mimicry_ai(member, game_state):
                 return
 
         # Suspicion-driven behaviors (question or follow the player)
@@ -863,6 +860,293 @@ class AISystem:
         # Default: Move toward closest human
         tx, ty = closest.location
         self._pathfind_step(member, tx, ty, game_state, steps=self._get_alert_steps())
+
+    def _update_mimicry_ai(self, member: 'CrewMember', game_state: 'GameState') -> bool:
+        """
+        AI behavior for HIDDEN Things to mimic human roles.
+        Tier 8 Enhanced: Opportunistic attacks, false accusations, sabotage.
+        Returns True if an action was taken (overriding normal behavior).
+        """
+        rng = game_state.rng
+        mode = getattr(member, "mimicry_mode", "blend_in")
+        
+        # 1. TRANSFORMATION CHECK (highest priority)
+        if self._should_transform(member, game_state):
+            self._trigger_transformation(member, game_state)
+            return True
+        
+        # 2. OPPORTUNISTIC ATTACK (alone with 1-2 targets)
+        if self._should_opportunistic_attack(member, game_state):
+            self._execute_opportunistic_attack(member, game_state)
+            return True
+        
+        # 3. FALSE ACCUSATION (15% chance when conditions met)
+        if rng.random_float() < 0.15 and self._can_make_false_accusation(member, game_state):
+            self._make_false_accusation(member, game_state)
+            return True
+        
+        # 4. SABOTAGE (20% chance when unobserved near equipment)
+        if rng.random_float() < 0.20 and self._can_sabotage(member, game_state):
+            self._execute_sabotage(member, game_state)
+            return True
+        
+        # 5. ROLE-BASED MIMICRY (blend in behavior)
+        role = getattr(member, "mimicry_role", None)
+        
+        if role == "dog_handler":
+            # Clark/Dog Handler: Obsessively stays near dogs (Kennel)
+            current_room = game_state.station_map.get_room_name(*member.location)
+            if current_room != "Kennel" and rng.random_float() < 0.7:
+                kennel_pos = game_state.station_map.rooms.get("Kennel")
+                if kennel_pos:
+                    tx, ty, _, _ = kennel_pos
+                    self._pathfind_step(member, tx, ty, game_state)
+                    if rng.random_float() < 0.1:
+                        event_bus.emit(GameEvent(EventType.MESSAGE, {
+                            "text": f"{member.name} mutters about the dogs being restless."
+                        }))
+                    return True
+
+        elif role == "loner":
+            # Avoids rooms with other people
+            current_room = game_state.station_map.get_room_name(*member.location)
+            people_in_room = [m for m in game_state.crew if m.is_alive and 
+                            game_state.station_map.get_room_name(*m.location) == current_room]
+            
+            if len(people_in_room) > 2:
+                neighbors = game_state.station_map.get_walkable_neighbors(*member.location)
+                if neighbors:
+                    target = rng.choose(neighbors)
+                    self._pathfind_step(member, target[0], target[1], game_state)
+                    return True
+        
+        elif role == "social_butterfly":
+            # Seeks out the Rec Room or Mess Hall
+            current_room = game_state.station_map.get_room_name(*member.location)
+            if current_room not in ["Rec Room", "Mess Hall"] and rng.random_float() < 0.5:
+                target_room = rng.choose(["Rec Room", "Mess Hall"])
+                target_pos = game_state.station_map.rooms.get(target_room)
+                if target_pos:
+                    tx, ty, _, _ = target_pos
+                    self._pathfind_step(member, tx, ty, game_state)
+                    return True
+
+        # 80% of the time, let normal AI schedule take over (blend in)
+        return False
+    
+    def _should_transform(self, member: 'CrewMember', game_state: 'GameState') -> bool:
+        """Check if Thing should reveal itself (transformation triggers)."""
+        # Low health (< 30%)
+        if member.health <= 1:  # Assuming 3 max health, 1 = ~30%
+            return True
+        
+        # Cornered: In barricaded room with hostile NPCs
+        current_room = game_state.station_map.get_room_name(*member.location)
+        if hasattr(game_state, 'room_states') and game_state.room_states.is_barricaded(current_room):
+            hostile_npcs = [
+                m for m in game_state.crew
+                if m.is_alive and not getattr(m, 'is_infected', False)
+                and m != member and game_state.station_map.get_room_name(*m.location) == current_room
+            ]
+            if len(hostile_npcs) >= 2:
+                # Surrounded and cornered - fight or flight
+                return True
+        
+        return False
+    
+    def _trigger_transformation(self, member: 'CrewMember', game_state: 'GameState'):
+        """Reveal the Thing - transform and become hostile."""
+        member.is_revealed = True
+        member.revealed_name = f"The-Thing-That-Was-{member.name}"
+        
+        event_bus.emit(GameEvent(EventType.WARNING, {
+            "text": f"HORROR! {member.name}'s body TWISTS and CONTORTS! They're a THING!"
+        }))
+        
+        event_bus.emit(GameEvent(EventType.BIOLOGICAL_SLIP, {
+            "name": member.name,
+            "type": "transformation",
+            "room": game_state.station_map.get_room_name(*member.location)
+        }))
+    
+    def _should_opportunistic_attack(self, member: 'CrewMember', game_state: 'GameState') -> bool:
+        """Check if conditions are right for opportunistic attack."""
+        current_room = game_state.station_map.get_room_name(*member.location)
+        
+        # Find humans in the same room (excluding other Things)
+        humans_in_room = [
+            m for m in game_state.crew
+            if m.is_alive and not getattr(m, 'is_infected', False)
+            and game_state.station_map.get_room_name(*m.location) == current_room
+        ]
+        
+        # Attack only when alone with 1-2 targets
+        if not (1 <= len(humans_in_room) <= 2):
+            return False
+        
+        # Check for witnesses in adjacent rooms
+        connected_rooms = getattr(game_state.station_map, 'get_adjacent_rooms', lambda r: [])(current_room)
+        for adj_room in connected_rooms:
+            witnesses = [
+                m for m in game_state.crew
+                if m.is_alive and not getattr(m, 'is_infected', False)
+                and game_state.station_map.get_room_name(*m.location) == adj_room
+            ]
+            if witnesses:
+                return False  # Too risky
+        
+        # Check if target is vulnerable (low health or distracted)
+        target = humans_in_room[0]
+        is_vulnerable = (
+            target.health <= 1 or
+            getattr(target, 'stress', 0) > 3 or
+            getattr(target, 'suspicion_state', 'idle') == 'idle'  # Not alert
+        )
+        
+        return is_vulnerable
+    
+    def _execute_opportunistic_attack(self, member: 'CrewMember', game_state: 'GameState'):
+        """Execute a sneak attack on an isolated target."""
+        current_room = game_state.station_map.get_room_name(*member.location)
+        
+        humans_in_room = [
+            m for m in game_state.crew
+            if m.is_alive and not getattr(m, 'is_infected', False)
+            and game_state.station_map.get_room_name(*m.location) == current_room
+        ]
+        
+        if not humans_in_room:
+            return
+        
+        target = humans_in_room[0]
+        
+        # Reveal and attack
+        member.is_revealed = True
+        member.revealed_name = f"The-Thing-That-Was-{member.name}"
+        
+        event_bus.emit(GameEvent(EventType.WARNING, {
+            "text": f"{member.name}'s face SPLITS OPEN! They lunge at {target.name}!"
+        }))
+        
+        # Use existing attack logic
+        self._thing_attack(member, target, game_state)
+    
+    def _can_make_false_accusation(self, member: 'CrewMember', game_state: 'GameState') -> bool:
+        """Check if conditions allow false accusation."""
+        # Need high paranoia and multiple people present
+        if game_state.paranoia_level < 40:
+            return False
+        
+        current_room = game_state.station_map.get_room_name(*member.location)
+        people_in_room = [
+            m for m in game_state.crew
+            if m.is_alive and m != member
+            and game_state.station_map.get_room_name(*m.location) == current_room
+        ]
+        
+        # Need at least 2 others (one to accuse, one to witness)
+        if len(people_in_room) < 2:
+            return False
+        
+        # Find a clean NPC to falsely accuse
+        clean_npcs = [m for m in people_in_room if not getattr(m, 'is_infected', False)]
+        return len(clean_npcs) > 0
+    
+    def _make_false_accusation(self, member: 'CrewMember', game_state: 'GameState'):
+        """Infected NPC makes false accusation against a clean crew member."""
+        current_room = game_state.station_map.get_room_name(*member.location)
+        
+        clean_npcs = [
+            m for m in game_state.crew
+            if m.is_alive and m != member and not getattr(m, 'is_infected', False)
+            and game_state.station_map.get_room_name(*m.location) == current_room
+        ]
+        
+        if not clean_npcs:
+            return
+        
+        # Pick a random clean target
+        target = game_state.rng.choose(clean_npcs)
+        
+        # Generate accusation dialogue
+        accusations = [
+            f"I saw {target.name}'s eyes go BLACK for a second!",
+            f"{target.name} was moving strange earlier... inhuman-like.",
+            f"There's something OFF about {target.name}. We should test them!",
+            f"Why won't {target.name} look anyone in the eye? Guilty conscience?",
+            f"{target.name} has been sneaking around at night. I don't trust them."
+        ]
+        
+        accusation = game_state.rng.choose(accusations)
+        
+        event_bus.emit(GameEvent(EventType.DIALOGUE, {
+            "speaker": member.name,
+            "text": accusation
+        }))
+        
+        # Lower trust in the target
+        if hasattr(game_state, 'trust_system'):
+            # Other NPCs in room reduce trust in target
+            for witness in clean_npcs:
+                if witness != target:
+                    game_state.trust_system.modify_trust(witness.name, target.name, -5)
+        
+        event_bus.emit(GameEvent(EventType.ACCUSATION_RESULT, {
+            "accuser": member.name,
+            "accused": target.name,
+            "false_accusation": True,
+            "room": current_room
+        }))
+    
+    def _can_sabotage(self, member: 'CrewMember', game_state: 'GameState') -> bool:
+        """Check if conditions allow sabotage."""
+        current_room = game_state.station_map.get_room_name(*member.location)
+        
+        # Must be alone (or only with other infected)
+        others_in_room = [
+            m for m in game_state.crew
+            if m.is_alive and m != member and not getattr(m, 'is_infected', False)
+            and game_state.station_map.get_room_name(*m.location) == current_room
+        ]
+        
+        if others_in_room:
+            return False
+        
+        # Check if room has sabotage targets
+        sabotage_rooms = ["Generator Room", "Radio Room", "Infirmary", "Lab"]
+        return current_room in sabotage_rooms
+    
+    def _execute_sabotage(self, member: 'CrewMember', game_state: 'GameState'):
+        """Infected NPC sabotages equipment."""
+        current_room = game_state.station_map.get_room_name(*member.location)
+        
+        sabotage_effects = {
+            "Generator Room": ("generator", "The lights flicker ominously..."),
+            "Radio Room": ("radio", "Static crackles from the radio..."),
+            "Infirmary": ("medical", "Medical supplies have been tampered with..."),
+            "Lab": ("lab", "Test samples have been contaminated...")
+        }
+        
+        if current_room not in sabotage_effects:
+            return
+        
+        target, effect_msg = sabotage_effects[current_room]
+        
+        # Emit subtle hint (player can investigate)
+        event_bus.emit(GameEvent(EventType.MESSAGE, {
+            "text": f"[AMBIENT] {effect_msg}"
+        }))
+        
+        # Add sabotage evidence to room
+        if hasattr(game_state, 'room_states'):
+            game_state.room_states.add_state(current_room, "SABOTAGED")
+        
+        # Mark member as having sabotaged (for forensics)
+        member.add_knowledge_tag(f"Sabotaged:{current_room}")
+        
+        event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+            "text": f"DEBUG: Infected {member.name} sabotaged {target} in {current_room}"
+        }))
 
     def _thing_attack(self, attacker: 'CrewMember', target: 'CrewMember', game_state: 'GameState'):
         """The Thing attacks a human target."""

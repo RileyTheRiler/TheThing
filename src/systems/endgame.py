@@ -24,6 +24,11 @@ class EndgameSystem:
         event_bus.subscribe(EventType.SOS_EMITTED, self.on_sos_emitted)
         event_bus.subscribe(EventType.SOS_SENT, self.on_rescue_arrival)
         event_bus.subscribe(EventType.ESCAPE_SUCCESS, self.on_escape_success)
+        # Tier 9 endings
+        event_bus.subscribe(EventType.GENERATOR_DESTROYED, self.on_generator_destroyed)
+        event_bus.subscribe(EventType.UFO_CONSTRUCTED, self.on_ufo_constructed)
+        # Tier 8: Mutiny
+        event_bus.subscribe(EventType.MUTINY_TRIGGERED, self.on_mutiny_execution)
 
     def cleanup(self):
         event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
@@ -32,6 +37,9 @@ class EndgameSystem:
         event_bus.unsubscribe(EventType.SOS_EMITTED, self.on_sos_emitted)
         event_bus.unsubscribe(EventType.SOS_SENT, self.on_rescue_arrival)
         event_bus.unsubscribe(EventType.ESCAPE_SUCCESS, self.on_escape_success)
+        event_bus.unsubscribe(EventType.GENERATOR_DESTROYED, self.on_generator_destroyed)
+        event_bus.unsubscribe(EventType.UFO_CONSTRUCTED, self.on_ufo_constructed)
+        event_bus.unsubscribe(EventType.MUTINY_TRIGGERED, self.on_mutiny_execution)
 
     def on_turn_advance(self, event: GameEvent):
         """Monitor rescue countdown and periodic checks."""
@@ -55,6 +63,9 @@ class EndgameSystem:
 
         # Periodic check for Extermination or Consumption
         self._check_population_endings(game_state)
+        
+        # Check for Freeze Out ending (Tier 9)
+        self._check_freeze_out(game_state)
 
     def on_crew_death(self, event: GameEvent):
         """Triggered when any crew member dies."""
@@ -208,3 +219,100 @@ class EndgameSystem:
             game_state.game_over = True
             game_state.last_ending_payload = payload
         self.resolved = True
+
+    def on_generator_destroyed(self, event: GameEvent):
+        """Triggered when the generator is destroyed (Tier 9)."""
+        if self.resolved:
+            return
+        
+        game_state = event.payload.get("game_state")
+        if game_state:
+            # Mark generator as destroyed for freeze out check
+            game_state.generator_destroyed = True
+
+    def on_ufo_constructed(self, event: GameEvent):
+        """Triggered when an infected NPC completes UFO construction (Tier 9)."""
+        if self.resolved:
+            return
+        
+        game_state = event.payload.get("game_state")
+        if game_state:
+            self._resolve_ending("BLAIR_THING", game_state, ending_id="blair_thing")
+
+    def on_mutiny_execution(self, event: GameEvent):
+        """Triggered when mutiny reaches EXECUTION phase - player caught after escape."""
+        if self.resolved:
+            return
+        
+        phase = event.payload.get("phase")
+        target = event.payload.get("target")
+        
+        # Only trigger game over on EXECUTION phase
+        if phase == "EXECUTION" and target == "MacReady":
+            game_state = event.payload.get("game_state")
+            if game_state:
+                self._resolve_ending("MUTINY", game_state, ending_id="mutiny_execution")
+
+    def _check_freeze_out(self, game_state):
+        """Check if conditions are met for the Freeze Out ending."""
+        generator_destroyed = getattr(game_state, "generator_destroyed", False)
+        if not generator_destroyed:
+            return
+            
+        temperature = getattr(game_state, "temperature", -40)
+        
+        # At -60°C: Things become dormant (cannot act)
+        if temperature <= -60:
+            for crew in game_state.crew:
+                if getattr(crew, 'is_infected', False) and crew.is_alive:
+                    if not getattr(crew, 'is_dormant', False):
+                        crew.is_dormant = True
+                        event_bus.emit(GameEvent(EventType.MESSAGE, {
+                            "text": f"{crew.name} has frozen stiff, unable to move..."
+                        }))
+        
+        # At -80°C: Things die, check for victory
+        if temperature <= -80:
+            living_things = [c for c in game_state.crew 
+                            if getattr(c, 'is_infected', False) and c.is_alive]
+            
+            # Kill all Things
+            for thing in living_things:
+                thing.is_alive = False
+                event_bus.emit(GameEvent(EventType.MESSAGE, {
+                    "text": f"The alien cells in {thing.name} have crystallized and died."
+                }))
+                event_bus.emit(GameEvent(EventType.CREW_DEATH, {
+                    "game_state": game_state,
+                    "name": thing.name,
+                    "cause": "frozen"
+                }))
+            
+            # Kill crew without cold weather gear (except player for now)
+            for crew in game_state.crew:
+                if crew.is_alive and not getattr(crew, 'is_infected', False) and crew != game_state.player:
+                    has_gear = any(
+                        "PARKA" in i.name.upper() or "COAT" in i.name.upper() or 
+                        "COLD" in i.name.upper() or "THERMAL" in i.name.upper()
+                        for i in getattr(crew, 'inventory', [])
+                    )
+                    if not has_gear:
+                        crew.is_alive = False
+                        event_bus.emit(GameEvent(EventType.MESSAGE, {
+                            "text": f"{crew.name} succumbs to the cold..."
+                        }))
+                        event_bus.emit(GameEvent(EventType.CREW_DEATH, {
+                            "game_state": game_state,
+                            "name": crew.name,
+                            "cause": "frozen"
+                        }))
+            
+            # Check victory: player alive, all Things frozen/dead
+            if game_state.player.is_alive:
+                all_things_dead = not any(
+                    getattr(c, 'is_infected', False) and c.is_alive 
+                    for c in game_state.crew
+                )
+                if all_things_dead:
+                    self._resolve_ending("FREEZE_OUT", game_state, ending_id="freeze_out")
+

@@ -147,10 +147,15 @@ class CommandParser:
             return None
         
         raw = raw_input.strip()
+        if not raw:
+            return None
+            
         normalized = raw.upper()
         
-        # Store history
+        # Store history (limit to last 50)
         self.command_history.append(raw)
+        if len(self.command_history) > 50:
+            self.command_history.pop(0)
         
         # Try pattern matching first
         for pattern, template in self.PATTERNS:
@@ -161,7 +166,21 @@ class CommandParser:
                 return self._parse_simple(cmd)
         
         # Fall back to simple word-based parsing
-        return self._parse_simple(normalized)
+        parsed = self._parse_simple(normalized)
+        if parsed:
+            return parsed
+            
+        # Try fuzzy verb matching if direct parsing failed
+        words = normalized.split()
+        if words:
+            # 1. Fuzzy match intent against all known verbs
+            intent = self._fuzzy_match_intent(words[0])
+            if intent:
+                # Replace the first word with the corrected verb and retry simple parsing
+                corrected_command = normalized.replace(words[0], intent, 1)
+                return self._parse_simple(corrected_command)
+
+        return None
     
     def _parse_simple(self, normalized):
         """
@@ -247,11 +266,40 @@ class CommandParser:
                 best_match = name
         
         return best_match if best_match else input_upper
+
+    def _fuzzy_match_intent(self, input_verb: str) -> str:
+        """
+        Find the closest matching verb from known command maps.
+        Returns the canonical verb if a high-confidence match is found.
+        """
+        input_lower = input_verb.lower()
+        
+        best_verb = None
+        best_ratio = 0.0
+        
+        for synonym, canonical in self.VERB_MAP.items():
+            ratio = SequenceMatcher(None, input_lower, synonym).ratio()
+            # If input is very short (<=3 chars), require exact match or very high similarity
+            if len(input_lower) <= 3:
+                if ratio > 0.9: 
+                    return synonym
+            elif ratio > best_ratio:
+                best_ratio = ratio
+                best_verb = synonym
+
+        # 80% confidence threshold for auto-execution
+        if best_ratio > 0.8:
+            return best_verb
+        
+        return None
     
-    def get_help_text(self):
+    def get_help_text(self, command=None):
         """
-        Return help text for available commands.
+        Return help text for available commands or specific command details.
         """
+        if command:
+            return self.get_command_help(command)
+
         return """
 AVAILABLE COMMANDS:
 ===================
@@ -274,7 +322,65 @@ NATURAL PHRASES:
 "go to the infirmary"      -> Navigate to room (if adjacent)
 "what do I have"           -> Show inventory
 "who is here"              -> List nearby crew
+
+Try 'HELP [COMMAND]' for specific details (e.g., 'HELP REPAIR').
 """
+
+    def get_command_help(self, command):
+        """Get detailed help for a specific command."""
+        cmd = command.upper()
+        
+        # Mapping of specific command help
+        HELP_DETAILS = {
+            "REPAIR": """
+COMMAND: REPAIR (Synonyms: FIX, PATCH)
+REALIZE: Attempts to fix station equipment (Radio, Helicopter).
+REQUIREMENTS:
+- Location: Must be in the same room as the equipment (Radio Room or Hangar).
+- Items: Usually requires TOOLS and either PARTS or WIRE.
+- Turn: Takes 1 turn.
+""",
+            "SIGNAL": """
+COMMAND: SIGNAL (Synonyms: SOS, CAL)
+REALIZE: Broadcasts a distress signal to the outside world.
+REQUIREMENTS:
+- Location: Radio Room.
+- State: Radio must be operational (repair it first if needed).
+- Outcome: Starts a rescue countdown (approx. 20 turns).
+""",
+            "ESCAPE": """
+COMMAND: ESCAPE (Synonyms: FLY, TAKEOFF)
+REALIZE: Attempts to leave the station using the helicopter.
+REQUIREMENTS:
+- Location: Hangar.
+- State: Helicopter must be repaired AND Radio must be operational for navigation.
+- Skill: Pilot skill increases success chance.
+""",
+            "TEST": """
+COMMAND: TEST (Synonyms: BLOOD TEST)
+REALIZE: Perform a blood test on a crew member to detect infection.
+REQUIREMENTS:
+- Items: Requires a TEST KIT and a HEAT SOURCE (or FLAMETHROWER).
+- Outcome: Reveals if the target is infected. High risk, high reward.
+""",
+            "CRAFT": """
+COMMAND: CRAFT (Synonyms: BUILD, MAKE)
+REALIZE: Combine items into more useful equipment.
+REQUIREMENTS:
+- Recipe: You must have the necessary components in your inventory.
+- Turn: Takes 1 turn.
+- Tip: Use 'CRAFT LIST' to see recipes.
+"""
+        }
+        
+        # Check synonyms if direct match fails
+        if cmd not in HELP_DETAILS:
+            for verb, canonical in self.VERB_MAP.items():
+                if verb.upper() == cmd:
+                    cmd = canonical
+                    break
+        
+        return HELP_DETAILS.get(cmd, f"No detailed help available for '{command}'. Try 'HELP' for a list of commands.")
     
     def suggest_correction(self, failed_cmd):
         """

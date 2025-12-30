@@ -320,6 +320,36 @@
             </div>
         </div>
 
+        <!-- Terminal Status Modal (Tier 11.2) -->
+        <div id="terminal-modal" class="modal hidden">
+            <div class="modal-content terminal-modal-content">
+                <div class="modal-header terminal-header">
+                    <h3 id="terminal-room-name">🖥 TERMINAL: [ROOM]</h3>
+                    <button class="modal-close" onclick="closeTerminalModal()">✕</button>
+                </div>
+                <div class="terminal-status">
+                    <div class="terminal-section">
+                        <h4>ROOM STATUS</h4>
+                        <div id="terminal-room-status" class="terminal-data">Loading...</div>
+                    </div>
+                    <div class="terminal-section">
+                        <h4>EQUIPMENT STATUS</h4>
+                        <div id="terminal-equipment" class="terminal-data">Nominal</div>
+                    </div>
+                    <div class="terminal-section">
+                        <h4>RECENT EVENTS</h4>
+                        <div id="terminal-events" class="terminal-data terminal-events-list">
+                            <div class="event-entry">No recent events</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="terminal-actions">
+                    <button class="terminal-btn" onclick="sendQuickCommand('STATUS')">[ STATION STATUS ]</button>
+                    <button class="terminal-btn" onclick="closeTerminalModal()">[ CLOSE ]</button>
+                </div>
+            </div>
+        </div>
+
         <!-- Toast Notification Container -->
         <div id="toast-container" class="toast-container"></div>
 

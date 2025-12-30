@@ -383,6 +383,18 @@ class InterrogationSystem:
             else:
                 opposers.append(voter)
 
+            # Tier 8: Nauls Defense (or any Friend)
+            if "Friend:" + accused.name in voter.relationship_tags:
+                # Friends always oppose accusations unless trust is completely shattered (<10)
+                if trust_in_accused > 10:
+                    if voter in supporters:
+                        supporters.remove(voter)
+                    if voter not in opposers:
+                        opposers.append(voter)
+                    
+                    defense_msg = f"{voter.name} steps up. \"I'm with {accused.name}. They're clean.\""
+                    event_bus.emit(GameEvent(EventType.MESSAGE, {"text": defense_msg})) 
+
         # Determine outcome
         supported = len(supporters) > len(opposers)
 

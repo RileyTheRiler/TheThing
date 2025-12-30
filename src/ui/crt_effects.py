@@ -31,6 +31,19 @@ class ANSI:
     HC_WHITE = "\033[38;5;231m"   # Pure white
     HC_BLACK_BG = "\033[48;5;16m" # Pure black background
 
+    # Functional colors
+    DANGER = "\033[38;5;196m"    # Bright Red
+    SUCCESS = "\033[38;5;46m"     # Bright Green
+    INFO = "\033[38;5;39m"        # Light Blue
+    WARNING = "\033[38;5;214m"     # Orange/Amber
+    
+    # Semantic Colors (Tier 7)
+    VICTORY = "\033[38;5;220m"    # Gold
+    MUTINY = "\033[38;5;129m"     # Purple
+    WHISPER = "\033[38;5;241m"    # Dark Gray
+    SHOUT = "\033[1;38;5;196m"    # Bold Red
+    QUOTE = "\033[3;38;5;51m"     # Italic Cyan
+
     # Effects
     GLITCH_CHARS = "#@%&?!<>*+=~"
     STATIC = ".:;!|+*#@"
@@ -143,6 +156,65 @@ class CRTOutput:
                         print(f"{ANSI.DIM}{line}{ANSI.RESET}")
                     else:
                         print(line)
+
+    def event(self, text, type="info", crawl=True):
+        """
+        Output a game event with specific coloring.
+        Types: 'danger', 'success', 'info', 'warning', 'system'
+        """
+        color_map = {
+            "danger": ANSI.DANGER,
+            "success": ANSI.SUCCESS,
+            "info": ANSI.INFO,
+            "warning": ANSI.WARNING,
+            "system": self.color
+        }
+        
+        selected_color = color_map.get(type, self.color)
+        prefix = {
+            "danger": "[!!] ",
+            "success": "[OK] ",
+            "info": "[i] ",
+            "warning": "[!] ",
+            "system": ":: ",
+            "victory": "*** ",
+            "mutiny": "!!! ",
+            "quote": "" 
+        }.get(type, "")
+
+        text_style = {
+            "victory": ANSI.VICTORY + ANSI.BOLD,
+            "mutiny": ANSI.MUTINY + ANSI.BLINK,
+            "quote": ANSI.QUOTE,
+            "shout": ANSI.SHOUT
+        }.get(type, selected_color)
+
+        message = f"{prefix}{text}"
+        
+        if self.capture_mode:
+            self.buffer.append(f"[{type.upper()}] {text}")
+            return
+
+        if crawl:
+            # Use specific speed for events
+            speed = 0.04 if type in ["danger", "mutiny"] else 0.02
+            self._crawl_with_color(message, text_style, speed)
+        else:
+            print(f"{text_style}{message}{ANSI.RESET}")
+
+    def _crawl_with_color(self, text, color, speed):
+        """Crawl text with a specific color and speed."""
+        sys.stdout.write(color)
+        for char in text:
+            sys.stdout.write(char)
+            sys.stdout.flush()
+            if char in '.!?':
+                time.sleep(speed * 3)
+            elif char == ' ':
+                time.sleep(speed * 0.5)
+            else:
+                time.sleep(speed)
+        print(ANSI.RESET)
     
     def crawl(self, text, speed=None):
         """
@@ -183,6 +255,12 @@ class CRTOutput:
             if char not in '\n\r':
                 time.sleep(self.crawl_speed)
         print()
+
+    def crawl_pause(self, seconds=1.0):
+        """Insert a dramatic pause in output."""
+        if not self.enabled or self.capture_mode:
+            return
+        time.sleep(seconds)
     
     def _glitch_text(self, text):
         """Apply random glitch effects to text."""
@@ -241,16 +319,66 @@ class CRTOutput:
                 result.append(f"{self.color}{line}{ANSI.RESET}")
         return '\n'.join(result)
     
-    def header(self, text):
+    def header(self, text, style="standard"):
         """
-        Render a prominent header with box drawing.
+        Render a prominent header with various box styles.
         """
+        if style == "danger":
+            self.header_danger(text)
+            return
+        elif style == "success":
+            self.header_success(text)
+            return
+
         width = len(text) + 4
         border = "=" * width
         
         print(f"{self.color}+{border}+{ANSI.RESET}")
         print(f"{self.color}|  {ANSI.BOLD}{text}{ANSI.RESET}{self.color}  |{ANSI.RESET}")
         print(f"{self.color}+{border}+{ANSI.RESET}")
+
+    def header_danger(self, text):
+        """Dramatic danger header."""
+        width = len(text) + 6
+        border = "#" * width
+        print(f"{ANSI.DANGER}{ANSI.BOLD}{border}{ANSI.RESET}")
+        print(f"{ANSI.DANGER}{ANSI.BOLD}#  {text.upper()}  #{ANSI.RESET}")
+        print(f"{ANSI.DANGER}{ANSI.BOLD}{border}{ANSI.RESET}")
+
+    def header_success(self, text):
+        """Success header."""
+        width = len(text) + 6
+        border = "*" * width
+        print(f"{ANSI.SUCCESS}{ANSI.BOLD}{border}{ANSI.RESET}")
+        print(f"{ANSI.SUCCESS}{ANSI.BOLD}*  {text}  *{ANSI.RESET}")
+        print(f"{ANSI.SUCCESS}{ANSI.BOLD}{border}{ANSI.RESET}")
+
+    def ascii_art(self, art_type):
+        """Display ASCII art for major events."""
+        arts = {
+            "the_thing": [
+                " _______ _    _ ______   _______ _    _ _____ _   _  _____ ",
+                "|__   __| |  | |  ____| |__   __| |  | |_   _| \ | |/ ____|",
+                "   | |  | |__| | |__       | |  | |__| | | | |  \| | |  __ ",
+                "   | |  |  __  |  __|      | |  |  __  | | | | . ` | | |_ |",
+                "   | |  | |  | | |____     | |  | |  | |_| |_| |\  | |__| |",
+                "   |_|  |_|  |_|______|    |_|  |_|  |_|_____|_| \_|\_____|"
+            ],
+            "station_31": [
+                "   _____ _______       _______ _____  ____  _   _   _________ ",
+                "  / ____|__   __|/\\   |__   __|_   _|/ __ \\| \\ | | |___  / _ \\",
+                " | (___    | |  /  \\     | |    | | | |  | |  \\| |    / /| | | |",
+                "  \\___ \\   | | / /\\ \\    | |    | | | |  | | . ` |   / / | | | |",
+                "  ____) |  | |/ ____ \\   | |   _| |_| |__| | |\\  |  / /__| |_| |",
+                " |_____/   |_/_/    \\_\\  |_|  |_____|\\____/|_| \\_| /_____|\\___/ "
+            ]
+        }
+        
+        lines = arts.get(art_type, [])
+        color = ANSI.DANGER if art_type == "the_thing" else self.color
+        for line in lines:
+            print(f"{color}{line}{ANSI.RESET}")
+            time.sleep(0.05)
     
     def prompt(self, text="CMD"):
         """

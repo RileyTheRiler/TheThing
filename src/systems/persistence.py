@@ -14,6 +14,11 @@ MIGRATIONS = {
     # (from_version, to_version): migration_function
     # Example: (0, 1): migrate_v0_to_v1
 }
+
+# Save slot configuration
+SAVE_SLOTS = ["slot_1", "slot_2", "slot_3", "slot_4", "slot_5"]
+AUTO_SAVE_INTERVAL = 10  # Auto-save every N turns
+
 DEFAULT_REQUIRED_FIELDS = {
     "turn": 1,
     "crew": [],
@@ -225,11 +230,12 @@ class SaveManager:
         current_turn = event.payload.get("turn")
         if game_state:
             self.apply_suspicion_decay(game_state, current_turn)
-        if game_state and game_state.turn % 5 == 0:
+        if game_state and game_state.turn % AUTO_SAVE_INTERVAL == 0:
             try:
                 self.save_game(game_state, "autosave")
             except Exception:
                 pass  # Don't interrupt gameplay on save failure
+
             
     def backup_save(self, filepath: str) -> bool:
         """
@@ -468,3 +474,278 @@ class SaveManager:
         for member in getattr(game_state, "crew", []):
             if hasattr(member, "decay_suspicion"):
                 member.decay_suspicion(current_turn)
+
+    # === Multi-Slot Save Management (Tier 10.3) ===
+    
+    def get_slot_metadata(self, slot_name: str) -> dict:
+        """
+        Get metadata for a save slot without loading the full game state.
+        
+        Args:
+            slot_name: Name of the slot to check
+            
+        Returns:
+            Dictionary with slot metadata or None if slot is empty
+        """
+        filename = f"{slot_name}.json"
+        filepath = os.path.join(self.save_dir, filename)
+        
+        if not os.path.exists(filepath):
+            return None
+        
+        try:
+            with open(filepath, 'r') as f:
+                data = json.load(f)
+            
+            # Extract metadata
+            return {
+                "slot_name": slot_name,
+                "timestamp": data.get("saved_at") or data.get("_saved_at", "Unknown"),
+                "turn": data.get("turn", 0),
+                "difficulty": data.get("difficulty", "Normal"),
+                "player_location": data.get("player_location", [0, 0]),
+                "crew_count": len(data.get("crew", [])),
+                "save_version": data.get("save_version") or data.get("_save_version", 0),
+                "survivor_mode": data.get("survivor_mode", False),
+                "thumbnail": self._extract_thumbnail(data)
+            }
+        except (IOError, json.JSONDecodeError):
+            return None
+    
+    def _extract_thumbnail(self, data: dict) -> str:
+        """Extract or generate ASCII thumbnail from save data."""
+        # Check if thumbnail was saved
+        if "thumbnail" in data:
+            return data["thumbnail"]
+        
+        # Generate simple thumbnail from player location
+        location = data.get("player_location", [0, 0])
+        room_name = data.get("current_room", "Unknown")
+        
+        # Simple ASCII representation
+        lines = [
+            "╔════════════╗",
+            f"║  Turn {data.get('turn', 0):3d}  ║",
+            f"║ {room_name[:10]:^10s} ║",
+            "╚════════════╝"
+        ]
+        return "\n".join(lines)
+    
+    def list_save_slots(self) -> list:
+        """
+        List all available save slots with their metadata.
+        
+        Returns:
+            List of slot info dictionaries, including empty slots
+        """
+        slots = []
+        
+        for slot_name in SAVE_SLOTS:
+            metadata = self.get_slot_metadata(slot_name)
+            
+            if metadata:
+                slots.append({
+                    "slot_name": slot_name,
+                    "empty": False,
+                    **metadata
+                })
+            else:
+                slots.append({
+                    "slot_name": slot_name,
+                    "empty": True,
+                    "display_name": slot_name.replace("_", " ").title()
+                })
+        
+        # Also include autosave if it exists
+        autosave_meta = self.get_slot_metadata("autosave")
+        if autosave_meta:
+            slots.insert(0, {
+                "slot_name": "autosave",
+                "empty": False,
+                "is_autosave": True,
+                **autosave_meta
+            })
+        
+        return slots
+    
+    def save_to_slot(self, game_state, slot_number: int) -> bool:
+        """
+        Save game to a numbered slot (1-5).
+        
+        Args:
+            game_state: The game state to save
+            slot_number: Slot number (1-5)
+            
+        Returns:
+            True if save succeeded
+        """
+        if not 1 <= slot_number <= len(SAVE_SLOTS):
+            print(f"Invalid slot number: {slot_number}. Use 1-{len(SAVE_SLOTS)}.")
+            return False
+        
+        slot_name = SAVE_SLOTS[slot_number - 1]
+        return self.save_game(game_state, slot_name)
+    
+    def load_from_slot(self, slot_number: int, factory=None):
+        """
+        Load game from a numbered slot (1-5).
+        
+        Args:
+            slot_number: Slot number (1-5)
+            factory: Optional factory function to hydrate game state
+            
+        Returns:
+            Loaded game state or None
+        """
+        if not 1 <= slot_number <= len(SAVE_SLOTS):
+            print(f"Invalid slot number: {slot_number}. Use 1-{len(SAVE_SLOTS)}.")
+            return None
+        
+        slot_name = SAVE_SLOTS[slot_number - 1]
+        return self.load_game(slot_name, factory)
+    
+    def delete_slot(self, slot_number: int) -> bool:
+        """
+        Delete a save slot.
+        
+        Args:
+            slot_number: Slot number (1-5)
+            
+        Returns:
+            True if deletion succeeded
+        """
+        if not 1 <= slot_number <= len(SAVE_SLOTS):
+            print(f"Invalid slot number: {slot_number}.")
+            return False
+        
+        slot_name = SAVE_SLOTS[slot_number - 1]
+        filepath = os.path.join(self.save_dir, f"{slot_name}.json")
+        
+        try:
+            if os.path.exists(filepath):
+                # Create backup before deleting
+                self.backup_save(filepath)
+                os.remove(filepath)
+                print(f"Deleted save slot {slot_number}.")
+                return True
+            else:
+                print(f"Slot {slot_number} is already empty.")
+                return True
+        except Exception as e:
+            print(f"Failed to delete slot: {e}")
+            return False
+    
+    # === Campaign Save Management (Tier 10.2) ===
+    
+    def save_campaign(self, campaign_state: dict) -> bool:
+        """
+        Save survivor mode campaign state.
+        
+        Args:
+            campaign_state: Dictionary containing campaign progress
+            
+        Returns:
+            True if save succeeded
+        """
+        filepath = os.path.join(self.save_dir, "campaign.json")
+        
+        try:
+            # Backup existing campaign
+            self.backup_save(filepath)
+            
+            campaign_state["saved_at"] = datetime.now().isoformat()
+            campaign_state["save_version"] = CURRENT_SAVE_VERSION
+            campaign_state["checksum"] = compute_checksum(campaign_state)
+            
+            with open(filepath, 'w') as f:
+                json.dump(campaign_state, f, indent=2)
+            
+            print("Campaign progress saved.")
+            return True
+        except Exception as e:
+            print(f"Failed to save campaign: {e}")
+            return False
+    
+    def load_campaign(self) -> dict:
+        """
+        Load survivor mode campaign state.
+        
+        Returns:
+            Campaign state dictionary or None
+        """
+        filepath = os.path.join(self.save_dir, "campaign.json")
+        
+        if not os.path.exists(filepath):
+            return None
+        
+        try:
+            with open(filepath, 'r') as f:
+                data = json.load(f)
+            
+            # Verify checksum
+            stored_checksum = data.get("checksum")
+            if stored_checksum:
+                computed = compute_checksum(data)
+                if stored_checksum != computed:
+                    print("Warning: Campaign save may be corrupted.")
+            
+            return data
+        except (IOError, json.JSONDecodeError) as e:
+            print(f"Failed to load campaign: {e}")
+            return None
+    
+    def delete_campaign(self) -> bool:
+        """
+        Delete the campaign save (for permadeath ending).
+        
+        Returns:
+            True if deletion succeeded
+        """
+        filepath = os.path.join(self.save_dir, "campaign.json")
+        
+        try:
+            if os.path.exists(filepath):
+                # Create final backup before deleting
+                self.backup_save(filepath)
+                os.remove(filepath)
+                print("Campaign ended. Save deleted.")
+                return True
+            return True
+        except Exception as e:
+            print(f"Failed to delete campaign: {e}")
+            return False
+    
+    def get_save_slots_display(self) -> str:
+        """
+        Get a formatted string showing all save slots for display.
+        
+        Returns:
+            Formatted string for console display
+        """
+        slots = self.list_save_slots()
+        lines = ["=== SAVE SLOTS ===", ""]
+        
+        for i, slot in enumerate(slots):
+            if slot.get("is_autosave"):
+                prefix = "AUTO"
+            elif slot["slot_name"].startswith("slot_"):
+                prefix = f"  {slot['slot_name'][-1]}"
+            else:
+                prefix = "  ?"
+            
+            if slot.get("empty"):
+                lines.append(f"[{prefix}] - Empty -")
+            else:
+                timestamp = slot.get("timestamp", "Unknown")
+                if isinstance(timestamp, str) and "T" in timestamp:
+                    timestamp = timestamp.split("T")[0]
+                
+                turn = slot.get("turn", 0)
+                difficulty = slot.get("difficulty", "Normal")
+                
+                lines.append(f"[{prefix}] Turn {turn} | {difficulty} | {timestamp}")
+        
+        lines.append("")
+        lines.append("Use SAVE <1-5> or LOAD <1-5> to manage saves.")
+        
+        return "\n".join(lines)

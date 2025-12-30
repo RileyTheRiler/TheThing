@@ -1,0 +1,56 @@
+{
+    "roles": {
+        "default": {
+            "name": "Outpost Crew",
+            "description": "Standard station personnel",
+            "unlock_condition": null,
+            "bonuses": {}
+        },
+        "veteran": {
+            "name": "Veteran",
+            "description": "Hardened by combat. +2 to all combat rolls.",
+            "unlock_condition": {
+                "stat": "games_won",
+                "threshold": 3
+            },
+            "bonuses": {
+                "combat_modifier": 2
+            }
+        },
+        "scientist": {
+            "name": "Scientist",
+            "description": "Expert in blood analysis. Start with Test Kit.",
+            "unlock_condition": {
+                "stat": "blood_tests_performed",
+                "threshold": 10
+            },
+            "bonuses": {
+                "starting_items": [
+                    "Test Kit"
+                ]
+            }
+        },
+        "engineer": {
+            "name": "Engineer",
+            "description": "Master of repairs. Repair time -1 turn.",
+            "unlock_condition": {
+                "stat": "systems_repaired",
+                "threshold": 5
+            },
+            "bonuses": {
+                "repair_time_modifier": -1
+            }
+        },
+        "survivor": {
+            "name": "Survivor",
+            "description": "Endurance specialist. +20 max health.",
+            "unlock_condition": {
+                "stat": "total_turns_survived",
+                "threshold": 50
+            },
+            "bonuses": {
+                "max_health_modifier": 20
+            }
+        }
+    }
+}

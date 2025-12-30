@@ -11,6 +11,9 @@ class EventType(Enum):
     SOS_EMITTED = auto()
     ESCAPE_SUCCESS = auto()
     POPULATION_STATUS = auto()
+    # Tier 9 endings
+    GENERATOR_DESTROYED = auto()
+    UFO_CONSTRUCTED = auto()
 
     # "Biological Slip" Hook (Missionary -> Terminal)
     BIOLOGICAL_SLIP = auto()
@@ -21,6 +24,7 @@ class EventType(Enum):
     LYNCH_MOB_VOTE = auto()
     TRUST_THRESHOLD_CROSSED = auto()
     PARANOIA_THRESHOLD_CROSSED = auto()
+    MUTINY_TRIGGERED = auto()
 
     # "Searchlight" Hook (Missionary -> Psychologist)
     SEARCHLIGHT_HARVEST = auto()
@@ -69,6 +73,14 @@ class EventType(Enum):
     INFECTED_COORDINATION = auto()  # Infected NPCs coordinating ambush
     STATION_ALERT = auto()        # Station-wide alert triggered
     SKILL_LEVEL_UP = auto()       # Skill progression level up
+    META_UNLOCK = auto()          # Meta-progression role unlocked
+
+    # Tier 8: Advanced Social & AI (Paranoia)
+    RELATIONSHIP_CHANGE = auto()      # Friendship/rivalry score change
+    MUTINY_WARNING = auto()           # First mutiny phase - verbal confrontation
+    MUTINY_LOCKOUT = auto()           # NPCs refuse player commands
+    MUTINY_IMPRISONMENT = auto()      # Player locked in Generator Room
+    ESCAPE_ATTEMPT = auto()           # Player tries to escape imprisonment
 
 @dataclass
 class GameEvent:

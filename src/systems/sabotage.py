@@ -104,10 +104,9 @@ class SabotageManager:
             return None 
         
         self.radio_operational = False
-        if hasattr(game_state, "radio_operational"):
-        self.radio_working = False
-        if game_state:
+        if game_state and hasattr(game_state, "radio_operational"):
             game_state.radio_operational = False
+        self.radio_working = False
         self.events_triggered[SabotageEvent.RADIO_SMASHING] = True
         return "SABOTAGE: RADIO DESTROYED"
     

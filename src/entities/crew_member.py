@@ -13,9 +13,6 @@ class StealthPosture(Enum):
     CROUCHING = auto()
     CRAWLING = auto()
     HIDING = auto()
-    # Aliases for external callers/tests
-    EXPOSED = STANDING  # Alias for clarity in tests/UI
-    HIDDEN = HIDING
 
 
 class CrewMember:
@@ -87,6 +84,18 @@ class CrewMember:
         self.last_seen_player_location = None
         self.last_seen_player_room = None
         self.last_seen_player_turn = None
+
+        # Tier 8: Paranoia & Mimicry
+        self.relationship_tags = []  # List of "Friend:Name" or "Rival:Name"
+        self.mimicry_role = None     # Specific role behavior for infected (e.g., "dog_handler")
+        self.mimicry_mode = "blend_in"  # blend_in, opportunistic, sabotage, accuse
+        self.innocent_kills = 0      # Track kills for mutiny trigger
+        self.refused_blood_test = False  # Track blood test refusal for mutiny
+
+        # Inventory management
+        self.inventory: List[Item] = []
+        self.item_history: List[str] = [] # Track items held for forensics
+
         self.search_targets = []
         self.current_search_target = None
         self.search_turns_remaining = 0
@@ -295,6 +304,11 @@ class CrewMember:
             "schedule": self.schedule,
             "invariants": self.invariants,
             "knowledge_tags": self.knowledge_tags,
+            "relationship_tags": self.relationship_tags,
+            "mimicry_role": self.mimicry_role,
+            "mimicry_mode": getattr(self, "mimicry_mode", "blend_in"),
+            "innocent_kills": getattr(self, "innocent_kills", 0),
+            "refused_blood_test": getattr(self, "refused_blood_test", False),
             "stealth_posture": self.stealth_posture.name,
             "in_vent": self.in_vent,
             "security_role": getattr(self, "security_role", False),
@@ -440,6 +454,12 @@ class CrewMember:
                 m.inventory.append(item)
         
         m.stealth_posture = safe_enum(StealthPosture, "stealth_posture", StealthPosture.STANDING)
+
+        m.relationship_tags = data.get("relationship_tags", [])
+        m.mimicry_role = data.get("mimicry_role")
+        m.mimicry_mode = data.get("mimicry_mode", "blend_in")
+        m.innocent_kills = data.get("innocent_kills", 0)
+        m.refused_blood_test = data.get("refused_blood_test", False)
         
         return m
 

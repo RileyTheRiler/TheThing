@@ -496,12 +496,9 @@ class StealthSystem:
             "target_location": destination,
             "noise_level": noise_level,
             "intensity": noise_level,
-            "priority_override": 2,
+            "priority_override": 3,
             "linger_turns": 3,
             "threat": "vent_close_quarters",
-            "priority_override": 3,
-            "game_state": game_state
-        }))
             "game_state": game_state,
             "actor_ref": actor,
             "actor": getattr(actor, "name", None),
@@ -520,7 +517,6 @@ class StealthSystem:
             adj_room = neighbor["room"]
             # Reduced noise at adjacent nodes (echo falloff)
             echo_noise = max(noise_level - 3, base_noise)
-            event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, {
             echo_noise = max(noise_level - 3, 5)
             echo_payload = normalize_perception_payload({
                 "source": "vent_echo",
@@ -532,8 +528,6 @@ class StealthSystem:
                 "priority_override": 1,
                 "linger_turns": 2,
                 "threat": "vent_close_quarters",
-                "game_state": game_state
-            }))
                 "game_state": game_state,
                 "actor_ref": actor,
                 "actor": getattr(actor, "name", None),

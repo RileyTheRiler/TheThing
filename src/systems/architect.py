@@ -177,7 +177,8 @@ class TimeSystem:
         self.tick()
         game_state = event.payload.get("game_state")
         power_on = game_state.power_on if game_state else True
-        self.update_environment(power_on)
+        generator_destroyed = getattr(game_state, 'generator_destroyed', False) if game_state else False
+        self.update_environment(power_on, generator_destroyed)
 
     def tick(self):
         """Advance time by one turn."""
@@ -197,11 +198,27 @@ class TimeSystem:
 
 
 
-    def update_environment(self, power_on):
+    def update_environment(self, power_on, generator_destroyed=False):
         """Updates environmental factors based on power state."""
         old_temp = self.temperature
-        res = ResolutionSystem()
-        self.temperature = res.calculate_thermal_decay(self.temperature, power_on)
+        
+        if generator_destroyed:
+            # Death spiral: -10°C per turn when generator is destroyed
+            self.temperature -= 10
+            
+            # Emit warning at key thresholds
+            if old_temp > -60 >= self.temperature:
+                event_bus.emit(GameEvent(EventType.WARNING, {
+                    "text": "The temperature has dropped to -60°C. Things are becoming sluggish..."
+                }))
+            elif old_temp > -80 >= self.temperature:
+                event_bus.emit(GameEvent(EventType.WARNING, {
+                    "text": "CRITICAL: -80°C reached. Cellular activity is ceasing..."
+                }))
+        else:
+            res = ResolutionSystem()
+            self.temperature = res.calculate_thermal_decay(self.temperature, power_on)
+        
         return self.temperature - old_temp, self.temperature
 
     def to_dict(self):

@@ -8,6 +8,9 @@ class RoomState(Enum):
     FROZEN = auto()     # Below freezing - health drain, resolve checks
     BARRICADED = auto() # Blocked entry - must break barricade
     BLOODY = auto()     # Evidence of violence - paranoia increase
+    DAMAGED = auto()    # Broken equipment - reduced functionality
+    LOCKED = auto()     # Door locked - requires lockpicking or key
+    FLOODED = auto()    # Water damage - movement penalty
 
 
 class RoomStateManager:
@@ -119,6 +122,49 @@ class RoomStateManager:
 
         # Schedule slip detection (Agent hook)
         self._check_schedule_slips(game_state)
+
+    def apply_random_modifiers(self, rng, exclude_rooms=None):
+        """Apply random modifiers to rooms at game start (20% chance per room)."""
+        exclude_rooms = exclude_rooms or {"Generator", "Radio Room"}
+        
+        possible_modifiers = [
+            RoomState.DAMAGED,
+            RoomState.DARK,
+            RoomState.LOCKED,
+            RoomState.FLOODED,
+            RoomState.FROZEN,
+            RoomState.BARRICADED
+        ]
+        
+        applied_count = 0
+        for room_name in self.room_states:
+            if room_name in exclude_rooms:
+                continue
+            if rng.random() < 0.20:  # 20% chance
+                if hasattr(rng, 'choose'):
+                    modifier = rng.choose(possible_modifiers)
+                else:
+                    import random
+                    modifier = random.choice(possible_modifiers)
+                
+                self.add_state(room_name, modifier)
+                applied_count += 1
+                
+                # Emit event for UI feedback
+                event_bus.emit(GameEvent(EventType.MESSAGE, {
+                    "text": f"[ROOM CONDITION] {room_name}: {modifier.name}"
+                }))
+                
+                # Handle side effects
+                if modifier == RoomState.BARRICADED:
+                    self.barricade_strength[room_name] = 1
+                    self.add_state(room_name, RoomState.DARK)
+                if modifier == RoomState.LOCKED:
+                    if not hasattr(self, 'locked_doors'):
+                        self.locked_doors = {}
+                    self.locked_doors[room_name] = True
+        
+        return applied_count
     
     def get_room_description_modifiers(self, room_name):
         states = self.get_states(room_name)
@@ -128,6 +174,9 @@ class RoomStateManager:
         if RoomState.FROZEN in states: descriptions.append("Ice crystals coat every surface.")
         if RoomState.BARRICADED in states: descriptions.append("The entrance is blocked.")
         if RoomState.BLOODY in states: descriptions.append("Dark stains mar the floor.")
+        if RoomState.DAMAGED in states: descriptions.append("Equipment is broken and sparking.")
+        if RoomState.LOCKED in states: descriptions.append("The door is locked.")
+        if RoomState.FLOODED in states: descriptions.append("Water pools on the floor.")
         return " ".join(descriptions)
     
     def get_status_icons(self, room_name):
@@ -137,6 +186,9 @@ class RoomStateManager:
         if RoomState.FROZEN in states: icons.append("[COLD]")
         if RoomState.BARRICADED in states: icons.append("[BARR]")
         if RoomState.BLOODY in states: icons.append("[BLOOD]")
+        if RoomState.DAMAGED in states: icons.append("[DMGD]")
+        if RoomState.LOCKED in states: icons.append("[LOCK]")
+        if RoomState.FLOODED in states: icons.append("[FLOOD]")
         return " ".join(icons)
     
     def is_frozen(self, room_name):

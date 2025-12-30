@@ -1,5 +1,5 @@
 import random
-from src.core.logger import hidden_logger
+from core.logger import hidden_logger
 from core.event_system import event_bus, EventType, GameEvent
 
 class MissionarySystem:

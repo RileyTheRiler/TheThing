@@ -80,6 +80,15 @@ class Renderer3D {
         // Start loading assets
         this.loadAssets();
 
+        // --- Interactive Terminals (Tier 11.2) ---
+        this.terminals = new Map(); // Key: roomName, Value: THREE.Mesh
+        this.terminalGlowStates = {}; // Track which terminals are glowing
+        this.raycaster = new THREE.Raycaster();
+        this.mouse = new THREE.Vector2();
+
+        // Click handler for terminal interaction
+        this.renderer.domElement.addEventListener('click', this.onCanvasClick.bind(this), false);
+
         // Animation loop
         this.animate();
     }
@@ -166,7 +175,21 @@ class Renderer3D {
     update(gameState) {
         if (!gameState) return;
 
+        // Store visibility data for other methods
+        this.visibleRooms = gameState.visible_rooms || [];
+        this.roomLighting = gameState.room_lighting || {};
+        this.flashlightActive = gameState.flashlight_active || false;
+        this.playerRoom = gameState.location;
+
         this.updateMap(gameState);
+        this.updateRoomVisibility(gameState);
+
+        // Create terminals once on first update
+        if (!this.terminalsCreated) {
+            this.createTerminals();
+            this.terminalsCreated = true;
+        }
+
         this.updateCharacters(gameState);
         this.updateAtmosphere(gameState);
         // this.updateItems(gameState); 
@@ -309,6 +332,202 @@ class Renderer3D {
         sprite.scale.set(8, 2, 1);
         return sprite;
     }
+
+    // --- 3D Fog of War (Tier 11.1) ---
+    updateRoomVisibility(gameState) {
+        // Room bounding boxes (matching station_map.py)
+        const roomBounds = {
+            "Rec Room": { x1: 5, y1: 5, x2: 10, y2: 10 },
+            "Infirmary": { x1: 0, y1: 0, x2: 4, y2: 4 },
+            "Generator": { x1: 15, y1: 15, x2: 19, y2: 19 },
+            "Kennel": { x1: 0, y1: 15, x2: 4, y2: 19 },
+            "Radio Room": { x1: 11, y1: 0, x2: 14, y2: 4 },
+            "Storage": { x1: 15, y1: 0, x2: 19, y2: 4 },
+            "Lab": { x1: 11, y1: 11, x2: 14, y2: 14 },
+            "Sleeping Quarters": { x1: 0, y1: 6, x2: 4, y2: 10 },
+            "Mess Hall": { x1: 5, y1: 0, x2: 9, y2: 4 },
+            "Hangar": { x1: 5, y1: 15, x2: 10, y2: 19 }
+        };
+
+        // Initialize fog overlay group if not exists
+        if (!this.fogGroup) {
+            this.fogGroup = new THREE.Group();
+            this.scene.add(this.fogGroup);
+        }
+
+        // Clear existing fog overlays
+        while (this.fogGroup.children.length > 0) {
+            this.fogGroup.remove(this.fogGroup.children[0]);
+        }
+
+        const visibleRooms = this.visibleRooms || [];
+        const playerRoom = this.playerRoom;
+        const roomLighting = this.roomLighting || {};
+
+        for (const [roomName, bounds] of Object.entries(roomBounds)) {
+            const lighting = roomLighting[roomName] || {};
+            const visibility = lighting.visibility || 'hidden';
+            const isDark = lighting.is_dark || false;
+
+            // Determine fog opacity based on visibility
+            let fogOpacity = 0;
+            let fogColor = 0x000000;
+
+            if (visibility === 'full') {
+                // Current room - no fog unless dark
+                fogOpacity = isDark ? 0.3 : 0;
+            } else if (visibility === 'partial') {
+                // Adjacent room through open door - dim
+                fogOpacity = isDark ? 0.6 : 0.3;
+            } else {
+                // Hidden room - heavy fog
+                fogOpacity = isDark ? 0.85 : 0.7;
+            }
+
+            // Only create fog overlay if needed
+            if (fogOpacity > 0) {
+                const width = (bounds.x2 - bounds.x1 + 1) * this.gridScale;
+                const height = (bounds.y2 - bounds.y1 + 1) * this.gridScale;
+                const centerX = ((bounds.x1 + bounds.x2) / 2) * this.gridScale;
+                const centerZ = ((bounds.y1 + bounds.y2) / 2) * this.gridScale;
+
+                const fogGeo = new THREE.PlaneGeometry(width, height);
+                const fogMat = new THREE.MeshBasicMaterial({
+                    color: fogColor,
+                    transparent: true,
+                    opacity: fogOpacity,
+                    side: THREE.DoubleSide,
+                    depthWrite: false
+                });
+                const fogMesh = new THREE.Mesh(fogGeo, fogMat);
+                fogMesh.rotation.x = -Math.PI / 2;
+                fogMesh.position.set(centerX, 0.5, centerZ); // Slightly above floor
+                fogMesh.userData.roomName = roomName;
+                this.fogGroup.add(fogMesh);
+            }
+        }
+    }
+
+    // --- Interactive Terminals (Tier 11.2) ---
+    createTerminals() {
+        // Terminal positions (near room corner, not obstructing center)
+        const terminalPositions = {
+            "Rec Room": { x: 6, y: 6 },
+            "Infirmary": { x: 1, y: 1 },
+            "Generator": { x: 16, y: 16 },
+            "Kennel": { x: 1, y: 16 },
+            "Radio Room": { x: 12, y: 1 },
+            "Storage": { x: 16, y: 1 },
+            "Lab": { x: 12, y: 12 },
+            "Sleeping Quarters": { x: 1, y: 7 },
+            "Mess Hall": { x: 6, y: 1 },
+            "Hangar": { x: 6, y: 16 }
+        };
+
+        // Create terminal group
+        if (!this.terminalGroup) {
+            this.terminalGroup = new THREE.Group();
+            this.scene.add(this.terminalGroup);
+        }
+
+        // Clear existing terminals
+        while (this.terminalGroup.children.length > 0) {
+            this.terminalGroup.remove(this.terminalGroup.children[0]);
+        }
+        this.terminals.clear();
+
+        for (const [roomName, pos] of Object.entries(terminalPositions)) {
+            // Terminal body (box)
+            const bodyGeo = new THREE.BoxGeometry(0.6, 1.2, 0.4);
+            const bodyMat = new THREE.MeshStandardMaterial({
+                color: 0x222233,
+                roughness: 0.8,
+                metalness: 0.3
+            });
+            const body = new THREE.Mesh(bodyGeo, bodyMat);
+            body.position.y = 0.6;
+
+            // Terminal screen (emissive plane)
+            const screenGeo = new THREE.PlaneGeometry(0.5, 0.4);
+            const screenMat = new THREE.MeshBasicMaterial({
+                color: 0x00ff88,
+                emissive: 0x00ff88,
+                transparent: true,
+                opacity: 0.9
+            });
+            const screen = new THREE.Mesh(screenGeo, screenMat);
+            screen.position.set(0, 0.9, 0.21);
+
+            // Group terminal components
+            const terminal = new THREE.Group();
+            terminal.add(body);
+            terminal.add(screen);
+            terminal.position.set(pos.x * this.gridScale, 0, pos.y * this.gridScale);
+            terminal.userData.roomName = roomName;
+            terminal.userData.isTerminal = true;
+            terminal.userData.screen = screen;
+
+            this.terminalGroup.add(terminal);
+            this.terminals.set(roomName, terminal);
+        }
+    }
+
+    onCanvasClick(event) {
+        // Calculate mouse position in normalized device coordinates
+        const rect = this.renderer.domElement.getBoundingClientRect();
+        this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+        // Update raycaster
+        this.raycaster.setFromCamera(this.mouse, this.camera);
+
+        // Check terminal intersections
+        if (this.terminalGroup) {
+            const terminalMeshes = [];
+            this.terminalGroup.traverse((child) => {
+                if (child.isMesh) terminalMeshes.push(child);
+            });
+
+            const intersects = this.raycaster.intersectObjects(terminalMeshes, false);
+            if (intersects.length > 0) {
+                // Find the parent terminal group
+                let terminal = intersects[0].object;
+                while (terminal && !terminal.userData.isTerminal) {
+                    terminal = terminal.parent;
+                }
+
+                if (terminal && terminal.userData.roomName) {
+                    this.openTerminalModal(terminal.userData.roomName);
+                }
+            }
+        }
+    }
+
+    openTerminalModal(roomName) {
+        // Dispatch custom event for game.js to handle modal opening
+        const event = new CustomEvent('terminalClicked', {
+            detail: { roomName: roomName }
+        });
+        window.dispatchEvent(event);
+        console.log(`Terminal clicked: ${roomName}`);
+    }
+
+    updateTerminalGlow(roomName, glowing) {
+        const terminal = this.terminals.get(roomName);
+        if (terminal && terminal.userData.screen) {
+            const screen = terminal.userData.screen;
+            if (glowing) {
+                // Pulsing glow effect
+                screen.material.color.setHex(0xff8800); // Orange
+                screen.material.opacity = 0.7 + Math.sin(Date.now() * 0.01) * 0.3;
+            } else {
+                // Normal state
+                screen.material.color.setHex(0x00ff88); // Green
+                screen.material.opacity = 0.9;
+            }
+        }
+    }
+
     // ... updateMap and parseAsciiMap methods ...
 
     updateCharacters(gameState) {
@@ -329,6 +548,41 @@ class Renderer3D {
 
                 // Update position
                 group.position.set(x, group.position.y, z);
+
+                // --- 3D Visibility: Hide NPCs in non-visible rooms (Tier 11.1) ---
+                const memberRoom = member.location;
+                const visibleRooms = this.visibleRooms || [];
+                const roomLighting = this.roomLighting || {};
+                const flashlight = this.flashlightActive || false;
+                const isPlayer = member.name === 'MacReady';
+
+                if (!isPlayer) {
+                    const roomInfo = roomLighting[memberRoom] || {};
+                    const roomVisibility = roomInfo.visibility || 'hidden';
+                    const isRoomDark = roomInfo.is_dark || false;
+
+                    // Determine NPC visibility
+                    let npcOpacity = 1.0;
+                    if (roomVisibility === 'hidden' && !flashlight) {
+                        // NPC in non-visible room - completely hidden
+                        npcOpacity = 0;
+                    } else if (isRoomDark && !flashlight) {
+                        // NPC in dark room but visible - silhouette (very dim)
+                        npcOpacity = 0.2;
+                    } else if (roomVisibility === 'partial') {
+                        // NPC in adjacent room - slightly dimmed
+                        npcOpacity = 0.7;
+                    }
+
+                    // Apply visibility to all meshes in group
+                    group.traverse((node) => {
+                        if (node.isMesh) {
+                            node.material.transparent = true;
+                            node.material.opacity = npcOpacity;
+                        }
+                    });
+                    group.visible = npcOpacity > 0;
+                }
 
                 // Rotate to face movement direction (approximate if we tracked history)
                 if (isMoving) {

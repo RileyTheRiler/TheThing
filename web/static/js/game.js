@@ -125,7 +125,86 @@ document.addEventListener('DOMContentLoaded', function () {
             showToast(event.data.text, 'warning');
         }
     });
+
+    // --- Terminal Click Event (Tier 11.2) ---
+    window.addEventListener('terminalClicked', (event) => {
+        openTerminalModal(event.detail.roomName);
+    });
 });
+
+// ===== TERMINAL MODAL (Tier 11.2) =====
+let terminalModalOpen = false;
+
+function openTerminalModal(roomName) {
+    const modal = document.getElementById('terminal-modal');
+    if (!modal) return;
+
+    // Update room name
+    const roomTitle = document.getElementById('terminal-room-name');
+    if (roomTitle) {
+        roomTitle.textContent = `🖥 TERMINAL: ${roomName.toUpperCase()}`;
+    }
+
+    // Update room status from game state
+    const roomStatus = document.getElementById('terminal-room-status');
+    if (roomStatus && gameState) {
+        const lighting = gameState.room_lighting ? gameState.room_lighting[roomName] : null;
+        const visibleRooms = gameState.visible_rooms || [];
+        let statusText = '';
+
+        if (lighting) {
+            statusText += lighting.is_dark ? '⚠ POWER OFFLINE - DARK\n' : '✓ POWER ONLINE\n';
+            statusText += lighting.is_powered ? '✓ Systems Nominal' : '⚠ Emergency Mode';
+        } else {
+            statusText = 'Status: Connected';
+        }
+        roomStatus.textContent = statusText;
+    }
+
+    // Update equipment status
+    const equipment = document.getElementById('terminal-equipment');
+    if (equipment && gameState) {
+        let equipText = '';
+        if (roomName === 'Generator') {
+            equipText = gameState.power_on ? '✓ Generator: OPERATIONAL' : '⚠ Generator: OFFLINE';
+        } else if (roomName === 'Radio Room') {
+            equipText = '📡 Radio: Standby';
+        } else if (roomName === 'Lab') {
+            equipText = '🔬 Lab Equipment: Available';
+        } else if (roomName === 'Infirmary') {
+            equipText = '🏥 Medical Supplies: Stocked';
+        } else {
+            equipText = 'Standard Equipment';
+        }
+        equipment.textContent = equipText;
+    }
+
+    // Find crew in this room
+    const eventsDiv = document.getElementById('terminal-events');
+    if (eventsDiv && gameState && gameState.crew) {
+        const crewInRoom = gameState.crew.filter(c => c.location === roomName);
+        if (crewInRoom.length > 0) {
+            eventsDiv.innerHTML = crewInRoom.map(c =>
+                `<div class="event-entry">👤 ${c.name} (${c.role}) - ${c.is_alive ? 'Present' : 'DECEASED'}</div>`
+            ).join('');
+        } else {
+            eventsDiv.innerHTML = '<div class="event-entry">No personnel detected</div>';
+        }
+    }
+
+    modal.classList.remove('hidden');
+    terminalModalOpen = true;
+}
+
+function closeTerminalModal() {
+    const modal = document.getElementById('terminal-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+        terminalModalOpen = false;
+        const input = document.getElementById('command-input');
+        if (input) input.focus();
+    }
+}
 
 function setupEventListeners() {
     const commandInput = document.getElementById('command-input');

@@ -147,6 +147,14 @@ class GameState:
         self.random_events = RandomEventSystem(self.rng, config_registry=self.design_registry)
         self.environmental_coordinator = EnvironmentalCoordinator()
         self.room_states = RoomStateManager(list(self.station_map.rooms.keys()))
+
+        # Map Variants (Tier 9)
+        from systems.map_variants import MapVariantSystem
+        self.map_variants = MapVariantSystem(self.rng)
+        self.map_variants.apply_variants(self)
+        
+        # Random Room Modifiers (Tier 9.2) - 20% chance per room
+        self.room_states.apply_random_modifiers(self.rng)
         
         # 6. Initialize Crew (sets self.player)
         self._initialize_crew()  
@@ -290,89 +298,37 @@ class GameState:
 
     def advance_turn(self, power_on: Optional[bool] = None):
         """Advance the game by one turn."""
+        if self.game_over:
+            return
+
         self.turn += 1
         
         for member in self.crew:
             member.slipped_vapor = False
-            if hasattr(member, "record_movement"):
-                member.record_movement(self)
         
         self.paranoia_level = min(100, self.paranoia_level + 1)
         
-        # Advance time, environment, and emit TURN_ADVANCE via the TimeSystem
-        self.time_system.advance_turn(self.power_on, game_state=self, rng=self.rng)
         if power_on is not None:
             self.power_on = power_on
 
-        # TimeSystem and others react to TURN_ADVANCE event
-        turn_inventory = {"weather": 0, "sabotage": 0, "ai": 0, "random_events": 0, "random_event_triggered": None}
-
-        if self.rescue_signal_active and self.rescue_turns_remaining is not None:
-            self.rescue_turns_remaining -= 1
-            if self.rescue_turns_remaining == 5:
-                event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "Rescue ETA updated: 5 hours out."}))
-            elif self.rescue_turns_remaining == 1:
-                event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "Rescue team landing imminent!"}))
-            if self.rescue_turns_remaining <= 0:
-                self.rescue_turns_remaining = 0
-
+        # Emit TURN_ADVANCE; TimeSystem and EndgameSystem will react to this.
         event_bus.emit(GameEvent(EventType.TURN_ADVANCE, {
             "game_state": self,
             "rng": self.rng,
             "turn": self.turn,
-            "turn_inventory": turn_inventory
+            "turn_inventory": {"weather": 0, "sabotage": 0, "ai": 0, "random_events": 0}
         }))
         
-        player_room = self.station_map.get_room_name(*self.player.location)
-        paranoia_mod = self.room_states.get_paranoia_modifier(player_room)
-        if paranoia_mod > 0:
-            self.paranoia_level = min(100, self.paranoia_level + paranoia_mod)
-        
-        self.lynch_mob.check_thresholds(self.crew, current_paranoia=self.paranoia_level)
-        
-        
-        turn_inventory["ai"] += 1
-
-        random_event = self.random_events.check_for_event(self)
-        turn_inventory["random_events"] += 1
-        if random_event:
-            turn_inventory["random_event_triggered"] = random_event.id
-            self.random_events.execute_event(random_event, self)
-
-        self.turn_behavior_inventory = turn_inventory
-
+        # Check for rescue progression (fallback if system not active, but EndgameSystem handles it)
         if self.rescue_signal_active and self.rescue_turns_remaining is not None:
-            if not self.radio_operational:
-                event_bus.emit(GameEvent(EventType.WARNING, {"text": "The radio is dead. Your SOS beacon fails."}))
-                self.rescue_signal_active = False
-                self.rescue_turns_remaining = None
-            else:
-                self.rescue_turns_remaining -= 1
-                if self.rescue_turns_remaining == 5:
-                    event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "Rescue ETA updated: 5 hours out."}))
-                elif self.rescue_turns_remaining == 1:
-                    event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "Rescue team landing imminent!"}))
-                if self.rescue_turns_remaining <= 0:
-                    self.rescue_turns_remaining = 0
-                    event_bus.emit(GameEvent(EventType.SOS_SENT, {
-                        "game_state": self,
-                        "arrived": True,
-                        "turn": self.turn
-                    }))
+            self.rescue_turns_remaining -= 1
+            if self.rescue_turns_remaining <= 0:
+                self.rescue_turns_remaining = 0
+                event_bus.emit(GameEvent(EventType.SOS_SENT, {"game_state": self, "arrived": True}))
 
-        if self.escape_route == "overland" and self.overland_escape_turns is not None:
-            self.overland_escape_turns -= 1
-            if self.overland_escape_turns <= 0:
-                self.overland_escape_turns = 0
-                self.helicopter_status = "ESCAPED"
-                event_bus.emit(GameEvent(EventType.ESCAPE_SUCCESS, {
-                    "game_state": self,
-                    "route": "overland"
-                }))
-            else:
-                event_bus.emit(GameEvent(EventType.MESSAGE, {
-                    "text": f"The whiteout howls. {self.overland_escape_turns} hours until you reach the rendezvous grid."
-                }))
+        self._emit_population_status()
+        if hasattr(self, 'reporter'):
+            self.reporter.flush()
 
         if self.turn % 5 == 0 and hasattr(self, 'save_manager'):
             try:

@@ -998,21 +998,6 @@ def _execute_command(game, cmd):
         if getattr(game, "_last_action_successful", False):
             game.advance_turn()
 
-    elif action == "SIGNAL":
-        print(game.attempt_radio_signal())
-        if getattr(game, "_last_action_successful", False):
-        target_text = " ".join(cmd[1:]).upper() if cmd[1:] else ""
-        if "RADIO" in target_text:
-            success, message, evt_type = game.attempt_repair_radio()
-        else:
-            # Default behavior if specific object not mentioned, try to infer context or fail
-            success, message, evt_type = game.attempt_repair_helicopter()
-        if evt_type == EventType.WARNING:
-            game.crt.warning(message)
-        else:
-            print(message)
-        if success:
-            game.advance_turn()
 
     elif action == "SIGNAL":
         success, message, evt_type = game.attempt_radio_signal()
@@ -1030,7 +1015,6 @@ def _execute_command(game, cmd):
         else:
             print(message)
         # The win condition check in main loop will catch the status change
-        if getattr(game, "_last_action_successful", False):
         if success:
             game.advance_turn()
 

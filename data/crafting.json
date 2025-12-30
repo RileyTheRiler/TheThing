@@ -195,6 +195,55 @@
             "effect_value": 1,
             "deployable": true,
             "uses": 1
+        },
+        {
+            "id": "flamethrower_crafted",
+            "name": "Flamethrower",
+            "description": "Improvised flamethrower. Burn it all.",
+            "category": "weapon",
+            "weapon_skill": "FIREARMS",
+            "damage": 3,
+            "ingredients": [
+                "Blowtorch",
+                "Fuel Canister",
+                "Copper Wire"
+            ],
+            "craft_time": 3,
+            "uses": 5,
+            "deployable": false,
+            "creates_light": true
+        },
+        {
+            "id": "stun_baton",
+            "name": "Stun Baton",
+            "description": "Electrified rod capable of stunning targets.",
+            "category": "weapon",
+            "weapon_skill": "MELEE",
+            "damage": 1,
+            "ingredients": [
+                "Mop Handle",
+                "Copper Wire",
+                "Metal Scrap"
+            ],
+            "craft_time": 2,
+            "effect": "stun",
+            "effect_value": 1,
+            "uses": 10
+        },
+        {
+            "id": "riot_shield",
+            "name": "Improvised Shield",
+            "description": "Reinforced barrier for personal defense.",
+            "category": "armor",
+            "ingredients": [
+                "Wooden Plank",
+                "Metal Scrap",
+                "Rope"
+            ],
+            "craft_time": 3,
+            "effect": "defense_up",
+            "effect_value": 2,
+            "uses": -1
         }
     ]
 }

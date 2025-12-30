@@ -115,8 +115,24 @@
                 "result": "win",
                 "trigger": "sabotage_escape",
                 "message": "You flee into the storm as Outpost 31 dies behind you. Survival came at a terrible cost."
+            },
+            {
+                "id": "escape_success",
+                "result": "win",
                 "trigger": "escape_success",
                 "message": "With the generators silent and the base burning behind you, you disappear into the endless ice."
+            },
+            {
+                "id": "freeze_out",
+                "result": "win",
+                "trigger": "generator_destroyed",
+                "message": "The station freezes over. The Thing is trapped in the ice, but so are you."
+            },
+            {
+                "id": "blair_thing",
+                "result": "loss",
+                "trigger": "ufo_constructed",
+                "message": "It built a ship. It's leaving. And it's taking the world with it."
             }
         ]
     },

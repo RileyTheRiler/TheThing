@@ -1896,6 +1896,124 @@ body {
     color: var(--warning-yellow);
 }
 
+/* ===== TERMINAL STATUS MODAL (Tier 11.2) ===== */
+.terminal-modal-content {
+    max-width: 450px;
+    background-color: #0a100a;
+    border: 2px solid #00ff41;
+    box-shadow: 0 0 30px rgba(0, 255, 65, 0.5), inset 0 0 100px rgba(0, 255, 65, 0.05);
+    position: relative;
+    overflow: hidden;
+}
+
+.terminal-modal-content::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: repeating-linear-gradient(0deg,
+            rgba(0, 0, 0, 0.3) 0px,
+            rgba(0, 0, 0, 0.3) 1px,
+            transparent 1px,
+            transparent 2px);
+    pointer-events: none;
+    animation: scanlines 8s linear infinite;
+}
+
+@keyframes scanlines {
+    0% {
+        transform: translateY(0);
+    }
+
+    100% {
+        transform: translateY(4px);
+    }
+}
+
+.terminal-header {
+    background-color: #001a00 !important;
+    border-bottom: 1px solid #00ff41 !important;
+}
+
+.terminal-header h3 {
+    color: #00ff41 !important;
+    text-shadow: 0 0 10px #00ff41;
+    font-size: 1rem;
+}
+
+.terminal-status {
+    padding: 15px 20px;
+    position: relative;
+    z-index: 1;
+}
+
+.terminal-section {
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px dashed rgba(0, 255, 65, 0.3);
+}
+
+.terminal-section:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+
+.terminal-section h4 {
+    color: #00ff41;
+    font-size: 0.75rem;
+    letter-spacing: 2px;
+    margin-bottom: 8px;
+    text-shadow: 0 0 5px #00ff41;
+}
+
+.terminal-data {
+    color: #00cc33;
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+
+.terminal-events-list {
+    max-height: 100px;
+    overflow-y: auto;
+}
+
+.event-entry {
+    padding: 3px 0;
+    font-size: 0.8rem;
+    border-left: 2px solid #00ff41;
+    padding-left: 8px;
+    margin-bottom: 5px;
+}
+
+.terminal-actions {
+    display: flex;
+    gap: 10px;
+    padding: 10px 20px 15px;
+    border-top: 1px solid rgba(0, 255, 65, 0.3);
+    position: relative;
+    z-index: 1;
+}
+
+.terminal-btn {
+    flex: 1;
+    padding: 8px 15px;
+    background-color: transparent;
+    border: 1px solid #00ff41;
+    color: #00ff41;
+    font-family: 'Courier New', monospace;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.terminal-btn:hover {
+    background-color: #00ff41;
+    color: #000;
+    box-shadow: 0 0 15px #00ff41;
+}
+
 /* ===== JOURNAL MODAL ===== */
 .journal-modal-content {
     max-width: 600px;

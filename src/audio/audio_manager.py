@@ -66,6 +66,8 @@ class Sound(Enum):
     TENSION = "tension"       # Detected/suspicion sting
     SUSPICION = "suspicion"   # Low suspicion whisper
     IMPACT = "impact"         # Combat hit
+    CRUNCH = "crunch"         # Snow footsteps
+    STINGER = "stinger"       # Jump scare / Dramatic realization
 
     # UI Sounds
     BEEP = "beep"             # Command confirmation
@@ -101,6 +103,8 @@ class AudioManager:
         Sound.TENSION: (600, 900),      # Tense rising sting
         Sound.SUSPICION: (250, 350),    # Low whisper-like tone
         Sound.IMPACT: (150, 100),       # Combat thud
+        Sound.CRUNCH: (300, 400),       # Dry crunch
+        Sound.STINGER: (800, 100),      # Sharp descending shrieking tone
     }
     
     # Duration in milliseconds
@@ -139,6 +143,9 @@ class AudioManager:
 
         # Stealth / Detection
         EventType.STEALTH_REPORT: Sound.TENSION,  # Detection tension sting
+
+        # Paranoia
+        EventType.PARANOIA_THRESHOLD_CROSSED: Sound.STINGER,
 
         # Trust / Suspicion
         EventType.TRUST_THRESHOLD_CROSSED: Sound.SUSPICION,  # Suspicion whisper
@@ -198,7 +205,9 @@ class AudioManager:
 
         # Tier 6.4: Subscribe to events
         self._subscribe_to_events()
-        self._prime_room_ambient()
+        # Initialize room ambient logic if possible (requires station_map)
+        if self.station_map and self.player_ref:
+            self._prime_room_ambient()
 
     def cleanup(self):
         """Unsubscribe and shutdown."""
@@ -248,6 +257,13 @@ class AudioManager:
                 elif noise < 4:
                     sound = Sound.SHUFFLE
                     priority = 3 # Softer/Less important
+            
+            # Check for outdoor movement (Crunching snow)
+            # Rooms that are "outside" or near outside: Hangar? 
+            # Actually, let's just use the room name.
+            destination_room = event.payload.get("destination", "")
+            if destination_room in ["Hangar", "Outside", "Kennel"]:
+                sound = Sound.CRUNCH
         
         # Spatial Filtering
         # If the event has a room/location, only play it if it's "close" to the player

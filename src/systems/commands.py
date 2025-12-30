@@ -488,10 +488,10 @@ class TestCommand(Command):
         # Rapid heating and application to keep legacy behavior
         for _ in range(4):
             event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
-                "text": sim.heat_wire(game_state.rng)
+                "text": sim.heat_wire()
             }))
 
-        result = sim.apply_wire(target.is_infected, game_state.rng)
+        result = sim.apply_wire(target.is_infected)
         event_bus.emit(GameEvent(EventType.TEST_RESULT, {
             "subject": target.name,
             "result": result,
@@ -513,7 +513,7 @@ class HeatCommand(Command):
         if not sim.active:
             event_bus.emit(GameEvent(EventType.ERROR, {"text": "No test in progress."}))
             return
-        event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {"text": sim.heat_wire(game_state.rng)}))
+        event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {"text": sim.heat_wire()}))
 
 
 class ApplyCommand(Command):
@@ -851,34 +851,95 @@ class StatusCommand(Command):
 class SaveCommand(Command):
     name = "SAVE"
     aliases = []
-    description = "Save the game."
+    description = "Save the game. Usage: SAVE [1-5] - saves to numbered slot, or SAVE for autosave."
 
     def execute(self, context: GameContext, args: List[str]) -> None:
         game_state = context.game
-        slot = args[0] if args else "auto"
-        game_state.save_manager.save_game(game_state, slot)
+        
+        if args:
+            # Check for numbered slot
+            try:
+                slot_num = int(args[0])
+                if 1 <= slot_num <= 5:
+                    success = game_state.save_manager.save_to_slot(game_state, slot_num)
+                    if success:
+                        event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+                            "text": f"Game saved to slot {slot_num}."
+                        }))
+                    return
+            except ValueError:
+                pass
+            
+            # Legacy named slot support
+            slot = args[0]
+        else:
+            slot = "auto"
+        
+        success = game_state.save_manager.save_game(game_state, slot)
+        if success:
+            event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+                "text": f"Game saved to '{slot}'."
+            }))
 
 class LoadCommand(Command):
     name = "LOAD"
     aliases = []
-    description = "Load a saved game."
+    description = "Load a saved game. Usage: LOAD [1-5] - loads from numbered slot, or LOAD for autosave."
 
     def execute(self, context: GameContext, args: List[str]) -> None:
         game_state = context.game
-        slot = args[0] if args else "auto"
+        
+        if args:
+            # Check for numbered slot
+            try:
+                slot_num = int(args[0])
+                if 1 <= slot_num <= 5:
+                    data = game_state.save_manager.load_from_slot(slot_num)
+                    if data:
+                        if hasattr(game_state, 'cleanup'):
+                            game_state.cleanup()
+                        from engine import GameState
+                        new_game = GameState.from_dict(data)
+                        context.game = new_game
+                        event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+                            "text": f"*** GAME LOADED FROM SLOT {slot_num} ***"
+                        }))
+                    else:
+                        event_bus.emit(GameEvent(EventType.WARNING, {
+                            "text": f"Slot {slot_num} is empty or corrupted."
+                        }))
+                    return
+            except ValueError:
+                pass
+            
+            # Legacy named slot support
+            slot = args[0]
+        else:
+            slot = "auto"
+        
         data = game_state.save_manager.load_game(slot)
         if data:
-            # 1. Cleanup old game state (unsubscribe events)
             if hasattr(game_state, 'cleanup'):
                 game_state.cleanup()
-
-            # 2. Create new game state
             from engine import GameState 
             new_game = GameState.from_dict(data)
-
-            # 3. Replace in context
             context.game = new_game
             event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {"text": "*** GAME LOADED ***"}))
+        else:
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": f"No save found for '{slot}'."
+            }))
+
+class SavesCommand(Command):
+    name = "SAVES"
+    aliases = ["SLOTS"]
+    description = "List all save slots with their status."
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+        display = game_state.save_manager.get_save_slots_display()
+        event_bus.emit(GameEvent(EventType.MESSAGE, {"text": display}))
+
 
 class WaitCommand(Command):
     name = "WAIT"
@@ -893,10 +954,69 @@ class ExitCommand(Command):
     name = "EXIT"
     aliases = ["QUIT"]
     description = "Exit the game."
-
     def execute(self, context: GameContext, args: List[str]) -> None:
         event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "Exiting..."}))
         sys.exit(0)
+
+class OrderCommand(Command):
+    name = "ORDER"
+    aliases = []
+    description = "Order a crew member to move to a room. Usage: ORDER <name> TO <room>"
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+        
+        # Usage Check
+        if len(args) < 3 or args[1].upper() != "TO":
+             event_bus.emit(GameEvent(EventType.ERROR, {"text": "Usage: ORDER <name> TO <room>"}))
+             return
+        
+        target_name = args[0]
+        room_name = " ".join(args[2:]).strip() # Handle multi-word room names
+        
+        # Validate Target
+        target = next((m for m in game_state.crew if m.name.lower() == target_name.lower()), None)
+        if not target:
+            event_bus.emit(GameEvent(EventType.ERROR, {"text": f"No crew member named '{target_name}'."}))
+            return
+        
+        if not target.is_alive:
+             event_bus.emit(GameEvent(EventType.WARNING, {"text": f"{target.name} can't hear you."}))
+             return
+
+        if target == game_state.player:
+             event_bus.emit(GameEvent(EventType.WARNING, {"text": "You can't order yourself."}))
+             return
+
+        # Validate Room
+        # Fuzzy match room name if possible, or exact match
+        valid_rooms = list(game_state.station_map.rooms.keys())
+        destination = next((r for r in valid_rooms if r.lower() == room_name.lower()), None)
+        
+        if not destination:
+             event_bus.emit(GameEvent(EventType.ERROR, {"text": f"Unknown room: {room_name}"}))
+             return
+
+        # Check Trust for Refusal
+        # Requirement: Trust > 30 (Wary/Hostile limit is 20-40, let's say 30 is the tipping point)
+        # Note: Mutiny logic (Trust < 20) might be triggered elsewhere or here too.
+        trust = 50
+        if hasattr(game_state, "trust_system"):
+             trust = game_state.trust_system.get_trust(target.name, game_state.player.name)
+        
+        if trust < 30:
+             refusal_msg = f"{target.name} crosses their arms. \"I don't take orders from you anymore, MacReady.\""
+             event_bus.emit(GameEvent(EventType.MESSAGE, {"text": refusal_msg}))
+             return
+             
+        # Execute Order
+        # We set a temporary override on their schedule or target room
+        target.target_room = destination
+        target.search_turns_remaining = 0 # Cancel current search
+        target.investigating = False # Cancel current investigation
+        
+        msg = f"{target.name} nods. \"Alright, heading to the {destination}.\""
+        event_bus.emit(GameEvent(EventType.MESSAGE, {"text": msg}))
 
 class TrustCommand(Command):
     name = "TRUST"
@@ -1217,24 +1337,15 @@ class RepairCommand(Command):
         target_type = args[0].upper()
 
         if target_type == "RADIO":
-            game_state.attempt_repair_radio()
-        elif target_type in ["HELICOPTER", "CHOPPER"]:
-            game_state.attempt_repair_helicopter()
             success, message, evt_type = game_state.attempt_repair_radio()
-            event_bus.emit(GameEvent(evt_type, {"text": message}))
-            if success:
-                game_state.advance_turn()
-
         elif target_type in ["HELICOPTER", "CHOPPER"]:
             success, message, evt_type = game_state.attempt_repair_helicopter()
-            event_bus.emit(GameEvent(evt_type, {"text": message}))
-            if success:
-                game_state.advance_turn()
         else:
             event_bus.emit(GameEvent(EventType.ERROR, {"text": f"You can't repair '{target_type}'."}))
             return
 
-        if getattr(game_state, "_last_action_successful", False):
+        event_bus.emit(GameEvent(evt_type, {"text": message}))
+        if success:
             game_state.advance_turn()
 
 class FlyCommand(Command):
@@ -1244,8 +1355,6 @@ class FlyCommand(Command):
 
     def execute(self, context: GameContext, args: List[str]) -> None:
         game_state = context.game
-        game_state.attempt_escape()
-        if getattr(game_state, "_last_action_successful", False):
         success, message, evt_type = game_state.attempt_escape()
         event_bus.emit(GameEvent(evt_type, {"text": message}))
         if success:
@@ -1258,8 +1367,6 @@ class SOSCommand(Command):
 
     def execute(self, context: GameContext, args: List[str]) -> None:
         game_state = context.game
-        game_state.attempt_radio_signal()
-        if getattr(game_state, "_last_action_successful", False):
         success, message, evt_type = game_state.attempt_radio_signal()
         event_bus.emit(GameEvent(evt_type, {"text": message}))
         if success:
@@ -1301,7 +1408,6 @@ class ThrowCommand(Command):
     name = "THROW"
     aliases = ["TOSS"]
     description = "Throw an item toward a target tile. Usage: THROW <ITEM> <TARGET>"
-    description = "Throw an item to create a distraction. Usage: THROW <ITEM> <TARGET>"
 
     def execute(self, context: GameContext, args: List[str]) -> None:
         game_state = context.game
@@ -1312,8 +1418,9 @@ class ThrowCommand(Command):
             }))
             return
 
-        item, target = self._parse_item_and_target(args, game_state)
-        if not item or not target:
+        item, target_coords = self._parse_item_and_target(args, game_state)
+        if not item or not target_coords:
+            event_bus.emit(GameEvent(EventType.ERROR, {
                 "text": "Usage: THROW <ITEM> <TARGET>\nTargets: direction (N/S/E/W/NE/NW/SE/SW) or coordinates (X,Y)"
             }))
             return
@@ -1341,9 +1448,9 @@ class ThrowCommand(Command):
             return
 
         if not hasattr(game_state, "distraction_system"):
+            from systems.distraction import DistractionSystem
             game_state.distraction_system = DistractionSystem()
 
-        success, message = game_state.distraction_system.throw_toward(
         # Attempt to throw the item
         success, message = game_state.distraction_system.throw_item(
             game_state.player, item, target, game_state
@@ -1432,6 +1539,102 @@ class SettingsCommand(Command):
             return
         # Placeholder
         event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "Settings updated (simulated)."}))
+
+
+class DestroyGeneratorCommand(Command):
+    """Destroy the generator to trigger Freeze Out ending. IRREVERSIBLE."""
+    name = "DESTROY"
+    aliases = ["DEMOLISH"]
+    description = "Destroy the generator. Requires explosives. WARNING: IRREVERSIBLE."
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+        player = game_state.player
+        player_room = game_state.station_map.get_room_name(*player.location)
+
+        # Check if destroying generator (the main target)
+        target = " ".join(args).upper() if args else ""
+        if target not in ["GENERATOR", "GEN", ""]:
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": f"Cannot destroy '{target}'. Use DESTROY GENERATOR in the Generator room."
+            }))
+            return
+
+        # Must be in Generator room
+        if player_room != "Generator":
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": "You must be in the Generator room to destroy it."
+            }))
+            return
+
+        # Already destroyed?
+        if getattr(game_state, 'generator_destroyed', False):
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": "The generator is already destroyed. The station grows colder..."
+            }))
+            return
+
+        # Requires explosives or fuel + ignition source
+        has_explosives = any(
+            "EXPLOSIVE" in i.name.upper() or "DYNAMITE" in i.name.upper() or "C4" in i.name.upper()
+            for i in player.inventory
+        )
+        has_fuel = any("FUEL" in i.name.upper() for i in player.inventory)
+        has_flamethrower = any("FLAMETHROWER" in i.name.upper() for i in player.inventory)
+
+        if not has_explosives and not (has_fuel and has_flamethrower):
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": "You need explosives (or fuel + flamethrower) to destroy the generator."
+            }))
+            return
+
+        # Confirmation check - use a state flag
+        if not getattr(game_state, '_destroy_generator_confirm', False):
+            game_state._destroy_generator_confirm = True
+            event_bus.emit(GameEvent(EventType.WARNING, {
+                "text": "⚠️  WARNING: Destroying the generator is IRREVERSIBLE!\n"
+                        "The station will freeze. The Thing will die... but so might everyone else.\n"
+                        "Type DESTROY GENERATOR again to confirm."
+            }))
+            return
+
+        # Execute destruction
+        game_state._destroy_generator_confirm = False
+        game_state.generator_destroyed = True
+        game_state.power_on = False
+
+        # Remove used item
+        if has_explosives:
+            for item in player.inventory:
+                if "EXPLOSIVE" in item.name.upper() or "DYNAMITE" in item.name.upper():
+                    player.remove_item(item.name)
+                    break
+        elif has_fuel:
+            for item in player.inventory:
+                if "FUEL" in item.name.upper():
+                    player.remove_item(item.name)
+                    break
+
+        # Emit destruction event
+        event_bus.emit(GameEvent(EventType.GENERATOR_DESTROYED, {
+            "game_state": game_state,
+            "actor": player.name
+        }))
+
+        # Dramatic messages
+        event_bus.emit(GameEvent(EventType.WARNING, {
+            "text": "*** BOOM! ***\n"
+                    "The generator EXPLODES in a fireball!\n"
+                    "Emergency lights flicker and die. The heating system groans to a halt.\n"
+                    "An unnatural silence falls over the station.\n"
+                    "The cold is coming."
+        }))
+
+        # Trigger power failure effects
+        if hasattr(game_state, 'room_states'):
+            game_state.room_states.on_power_failure(None)
+
+        game_state.advance_turn()
 
 
 class DeployCommand(Command):
@@ -2091,6 +2294,61 @@ class DashboardCommand(Command):
         }))
 
 
+
+class RecipesCommand(Command):
+    name = "RECIPES"
+    aliases = ["CRAFTLIST"]
+    description = "List available crafting recipes."
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+        if not hasattr(game_state, "crafting") or game_state.crafting is None:
+             event_bus.emit(GameEvent(EventType.ERROR, {"text": "Crafting system unavailable."}))
+             return
+
+        recipes_list = ", ".join(game_state.crafting.recipes.keys())
+        event_bus.emit(GameEvent(EventType.MESSAGE, {"text": f"Available recipes: {recipes_list}"}))
+
+
+class RecipesCommand(Command):
+    name = "RECIPES"
+    aliases = []
+    description = "List available crafting recipes."
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        game_state = context.game
+        
+        # Check for crafting system
+        if not hasattr(game_state, 'crafting_system'):
+            from systems.crafting import CraftingSystem
+            game_state.crafting_system = CraftingSystem(game_state)
+            
+        recipes = game_state.crafting_system.recipes
+        if not recipes:
+            event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "No recipes known."}))
+            return
+
+        event_bus.emit(GameEvent(EventType.MESSAGE, {
+            "text": "--- KNOWN RECIPES ---"
+        }))
+        for name, recipe in recipes.items():
+            ingredients = ", ".join([f"{count}x {item}" for item, count in recipe.ingredients.items()])
+            event_bus.emit(GameEvent(EventType.MESSAGE, {
+                "text": f"  {name}: {ingredients}"
+            }))
+
+
+class HelpCommand(Command):
+    name = "HELP"
+    aliases = ["?"]
+    description = "Show help information."
+
+    def execute(self, context: GameContext, args: List[str]) -> None:
+        topic = args[0] if args else None
+        text = context.game.parser.get_help_text(topic)
+        event_bus.emit(GameEvent(EventType.MESSAGE, {"text": text}))
+
+
 class CommandDispatcher:
     """Manages command registration and dispatching."""
 
@@ -2124,8 +2382,11 @@ class CommandDispatcher:
         self.register(StatusCommand())
         self.register(SaveCommand())
         self.register(LoadCommand())
+        self.register(SavesCommand())
         self.register(WaitCommand())
+
         self.register(ExitCommand())
+        self.register(HelpCommand())
         self.register(TrustCommand())
         self.register(CheckCommand())
         self.register(HideCommand())
@@ -2144,6 +2405,7 @@ class CommandDispatcher:
         self.register(SabotageSecurityCommand())
         self.register(ThermalCommand())
         self.register(SettingsCommand())
+        self.register(DestroyGeneratorCommand())
         self.register(DeployCommand())
         # Quick-win commands for better UX
         self.register(HistoryCommand())
@@ -2153,6 +2415,7 @@ class CommandDispatcher:
         self.register(MapCommand())
         self.register(DashboardCommand())
         self.register(MissionsCommand())
+        self.register(RecipesCommand())
 
     def register(self, command: Command):
         """Register a command and its aliases."""

@@ -187,6 +187,34 @@ def serialize_game_state(game):
     # Generate context-aware quick actions
     quick_actions = _generate_quick_actions(game, player_room)
 
+    # --- 3D Visibility System (Tier 11.1) ---
+    from systems.room_state import RoomState
+    
+    # Compute visible rooms: current room + adjacent rooms through non-barricaded doors
+    visible_rooms = [player_room]
+    adjacent_rooms = game.station_map.get_connections(player_room)
+    for adj_room in adjacent_rooms:
+        # Adjacent rooms are visible unless barricaded
+        if not game.room_states.has_state(adj_room, RoomState.BARRICADED):
+            visible_rooms.append(adj_room)
+    
+    # Compute per-room lighting state
+    dark_rooms = []
+    room_lighting = {}
+    for room_name in game.station_map.rooms.keys():
+        is_dark = game.room_states.has_state(room_name, RoomState.DARK)
+        is_powered = game.power_on
+        room_lighting[room_name] = {
+            'is_dark': is_dark,
+            'is_powered': is_powered,
+            'visibility': 'full' if room_name == player_room else ('partial' if room_name in visible_rooms else 'hidden')
+        }
+        if is_dark:
+            dark_rooms.append(room_name)
+    
+    # Check if player has flashlight equipped
+    flashlight_active = any('FLASHLIGHT' in item.name.upper() for item in game.player.inventory)
+
     return {
         'turn': game.turn,
         'mode': game.mode.value,
@@ -222,7 +250,12 @@ def serialize_game_state(game):
             'storm_intensity': game.weather.storm_intensity,
             'wind_direction': game.weather.wind_direction.value,
             'temperature_modifier': game.weather.temperature_modifier
-        } if hasattr(game, 'weather') else None
+        } if hasattr(game, 'weather') else None,
+        # --- 3D Visibility (Tier 11.1) ---
+        'visible_rooms': visible_rooms,
+        'dark_rooms': dark_rooms,
+        'room_lighting': room_lighting,
+        'flashlight_active': flashlight_active
     }
 
 
@@ -715,4 +748,4 @@ if __name__ == '__main__':
     print("\nPress CTRL+C to stop the server")
     print("=" * 60)
     # allow_unsafe_werkzeug=True is required to run without debug mode when not using a WSGI server
-    socketio.run(app, host=host, port=port, debug=debug_mode, allow_unsafe_werkzeug=True)
+    socketio.run(app, host='0.0.0.0', port=port, debug=True, use_reloader=False, allow_unsafe_werkzeug=True)
