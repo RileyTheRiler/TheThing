@@ -613,6 +613,11 @@ class StealthSystem:
         # The Thing has enhanced thermal senses (+2 base, +3 from infection)
         thing_thermal_pool = 5  # Enhanced Thing senses
 
+        # Check if player has thermal blanket equipped/in inventory
+        thermal_blanket_penalty = self._get_thermal_blanket_bonus(player)
+        if thermal_blanket_penalty > 0:
+            thing_thermal_pool = max(1, thing_thermal_pool - thermal_blanket_penalty)
+
         # Human's thermal signature (standard human warmth)
         if hasattr(player, 'get_thermal_signature'):
             human_thermal = player.get_thermal_signature()
@@ -642,3 +647,24 @@ class StealthSystem:
             }))
 
         return detected
+
+    def _get_thermal_blanket_bonus(self, player) -> int:
+        """Check if player has a thermal blanket and return its masking bonus.
+
+        Thermal blankets mask heat signatures, making thermal detection harder.
+        Returns the effect_value of the thermal blanket (typically 3).
+        """
+        if not hasattr(player, 'inventory'):
+            return 0
+
+        for item in player.inventory:
+            # Check for masks_heat effect (thermal blanket)
+            effect = getattr(item, 'effect', None)
+            if effect == 'masks_heat':
+                # Check if item has uses remaining
+                uses = getattr(item, 'uses', -1)
+                if uses != 0:  # -1 means infinite, >0 means has uses
+                    # Return the effect value (how much it masks heat)
+                    return getattr(item, 'effect_value', 3)
+
+        return 0

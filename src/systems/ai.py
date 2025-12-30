@@ -17,7 +17,8 @@ class AISystem:
     COST_ASTAR = 5
     COST_PATH_CACHE = 1
     COST_PERCEPTION = 2
-    SEARCH_TURNS = 5
+    SEARCH_TURNS = 8  # Extended from 5 for more thorough sweeps
+    SEARCH_SPIRAL_RADIUS = 3  # Maximum tiles to expand search radius
 
     def __init__(self):
         self.cache: Optional[AICache] = None
@@ -698,6 +699,53 @@ class AISystem:
 
         member.move(dx, dy, station_map)
 
+        # Check for tripwire triggers at new location
+        self._check_tripwire_trigger(member, game_state)
+
+    def _check_tripwire_trigger(self, member: 'CrewMember', game_state: 'GameState'):
+        """Check if NPC stepped on a deployed tripwire and trigger it."""
+        if not hasattr(game_state, 'deployed_items'):
+            return
+
+        member_pos = member.location
+        if member_pos not in game_state.deployed_items:
+            return
+
+        deployed = game_state.deployed_items[member_pos]
+        if deployed.get('triggered', False):
+            return  # Already triggered
+
+        # Trigger the tripwire!
+        deployed['triggered'] = True
+        deployed['triggered_by'] = member.name
+        deployed['triggered_turn'] = game_state.turn
+
+        item_name = deployed['item_name']
+        room = deployed['room']
+
+        # Emit alert to player
+        event_bus.emit(GameEvent(EventType.WARNING, {
+            "text": f"ALERT: Your {item_name} in {room} was triggered by {member.name}!"
+        }))
+
+        # Emit perception event so other systems know
+        event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, {
+            "source": "tripwire",
+            "item": item_name,
+            "triggered_by": member.name,
+            "location": member_pos,
+            "room": room,
+            "noise_level": 6,  # Tripwires are loud
+            "game_state": game_state
+        }))
+
+        # Remove the used tripwire
+        del game_state.deployed_items[member_pos]
+
+        event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+            "text": f"Tripwire triggered and consumed in {room}."
+        }))
+
     def _pursue_player(self, member: 'CrewMember', game_state: 'GameState'):
         """Move one step toward the player when detected via perception."""
         player_loc = self.cache.player_location if self.cache else game_state.player.location
@@ -756,26 +804,41 @@ class AISystem:
         return room
 
     def _enter_search_mode(self, member: 'CrewMember', anchor_location: Tuple[int, int], anchor_room: str, game_state: 'GameState'):
-        """Initialize search mode around the last seen position and nearby corridors."""
+        """Initialize search mode around the last seen position with spiral-out pattern.
+
+        Enhanced search includes:
+        - Adjacent rooms (not just corridors)
+        - Spiral-out pattern expanding radius each turn
+        - Search history to avoid rechecking areas
+        """
         if not hasattr(member, "search_turns_remaining"):
             return
 
         station_map = game_state.station_map
         targets = [anchor_location]
 
-        # Add adjacent corridor tiles for a quick sweep
-        for dx in [-1, 0, 1]:
-            for dy in [-1, 0, 1]:
-                if dx == 0 and dy == 0:
-                    continue
-                pos = (anchor_location[0] + dx, anchor_location[1] + dy)
-                if not station_map.is_walkable(*pos):
-                    continue
-                room_name = station_map.get_room_name(*pos)
-                if room_name.startswith("Corridor"):
+        # Initialize search history to track checked locations
+        member.search_history = set()
+        member.search_anchor = anchor_location
+        member.search_spiral_radius = 1  # Start at radius 1, expand each turn
+
+        # Build spiral-out search pattern: start at anchor, expand outward
+        # Radius 1: immediate adjacent tiles (all rooms, not just corridors)
+        # Radius 2-3: further out tiles for thorough sweep
+        for radius in range(1, self.SEARCH_SPIRAL_RADIUS + 1):
+            for dx in range(-radius, radius + 1):
+                for dy in range(-radius, radius + 1):
+                    # Only add tiles at the edge of current radius (spiral pattern)
+                    if abs(dx) != radius and abs(dy) != radius:
+                        continue
+                    if dx == 0 and dy == 0:
+                        continue
+                    pos = (anchor_location[0] + dx, anchor_location[1] + dy)
+                    if not station_map.is_walkable(*pos):
+                        continue
                     targets.append(pos)
 
-        # Deduplicate while preserving order
+        # Deduplicate while preserving order (spiral order)
         deduped_targets = []
         seen = set()
         for t in targets:
@@ -791,22 +854,38 @@ class AISystem:
             "text": f"{member.name} is searching around {anchor_room} (Last seen at turn {game_state.turn})."
         }))
         event_bus.emit(GameEvent(EventType.MESSAGE, {
-            "text": f"{member.name} starts sweeping {anchor_room} and nearby corridors!"
+            "text": f"{member.name} starts a thorough sweep of {anchor_room} and adjacent areas!"
         }))
 
     def _execute_search(self, member: 'CrewMember', game_state: 'GameState') -> bool:
-        """Advance the search pattern; returns True if a search action occurred."""
+        """Advance the search pattern; returns True if a search action occurred.
+
+        Enhanced search behavior:
+        - Tracks search_history to avoid rechecking locations
+        - Spiral-out pattern expands radius over time
+        - Resets search timer if player is re-detected during search
+        """
         if member.search_turns_remaining <= 0 or not member.search_targets:
             member.search_turns_remaining = 0
             return False
 
-        if member.current_search_target is None:
-            member.current_search_target = member.search_targets[0]
+        # Initialize search_history if not present
+        if not hasattr(member, 'search_history'):
+            member.search_history = set()
 
-        # If we've reached the current target, rotate to next target
+        if member.current_search_target is None:
+            # Find next unchecked target
+            member.current_search_target = self._get_next_unchecked_target(member)
+
+        # If we've reached the current target, mark as checked and find next
         if member.location == member.current_search_target:
-            member.search_targets = member.search_targets[1:] + [member.current_search_target]
-            member.current_search_target = member.search_targets[0] if member.search_targets else None
+            # Add current location to search history
+            member.search_history.add(member.location)
+            current_room = game_state.station_map.get_room_name(*member.location)
+            member.search_history.add(current_room)  # Also track room names
+
+            # Find next unchecked target
+            member.current_search_target = self._get_next_unchecked_target(member)
 
         if member.current_search_target:
             tx, ty = member.current_search_target
@@ -815,10 +894,41 @@ class AISystem:
             if member.search_turns_remaining <= 0:
                 member.search_targets = []
                 member.current_search_target = None
+                member.search_history = set()  # Clear history when search ends
             return True
 
         member.search_turns_remaining = 0
         return False
+
+    def _get_next_unchecked_target(self, member: 'CrewMember') -> Optional[Tuple[int, int]]:
+        """Get the next search target that hasn't been checked yet."""
+        search_history = getattr(member, 'search_history', set())
+
+        for target in member.search_targets:
+            if target not in search_history:
+                return target
+
+        # All targets checked, cycle back but still return first
+        return member.search_targets[0] if member.search_targets else None
+
+    def reset_search_on_detection(self, member: 'CrewMember', new_location: Tuple[int, int], game_state: 'GameState'):
+        """Reset search timer and update anchor when player is re-detected during active search.
+
+        Called when an NPC spots the player while already in search mode.
+        """
+        if member.search_turns_remaining > 0:
+            # Player spotted during search - reset timer and update anchor
+            anchor_room = game_state.station_map.get_room_name(*new_location)
+            member.search_anchor = new_location
+            member.search_turns_remaining = self.SEARCH_TURNS  # Full reset
+            member.search_history = set()  # Clear history for fresh search
+
+            event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
+                "text": f"{member.name} re-acquired target! Search reset around {anchor_room}."
+            }))
+
+            # Re-initialize search targets around new location
+            self._enter_search_mode(member, new_location, anchor_room, game_state)
     def _question_player(self, member: 'CrewMember', game_state: 'GameState'):
         """
         Move toward the player and issue a questioning dialogue when nearby.
