@@ -343,6 +343,10 @@ class StealthSystem:
         prowess = subject.attributes.get(Attribute.PROWESS, 1)
         stealth = subject.skills.get(Skill.STEALTH, 0)
         subject_pool = prowess + stealth
+
+        # Stealth progression perk: bonus dice at higher levels
+        if hasattr(subject, "get_stealth_level_pool_bonus"):
+            subject_pool += subject.get_stealth_level_pool_bonus()
         
         posture = getattr(subject, "stealth_posture", StealthPosture.STANDING)
         if posture == StealthPosture.CROUCHING:

@@ -25,6 +25,8 @@ class CrewMember:
     They follow schedules, respond to lynch mobs, and can reveal biological tells.
     """
 
+    STEALTH_LEVEL_THRESHOLDS = [100, 300, 600, 1000]
+
     def __init__(self, name, role, behavior_type, attributes=None, skills=None, schedule=None, invariants=None):
         self.name = name
         self.original_name = name
