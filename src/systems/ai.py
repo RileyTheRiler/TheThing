@@ -29,6 +29,7 @@ class AISystem:
         self.budget_spent = 0
         self.exhaustion_count = 0  # Track how many times budget was denied
         self.alert_context: Dict[str, Any] = {"active": False, "observation_bonus": 0, "speed_multiplier": 1}
+        self.alert_speed_bonus = 0
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
         event_bus.subscribe(EventType.PERCEPTION_EVENT, self.on_perception_event)
         self.security_roles = {"commander", "radio op"}
@@ -306,7 +307,7 @@ class AISystem:
 
         used_positions = set()
         positions: List[Tuple[int, int]] = []
-        for ally in flankers:
+        for ally in allies:
             best_pos = None
             best_len = None
 
