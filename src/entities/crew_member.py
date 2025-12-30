@@ -397,6 +397,9 @@ class CrewMember:
         m.search_targets = [tuple(t) if isinstance(t, list) else t for t in data.get("search_targets", [])]
         m.search_turns_remaining = data.get("search_turns_remaining", 0)
 
+        if m.search_history is None:
+            m.search_history = set()
+
         # Items hydration
         m.inventory = []
         for i_data in data.get("inventory", []):
@@ -407,6 +410,22 @@ class CrewMember:
         m.stealth_posture = safe_enum(StealthPosture, "stealth_posture", StealthPosture.STANDING)
         
         return m
+
+    # --- Search utilities -------------------------------------------------
+
+    def clear_search_history(self):
+        """Reset stored search locations/rooms so a new sweep can begin fresh."""
+        self.search_history = set()
+
+    def record_search_checkpoint(self, location, station_map):
+        """Add a visited coordinate (and its room) to search history to avoid repeats."""
+        if not hasattr(self, "search_history") or self.search_history is None:
+            self.search_history = set()
+
+        self.search_history.add(tuple(location))
+        if station_map:
+            room_name = station_map.get_room_name(*location)
+            self.search_history.add(room_name)
 
     def set_posture(self, posture: StealthPosture):
         """Set the character's stealth posture."""

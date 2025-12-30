@@ -17,7 +17,7 @@ class AISystem:
     COST_ASTAR = 5
     COST_PATH_CACHE = 1
     COST_PERCEPTION = 2
-    SEARCH_TURNS = 8  # Extended from 5 for more thorough sweeps
+    SEARCH_TURNS = 12  # Extended duration for broader sweeps
     SEARCH_SPIRAL_RADIUS = 3  # Maximum tiles to expand search radius
 
     def __init__(self):
@@ -815,38 +815,13 @@ class AISystem:
             return
 
         station_map = game_state.station_map
-        targets = [anchor_location]
-
-        # Initialize search history to track checked locations
-        member.search_history = set()
+        member.clear_search_history()
         member.search_anchor = anchor_location
         member.search_spiral_radius = 1  # Start at radius 1, expand each turn
 
-        # Build spiral-out search pattern: start at anchor, expand outward
-        # Radius 1: immediate adjacent tiles (all rooms, not just corridors)
-        # Radius 2-3: further out tiles for thorough sweep
-        for radius in range(1, self.SEARCH_SPIRAL_RADIUS + 1):
-            for dx in range(-radius, radius + 1):
-                for dy in range(-radius, radius + 1):
-                    # Only add tiles at the edge of current radius (spiral pattern)
-                    if abs(dx) != radius and abs(dy) != radius:
-                        continue
-                    if dx == 0 and dy == 0:
-                        continue
-                    pos = (anchor_location[0] + dx, anchor_location[1] + dy)
-                    if not station_map.is_walkable(*pos):
-                        continue
-                    targets.append(pos)
-
-        # Deduplicate while preserving order (spiral order)
-        deduped_targets = []
-        seen = set()
-        for t in targets:
-            if t not in seen:
-                deduped_targets.append(t)
-                seen.add(t)
-
-        member.search_targets = deduped_targets
+        member.search_targets = self._build_search_targets(
+            anchor_location, anchor_room, station_map
+        )
         member.current_search_target = None
         member.search_turns_remaining = self.SEARCH_TURNS
 
@@ -866,7 +841,7 @@ class AISystem:
         - Resets search timer if player is re-detected during search
         """
         if member.search_turns_remaining <= 0 or not member.search_targets:
-            member.search_turns_remaining = 0
+            self._complete_search(member)
             return False
 
         # Initialize search_history if not present
@@ -874,30 +849,30 @@ class AISystem:
             member.search_history = set()
 
         if member.current_search_target is None:
-            # Find next unchecked target
             member.current_search_target = self._get_next_unchecked_target(member)
+
+        if member.current_search_target is None:
+            self._complete_search(member)
+            return False
 
         # If we've reached the current target, mark as checked and find next
         if member.location == member.current_search_target:
-            # Add current location to search history
-            member.search_history.add(member.location)
-            current_room = game_state.station_map.get_room_name(*member.location)
-            member.search_history.add(current_room)  # Also track room names
-
-            # Find next unchecked target
+            member.record_search_checkpoint(member.location, game_state.station_map)
             member.current_search_target = self._get_next_unchecked_target(member)
+
+        if member.current_search_target is None:
+            self._complete_search(member)
+            return False
 
         if member.current_search_target:
             tx, ty = member.current_search_target
             self._pathfind_step(member, tx, ty, game_state)
             member.search_turns_remaining -= 1
             if member.search_turns_remaining <= 0:
-                member.search_targets = []
-                member.current_search_target = None
-                member.search_history = set()  # Clear history when search ends
+                self._complete_search(member)
             return True
 
-        member.search_turns_remaining = 0
+        self._complete_search(member)
         return False
 
     def _get_next_unchecked_target(self, member: 'CrewMember') -> Optional[Tuple[int, int]]:
@@ -908,8 +883,8 @@ class AISystem:
             if target not in search_history:
                 return target
 
-        # All targets checked, cycle back but still return first
-        return member.search_targets[0] if member.search_targets else None
+        # All targets checked
+        return None
 
     def reset_search_on_detection(self, member: 'CrewMember', new_location: Tuple[int, int], game_state: 'GameState'):
         """Reset search timer and update anchor when player is re-detected during active search.
@@ -921,7 +896,10 @@ class AISystem:
             anchor_room = game_state.station_map.get_room_name(*new_location)
             member.search_anchor = new_location
             member.search_turns_remaining = self.SEARCH_TURNS  # Full reset
-            member.search_history = set()  # Clear history for fresh search
+            if hasattr(member, "clear_search_history"):
+                member.clear_search_history()
+            else:
+                member.search_history = set()  # Clear history for fresh search
 
             event_bus.emit(GameEvent(EventType.SYSTEM_LOG, {
                 "text": f"{member.name} re-acquired target! Search reset around {anchor_room}."
@@ -929,6 +907,92 @@ class AISystem:
 
             # Re-initialize search targets around new location
             self._enter_search_mode(member, new_location, anchor_room, game_state)
+
+    def _complete_search(self, member: 'CrewMember'):
+        """Reset search state so patrol/schedule logic can resume."""
+        member.search_turns_remaining = 0
+        member.current_search_target = None
+        member.search_targets = []
+        member.search_anchor = None
+        member.search_spiral_radius = 1
+        if hasattr(member, "clear_search_history"):
+            member.clear_search_history()
+
+    def _build_search_targets(self, anchor_location: Tuple[int, int], anchor_room: str, station_map: 'StationMap') -> List[Tuple[int, int]]:
+        """Create an ordered list of search targets using room sweeps and a spiral-out pattern."""
+        targets: List[Tuple[int, int]] = [anchor_location]
+
+        # Sweep anchor room center first, then connected rooms
+        targets.extend(self._get_room_sweep_targets(anchor_room, station_map))
+
+        # Spiral rings radiating outward from anchor
+        for radius in range(1, self.SEARCH_SPIRAL_RADIUS + 1):
+            targets.extend(self._generate_spiral_ring(anchor_location, radius, station_map))
+
+        # Deduplicate while preserving order
+        seen = set()
+        deduped = []
+        for pos in targets:
+            if pos in seen:
+                continue
+            seen.add(pos)
+            deduped.append(pos)
+        return deduped
+
+    def _get_room_sweep_targets(self, anchor_room: str, station_map: 'StationMap') -> List[Tuple[int, int]]:
+        """Return centers for the anchor room and its adjacent rooms."""
+        room_targets: List[Tuple[int, int]] = []
+        anchor_center = self._get_room_center(anchor_room, station_map)
+        if anchor_center and station_map.is_walkable(*anchor_center):
+            room_targets.append(anchor_center)
+
+        connections = station_map.get_connections(anchor_room) if hasattr(station_map, "get_connections") else []
+        for room in connections:
+            center = self._get_room_center(room, station_map)
+            if center and station_map.is_walkable(*center):
+                room_targets.append(center)
+        return room_targets
+
+    def _get_room_center(self, room_name: str, station_map: 'StationMap') -> Optional[Tuple[int, int]]:
+        """Compute the central tile of a named room if defined."""
+        if not room_name or not hasattr(station_map, "rooms") or room_name not in station_map.rooms:
+            return None
+        x1, y1, x2, y2 = station_map.rooms[room_name]
+        return ((x1 + x2) // 2, (y1 + y2) // 2)
+
+    def _generate_spiral_ring(self, anchor_location: Tuple[int, int], radius: int, station_map: 'StationMap') -> List[Tuple[int, int]]:
+        """Generate perimeter coordinates for the given radius around the anchor."""
+        x0, y0 = anchor_location
+        x_min, x_max = x0 - radius, x0 + radius
+        y_min, y_max = y0 - radius, y0 + radius
+
+        ring: List[Tuple[int, int]] = []
+
+        # Top edge left->right
+        for x in range(x_min, x_max + 1):
+            pos = (x, y_min)
+            if station_map.is_walkable(*pos):
+                ring.append(pos)
+
+        # Right edge top->bottom (skip corner)
+        for y in range(y_min + 1, y_max + 1):
+            pos = (x_max, y)
+            if station_map.is_walkable(*pos):
+                ring.append(pos)
+
+        # Bottom edge right->left (skip corner)
+        for x in range(x_max - 1, x_min - 1, -1):
+            pos = (x, y_max)
+            if station_map.is_walkable(*pos):
+                ring.append(pos)
+
+        # Left edge bottom->top (skip both corners)
+        for y in range(y_max - 1, y_min, -1):
+            pos = (x_min, y)
+            if station_map.is_walkable(*pos):
+                ring.append(pos)
+
+        return ring
     def _question_player(self, member: 'CrewMember', game_state: 'GameState'):
         """
         Move toward the player and issue a questioning dialogue when nearby.
