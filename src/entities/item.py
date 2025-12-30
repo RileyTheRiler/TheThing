@@ -53,6 +53,26 @@ class Item:
             return f"{self.name} ({self.uses} uses)"
         return self.name
 
+    def is_throwable_item(self):
+        """Whether the item can be used as a distraction."""
+        return bool(self.throwable)
+
+    def is_deployable_item(self):
+        """Whether the item can be placed in the environment."""
+        return bool(self.deployable or self.effect == "alerts_on_trigger")
+
+    def get_noise_strength(self, default: int = 0) -> int:
+        """
+        Determine the noise intensity this item can generate.
+
+        Falls back to effect_value for legacy 'noise' or tripwire effects.
+        """
+        if self.noise_level:
+            return self.noise_level
+        if self.effect in ("noise", "alerts_on_trigger"):
+            return max(self.effect_value, default)
+        return default
+
     def to_dict(self):
         """Serialize item to dictionary for save/load."""
         return {

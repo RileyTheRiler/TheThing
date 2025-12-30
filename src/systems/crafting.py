@@ -125,6 +125,10 @@ class CraftingSystem:
             uses=recipe.get("uses", -1),
             effect=recipe.get("effect"),
             effect_value=recipe.get("effect_value", 0),
+            throwable=recipe.get("throwable", False),
+            noise_level=recipe.get("noise_level", 0),
+            creates_light=recipe.get("creates_light", False),
+            deployable=recipe.get("deployable", False)
         )
         crafted.add_history(
             getattr(job["game_state"], "turn", 0),

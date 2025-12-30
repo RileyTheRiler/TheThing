@@ -206,6 +206,7 @@ class TimeSystem:
         self.temperature = start_temp
         self.points_per_turn = 1
         self.turn_count = 0
+        self.start_hour = start_hour
 
     @property
     def hour(self):
