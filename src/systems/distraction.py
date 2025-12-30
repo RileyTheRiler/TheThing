@@ -163,8 +163,12 @@ class DistractionSystem:
             "intensity": noise_level
             "target_location": landing_pos,
             "location": landing_pos,
+            "target_location": landing_pos,
             "room": landing_room,
             "noise_level": noise_level,
+            "intensity": noise_level,
+            "priority_override": 1,
+            "linger_turns": self.INVESTIGATION_TURNS,
             "creates_light": creates_light,
             "priority_override": 2,
             "intensity": noise_level,
