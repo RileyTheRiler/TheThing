@@ -444,6 +444,8 @@ class GameState:
         
         for member in self.crew:
             member.slipped_vapor = False
+            if hasattr(member, "record_movement"):
+                member.record_movement(self)
         
         self.paranoia_level = min(100, self.paranoia_level + 1)
         
