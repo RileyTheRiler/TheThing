@@ -59,7 +59,6 @@ class Skill(Enum):
             Skill.PERSUASION: Attribute.INFLUENCE,
             Skill.EMPATHY: Attribute.INFLUENCE,  # Social standing/understanding
             Skill.DECEPTION: Attribute.INFLUENCE,  # Lying and misdirection
-            Skill.DECEPTION: Attribute.INFLUENCE,
 
             # Resolve serves as a defense/resistance stat primarily
         }

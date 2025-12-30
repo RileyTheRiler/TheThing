@@ -179,6 +179,7 @@ def serialize_game_state(game):
 
     # Get map rendering
     map_display = game.renderer.render(game, game.player)
+    ascii_map = game.renderer.render_raw_grid(game, game.player)
 
     # Room description modifiers
     room_desc = game.room_states.get_room_description_modifiers(player_room)
@@ -201,6 +202,7 @@ def serialize_game_state(game):
         'crew': crew_status,
         'inventory': inventory,
         'map': map_display,
+        'ascii_map': ascii_map,
         'paranoia': game.paranoia_level,
         'player_health': game.player.health,
         'player_alive': game.player.is_alive,

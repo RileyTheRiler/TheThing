@@ -302,3 +302,17 @@ class TerminalRenderer:
             lines.append("".join(row))
         
         return "\n".join(lines)
+
+    def render_raw_grid(self, game_state, player=None):
+        """
+        Generate a raw ASCII grid for the 3D renderer.
+        No viewport headers or borders, just the tiles.
+        """
+        lines = []
+        for y in range(self.map.height):
+            row = []
+            for x in range(self.map.width):
+                char = self._get_char_at(x, y, game_state, player)
+                row.append(char)
+            lines.append("".join(row))
+        return "\n".join(lines)

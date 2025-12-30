@@ -46,12 +46,12 @@ class Renderer3D {
 
         // Materials
         this.materials = {
-            floor: new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.8 }),
-            wall: new THREE.MeshStandardMaterial({ color: 0x555555 }),
-            player: new THREE.MeshStandardMaterial({ color: 0x00ff00 }), // Green for MacReady
-            crew: new THREE.MeshStandardMaterial({ color: 0x0000ff }),   // Blue for Crew
-            enemy: new THREE.MeshStandardMaterial({ color: 0xff0000 }),  // Red for Enemy/Thing
-            item: new THREE.MeshStandardMaterial({ color: 0xffff00 })    // Yellow for Items
+            floor: new THREE.MeshStandardMaterial({ color: 0x1a1a2e, roughness: 0.7, metalness: 0.2 }),
+            wall: new THREE.MeshStandardMaterial({ color: 0x444455, roughness: 0.9 }),
+            player: new THREE.MeshStandardMaterial({ color: 0x00ff88, emissive: 0x00ff88, emissiveIntensity: 0.2 }), // Tealish green
+            crew: new THREE.MeshStandardMaterial({ color: 0x0088ff }),   // Deep blue
+            enemy: new THREE.MeshStandardMaterial({ color: 0xff3333, emissive: 0xff0000, emissiveIntensity: 0.3 }),  // Angry red
+            item: new THREE.MeshStandardMaterial({ color: 0xffff00, emissive: 0xffff00, emissiveIntensity: 0.4 })    // Glowing yellow
         };
 
         // Resize handler
@@ -182,12 +182,12 @@ class Renderer3D {
     }
 
     parseAsciiMap(asciiMap) {
-        // If we already built the map and it's static, we theoretically don't need to rebuild.
-        // However, if the map view changes (scrolling), we might.
-        // For PoC: Let's assume the passed map is the "view" and it changes.
-        // We really should clear old tiles.
+        if (!asciiMap) return;
 
-        // This simple approach clears and rebuilds. Not optimal but robust for PoC.
+        // Only rebuild if the map string has actually changed to save performance
+        if (this.lastAsciiMap === asciiMap) return;
+        this.lastAsciiMap = asciiMap;
+
         if (this.mapGroup) {
             this.scene.remove(this.mapGroup);
         }
@@ -197,70 +197,30 @@ class Renderer3D {
 
         // Add floor plane (ground below everything)
         if (!this.floorPlane) {
-            const geometry = new THREE.PlaneGeometry(500, 500);
-            const material = new THREE.MeshStandardMaterial({ color: 0x111111, side: THREE.DoubleSide });
+            const geometry = new THREE.PlaneGeometry(100, 100);
+            const material = new THREE.MeshStandardMaterial({ color: 0x0a0a0a, side: THREE.DoubleSide });
             this.floorPlane = new THREE.Mesh(geometry, material);
-            this.floorPlane.rotation.x = - Math.PI / 2;
-            this.floorPlane.position.y = -0.1; // Slightly below tiles
+            this.floorPlane.rotation.x = -Math.PI / 2;
+            this.floorPlane.position.y = -0.05;
             this.floorPlane.receiveShadow = true;
             this.scene.add(this.floorPlane);
         }
 
         const lines = asciiMap.split('\n');
-
-        // Find player symbol '@' to anchor coordinates
-        let playerRow = -1;
-        let playerCol = -1;
-
-        for (let r = 0; r < lines.length; r++) {
-            const rowStr = lines[r];
-            const c = rowStr.indexOf('@');
-            if (c !== -1) {
-                playerRow = r;
-                playerCol = c;
-                break;
-            }
-        }
-
-        if (playerRow === -1) {
-            return;
-        }
-
-        // Find actual player coord from characters (MacReady)
-        let playerX = 0;
-        let playerZ = 0;
-
-        const player = Array.from(this.characters.entries()).find(([name, grp]) => name === 'MacReady');
-        if (player) {
-            const group = player[1];
-            playerX = Math.round(group.position.x / this.gridScale);
-            playerZ = Math.round(group.position.z / this.gridScale);
-        }
-
-        const wallGeo = new THREE.BoxGeometry(this.gridScale, this.gridScale * 2, this.gridScale);
+        const wallGeo = new THREE.BoxGeometry(this.gridScale, this.gridScale * 1.5, this.gridScale);
         const floorGeo = new THREE.PlaneGeometry(this.gridScale, this.gridScale);
-        const doorGeo = new THREE.BoxGeometry(this.gridScale, this.gridScale * 1.8, this.gridScale * 0.2); // Thinner
+        const doorGeo = new THREE.BoxGeometry(this.gridScale * 0.8, this.gridScale * 1.2, this.gridScale * 0.2);
 
         lines.forEach((line, r) => {
             for (let c = 0; c < line.length; c++) {
                 const char = line[c];
+                const x = c * this.gridScale;
+                const z = r * this.gridScale;
 
-                // Calculate world coords
-                const logicalX = (c - playerCol) + playerX;
-                const logicalZ = (r - playerRow) + playerZ;
-
-                const x = logicalX * this.gridScale;
-                const z = logicalZ * this.gridScale;
-
-                // FLOOR for almost everything
-                if (char !== ' ') {
-                    let floorMesh;
-                    if (this.loadedModels['floor'] && this.loadedModels['floor'].scene) {
-                        floorMesh = this.loadedModels['floor'].scene.clone();
-                    } else {
-                        floorMesh = new THREE.Mesh(floorGeo, this.materials.floor);
-                        floorMesh.rotation.x = -Math.PI / 2;
-                    }
+                // Ground Tile (Floor)
+                if (char === '.' || char === '+' || char === '@' || (char >= 'A' && char <= 'Z')) {
+                    let floorMesh = new THREE.Mesh(floorGeo, this.materials.floor);
+                    floorMesh.rotation.x = -Math.PI / 2;
                     floorMesh.position.set(x, 0, z);
                     floorMesh.receiveShadow = true;
                     this.mapGroup.add(floorMesh);
@@ -268,39 +228,28 @@ class Renderer3D {
 
                 if (char === '#') {
                     // WALL
-                    let mesh;
-                    if (this.loadedModels['wall'] && this.loadedModels['wall'].scene) {
-                        mesh = this.loadedModels['wall'].scene.clone();
-                    } else {
-                        mesh = new THREE.Mesh(wallGeo, this.materials.wall);
-                        mesh.position.y = this.gridScale;
-                    }
-                    mesh.position.set(x, 0, z);
-                    if (!this.loadedModels['wall'] || !this.loadedModels['wall'].scene) mesh.position.y = this.gridScale;
-
+                    let mesh = new THREE.Mesh(wallGeo, this.materials.wall);
+                    mesh.position.set(x, this.gridScale * 0.75, z);
                     mesh.castShadow = true;
                     mesh.receiveShadow = true;
                     this.mapGroup.add(mesh);
                 }
                 else if (char === '+') {
                     // DOOR
-                    // Decide rotation based on neighbors?
-                    // Simple heuristic: if left/right are walls/floors, horizontal.
+                    let mesh = new THREE.Mesh(doorGeo, new THREE.MeshStandardMaterial({ color: 0x442200, roughness: 0.9 }));
+                    mesh.position.set(x, this.gridScale * 0.6, z);
 
-                    const left = line[c - 1];
-                    const right = line[c + 1];
-                    const isHorizontal = (left === '#' || left === '.') && (right === '#' || right === '.');
-
-                    let mesh = new THREE.Mesh(doorGeo, new THREE.MeshStandardMaterial({ color: 0x884400 }));
-                    mesh.position.set(x, this.gridScale * 0.9, z);
-
-                    if (isHorizontal) {
-                        // mesh.rotation.y = 0; // default
+                    // Simple door rotation logic
+                    const left = c > 0 ? line[c - 1] : ' ';
+                    const right = c < line.length - 1 ? line[c + 1] : ' ';
+                    if (left === '#' && right === '#') {
+                        // Door is between horizontal walls
                     } else {
                         mesh.rotation.y = Math.PI / 2;
                     }
 
                     mesh.castShadow = true;
+                    mesh.receiveShadow = true;
                     this.mapGroup.add(mesh);
                 }
             }
@@ -865,19 +814,20 @@ class Renderer3D {
             const isDetected = npc.detected_player;
 
             if (!group.userData.detectionCone) {
-                // Create cone
-                const coneGeo = new THREE.ConeGeometry(4, 8, 32, 1, true); // Open ended?
+                // Create cone - smaller and more subtle
+                const coneGeo = new THREE.ConeGeometry(2, 6, 16, 1, true);
                 const coneMat = new THREE.MeshBasicMaterial({
                     color: 0xff0000,
                     transparent: true,
-                    opacity: 0.1,
-                    side: THREE.DoubleSide
+                    opacity: 0.15,
+                    side: THREE.BackSide // Shows only inside, looks more like a beam
                 });
                 const cone = new THREE.Mesh(coneGeo, coneMat);
 
-                // Orient cone to point towards player
-                cone.rotation.x = Math.PI / 2;
-                cone.position.y = 0.5;
+                // Orient cone to point forward
+                cone.rotation.x = -Math.PI / 2;
+                cone.position.y = 1.0;
+                cone.position.z = 3.0; // Offset forward
 
                 group.add(cone);
                 group.userData.detectionCone = cone;
