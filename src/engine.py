@@ -36,6 +36,7 @@ from systems.progression import ProgressionSystem
 from systems.weather import WeatherSystem
 from systems.environmental_coordinator import EnvironmentalCoordinator
 from systems.dialogue import DialogueSystem
+from systems.dialogue_system import DialogueBranchingSystem
 
 from ui.renderer import TerminalRenderer
 from ui.crt_effects import CRTOutput
@@ -303,6 +304,7 @@ class GameState:
         self.lynch_mob = LynchMobSystem(self.trust_system)
         self.dialogue = DialogueManager()
         self.dialogue_system = DialogueSystem(rng=self.rng)
+        self.dialogue_branching = DialogueBranchingSystem(rng=self.rng)
         self.stealth = StealthSystem()
         self.stealth_system = self.stealth  # Alias for systems expecting stealth_system attr
         self.alert_system = AlertSystem(self)
