@@ -5,7 +5,7 @@ Verifies that vent movement has:
 - Sound propagation to adjacent vent nodes
 - Increased chance of Thing encounters
 - Limited escape options when encountered
-- Multi-turn crawl speed
+- Multi-turn crawl speed (4 turns per tile)
 """
 
 import sys
@@ -119,16 +119,16 @@ class MockGameState:
 
 
 def test_vent_base_noise():
-    """Test that vent noise is 10+ for echoing effect."""
+    """Test that vent noise is 14+ for echoing effect."""
     from systems.stealth import StealthSystem
 
     system = StealthSystem()
 
     # Check the configuration
-    assert system.VENT_BASE_NOISE >= 10, f"Vent base noise should be 10+, got {system.VENT_BASE_NOISE}"
+    assert system.VENT_BASE_NOISE >= 14, f"Vent base noise should be 14+, got {system.VENT_BASE_NOISE}"
 
     system.cleanup()
-    print("[PASS] Vent base noise is 10+ for echoing effect")
+    print("[PASS] Vent base noise is 14+ for echoing effect")
 
 
 def test_vent_encounter_chance():
@@ -145,16 +145,16 @@ def test_vent_encounter_chance():
 
 
 def test_vent_crawl_turns():
-    """Test that vent crawling takes 2 turns per tile."""
+    """Test that vent crawling takes 4 turns per tile."""
     from systems.stealth import StealthSystem
 
     system = StealthSystem()
 
     crawl_turns = system.get_vent_crawl_turns()
-    assert crawl_turns == 2, f"Crawl turns should be 2, got {crawl_turns}"
+    assert crawl_turns == 4, f"Crawl turns should be 4, got {crawl_turns}"
 
     system.cleanup()
-    print("[PASS] Vent crawling takes 2 turns per tile")
+    print("[PASS] Vent crawling takes 4 turns per tile")
 
 
 def test_vent_movement_no_encounter():

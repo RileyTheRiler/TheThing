@@ -404,6 +404,24 @@ def test_security_log_max_size():
     print("[PASS] Security log max size works correctly")
 
 
+def test_security_log_prioritized_ordering():
+    """Security log should prioritize by severity then recency."""
+    from systems.security import SecurityLog
+
+    log = SecurityLog()
+    log.add_entry(1, "camera", "Rec Room", "MacReady", (6, 7), "Low", severity=1)
+    log.add_entry(3, "camera", "Lab", "Childs", (7, 7), "Recent Medium", severity=2)
+    log.add_entry(2, "motion_sensor", "Generator", "Palmer", (5, 5), "High", severity=4)
+
+    prioritized = log.get_prioritized()
+
+    assert prioritized[0]["target"] == "Palmer"  # Highest severity
+    assert prioritized[1]["target"] == "Childs"  # More recent medium alert
+    assert prioritized[-1]["target"] == "MacReady"
+
+    print("[PASS] Security log prioritized ordering works correctly")
+
+
 if __name__ == "__main__":
     test_security_system_init()
     test_camera_visible_tiles()
@@ -420,5 +438,6 @@ if __name__ == "__main__":
     test_serialization()
     test_has_unread_alerts()
     test_security_log_max_size()
+    test_security_log_prioritized_ordering()
 
     print("\n=== ALL SECURITY SYSTEM TESTS PASSED ===")

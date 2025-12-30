@@ -683,10 +683,11 @@ function updateCrewDisplay(state) {
         const statusClass = member.is_alive ? '' : 'danger';
         const statusText = member.is_alive ? 'ALIVE' : 'DEAD';
         const trustBar = renderTrustBar(member.trust);
+        const outOfPlaceBadge = member.out_of_place ? `<span class="badge warning">OUT OF PLACE</span>` : '';
 
         return `<div class="crew-member ${proximityClass} ${statusClass}">
             ${member.name} (${member.role}) - ${member.location}<br>
-            HP: ${member.health} | ${statusText}<br>
+            HP: ${member.health} | ${statusText} ${outOfPlaceBadge}<br>
             Trust: ${trustBar}
         </div>`;
     }).join('');

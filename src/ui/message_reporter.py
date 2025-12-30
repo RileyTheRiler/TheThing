@@ -387,6 +387,7 @@ class MessageReporter:
         response_type = event.payload.get('response_type', '').upper()
         tells = event.payload.get('tells', [])
         trust_change = event.payload.get('trust_change', 0)
+        schedule_reveal = event.payload.get('schedule_reveal') or {}
 
         header = f"[INTERROGATION: {subject}"
         if topic:
@@ -403,6 +404,24 @@ class MessageReporter:
         if trust_change:
             change_str = f"+{trust_change}" if trust_change > 0 else str(trust_change)
             self.crt.output(f"[Trust: {change_str}]")
+        if schedule_reveal:
+            expected = schedule_reveal.get('expected_room')
+            current = schedule_reveal.get('current_room')
+            if expected or current:
+                self.crt.output(f"[Schedule] Expected: {expected or 'Unknown'} | Current: {current or 'Unknown'}")
+            schedule_entries = schedule_reveal.get('schedule') or []
+            if schedule_entries:
+                formatted = "; ".join(
+                    f"{e.get('start', '?'):02d}-{e.get('end', '?'):02d} {e.get('room', 'Unknown')}"
+                    if e.get('start') is not None and e.get('end') is not None else e.get('room', 'Unknown')
+                    for e in schedule_entries
+                )
+                self.crt.output(f"[Schedule Map] {formatted}")
+            movements = schedule_reveal.get('movement_history') or []
+            if movements:
+                recent = movements[-3:]
+                move_str = ", ".join(f"T{m.get('turn', '?')}: {m.get('room', 'Unknown')}" for m in recent)
+                self.crt.output(f"[Recent Movement] {move_str}")
 
     def _handle_accusation(self, event: GameEvent):
         """Handle accusation result messages."""
