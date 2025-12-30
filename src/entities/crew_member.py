@@ -49,10 +49,16 @@ class CrewMember:
         self.is_revealed = False    # Agent 3: Violent Reveal
         self.slipped_vapor = False  # Hook: Biological Slip flag
         self.knowledge_tags = []    # Agent 3: Searchlight Harvest
+        self.security_role = False
+        self.next_security_check_turn = 0
         self.stealth_posture = StealthPosture.STANDING
         self.schedule_slip_flag = False  # Flagged when off expected schedule
         self.schedule_slip_reason = None
         self.location_hint_active = False
+        self.out_of_place = False   # Whether they are away from schedule/habitat
+        self.out_of_place_reason = None
+        self.movement_history = []
+        self.last_logged_location = None
         self.investigating = False
         self.investigation_goal = None
         self.investigation_priority = 0
@@ -99,6 +105,16 @@ class CrewMember:
         self.stealth_level = 0
         self.silent_takedown_unlocked = False  # Unlocked at level 4
 
+        # Thermal baseline (humans) and elevated signature (Things)
+        self._ensure_thermal_attribute()
+
+    def _ensure_thermal_attribute(self):
+        """Ensure THERMAL attribute exists and is elevated for infected."""
+        base_thermal = 5 if getattr(self, "is_infected", False) else 2
+        current = self.attributes.get(Attribute.THERMAL)
+        if current is None or current < base_thermal:
+            self.attributes[Attribute.THERMAL] = base_thermal
+
     def add_knowledge_tag(self, tag):
         """Add a knowledge tag/memory log if it doesn't already exist."""
         if tag not in self.knowledge_tags:
@@ -143,12 +159,13 @@ class CrewMember:
         res = ResolutionSystem()
         return res.roll_check(pool_size, rng=rng)
 
-    def move(self, dx, dy, station_map):
+    def move(self, dx, dy, station_map, game_state=None):
         """Attempt to move by delta. Returns True if successful."""
         new_x = self.location[0] + dx
         new_y = self.location[1] + dy
         if station_map.is_walkable(new_x, new_y):
             self.location = (new_x, new_y)
+            self.record_movement(game_state)
             return True
         return False
 
@@ -278,6 +295,8 @@ class CrewMember:
             "knowledge_tags": self.knowledge_tags,
             "stealth_posture": self.stealth_posture.name,
             "in_vent": self.in_vent,
+            "security_role": getattr(self, "security_role", False),
+            "next_security_check_turn": getattr(self, "next_security_check_turn", 0),
             "suspicion_level": getattr(self, 'suspicion_level', 0),
             "suspicion_thresholds": getattr(self, 'suspicion_thresholds', {"question": 4, "follow": 8}),
             "suspicion_decay_delay": getattr(self, 'suspicion_decay_delay', 3),
@@ -300,12 +319,16 @@ class CrewMember:
             "silent_takedown_unlocked": getattr(self, 'silent_takedown_unlocked', False),
             "schedule_slip_flag": getattr(self, 'schedule_slip_flag', False),
             "schedule_slip_reason": getattr(self, 'schedule_slip_reason', None),
+            "out_of_place": getattr(self, 'out_of_place', False),
+            "out_of_place_reason": getattr(self, 'out_of_place_reason', None),
             # Enhanced search memory
             "search_history": list(getattr(self, 'search_history', set())),
             "search_anchor": getattr(self, 'search_anchor', None),
             "search_spiral_radius": getattr(self, 'search_spiral_radius', 1),
             "search_targets": getattr(self, 'search_targets', []),
-            "search_turns_remaining": getattr(self, 'search_turns_remaining', 0)
+            "search_turns_remaining": getattr(self, 'search_turns_remaining', 0),
+            "movement_history": getattr(self, 'movement_history', []),
+            "last_logged_location": getattr(self, 'last_logged_location', None)
         }
 
     @classmethod
@@ -367,13 +390,18 @@ class CrewMember:
         m.knowledge_tags = data.get("knowledge_tags", [])
         m.schedule_slip_flag = data.get("schedule_slip_flag", False)
         m.schedule_slip_reason = data.get("schedule_slip_reason")
+        m.out_of_place = data.get("out_of_place", False)
+        m.out_of_place_reason = data.get("out_of_place_reason")
         m.location_hint_active = data.get("location_hint_active", False)
         m.in_vent = data.get("in_vent", False)
+        m.security_role = data.get("security_role", False)
+        m.next_security_check_turn = data.get("next_security_check_turn", 0)
         m.suspicion_level = data.get("suspicion_level", 0)
         m.suspicion_thresholds = data.get("suspicion_thresholds", {"question": 4, "follow": 8})
         m.suspicion_decay_delay = data.get("suspicion_decay_delay", 3)
         m.suspicion_last_raised = data.get("suspicion_last_raised")
         m.suspicion_state = data.get("suspicion_state", "idle")
+        m._ensure_thermal_attribute()
 
         # Infected coordination state
         m.coordinating_ambush = data.get("coordinating_ambush", False)
@@ -396,6 +424,11 @@ class CrewMember:
         m.search_spiral_radius = data.get("search_spiral_radius", 1)
         m.search_targets = [tuple(t) if isinstance(t, list) else t for t in data.get("search_targets", [])]
         m.search_turns_remaining = data.get("search_turns_remaining", 0)
+        m.movement_history = data.get("movement_history", [])
+        m.last_logged_location = data.get("last_logged_location")
+
+        if m.search_history is None:
+            m.search_history = set()
 
         # Items hydration
         m.inventory = []
@@ -407,6 +440,42 @@ class CrewMember:
         m.stealth_posture = safe_enum(StealthPosture, "stealth_posture", StealthPosture.STANDING)
         
         return m
+
+    # --- Search utilities -------------------------------------------------
+
+    def clear_search_history(self):
+        """Reset stored search locations/rooms so a new sweep can begin fresh."""
+        self.search_history = set()
+
+    def record_search_checkpoint(self, location, station_map):
+        """Add a visited coordinate (and its room) to search history to avoid repeats."""
+        if not hasattr(self, "search_history") or self.search_history is None:
+            self.search_history = set()
+
+        self.search_history.add(tuple(location))
+        if station_map:
+            room_name = station_map.get_room_name(*location)
+            self.search_history.add(room_name)
+    def record_movement(self, game_state=None):
+        """Record the current room and turn to movement history."""
+        if not game_state:
+            return
+
+        room = game_state.station_map.get_room_name(*self.location)
+        current_turn = getattr(game_state, "turn", None)
+
+        if room == self.last_logged_location:
+            if self.movement_history:
+                self.movement_history[-1]["turn"] = current_turn
+            return
+
+        entry = {"turn": current_turn, "room": room}
+        self.movement_history.append(entry)
+        self.last_logged_location = room
+
+        # Keep movement history manageable
+        if len(self.movement_history) > 10:
+            self.movement_history = self.movement_history[-10:]
 
     def set_posture(self, posture: StealthPosture):
         """Set the character's stealth posture."""
@@ -465,11 +534,8 @@ class CrewMember:
         a higher thermal signature, making them detectable via thermal sensing.
         """
         base_thermal = self.attributes.get(Attribute.THERMAL, 2)
-
-        # Infected creatures run hotter (+3 thermal signature)
         if getattr(self, 'is_infected', False):
-            return base_thermal + 3
-
+            base_thermal = max(base_thermal, 5)
         return base_thermal
 
     def get_thermal_detection_pool(self) -> int:
@@ -478,6 +544,8 @@ class CrewMember:
         Checks if character has thermal goggles equipped for bonus.
         """
         base_pool = self.attributes.get(Attribute.THERMAL, 2)
+        if getattr(self, 'is_infected', False):
+            base_pool = max(base_pool, 5)
 
         # Check for thermal goggles in inventory
         for item in getattr(self, 'inventory', []):
@@ -494,9 +562,11 @@ class CrewMember:
         current schedule entry, making them suspicious and easier to interrogate.
         """
         if not hasattr(self, 'schedule') or not self.schedule:
+            self.out_of_place = False
+            self.out_of_place_reason = None
             return False
 
-        current_hour = game_state.time_system.hour
+        current_hour = getattr(game_state.time_system, "hour", getattr(game_state, "current_hour", 0))
         current_room = game_state.station_map.get_room_name(*self.location)
 
         # Find the scheduled room for the current hour
@@ -516,19 +586,21 @@ class CrewMember:
                     expected_room = room
                     break
 
-        if not expected_room:
-            return False  # No schedule entry for this time
+        out_of_schedule = False
+        reason = None
 
-        # Check if current room matches expected (allow partial matches for flexibility)
-        # e.g., "Corridor near Lab" should match if expected is "Lab"
-        if expected_room in current_room or current_room in expected_room:
-            return False
+        if expected_room:
+            # Check if current room matches expected (allow partial matches for flexibility)
+            # e.g., "Corridor near Lab" should match if expected is "Lab"
+            if expected_room not in current_room and current_room not in expected_room:
+                # Corridors are neutral - NPCs can be in corridors without being "out of schedule"
+                if not current_room.startswith("Corridor"):
+                    out_of_schedule = True
+                    reason = f"Expected: {expected_room}, current: {current_room}"
 
-        # Corridors are neutral - NPCs can be in corridors without being "out of schedule"
-        if current_room.startswith("Corridor"):
-            return False
-
-        return True
+        self.out_of_place = out_of_schedule
+        self.out_of_place_reason = reason
+        return out_of_schedule
 
     def get_schedule_info(self, game_state) -> dict:
         """
@@ -540,7 +612,7 @@ class CrewMember:
         - out_of_schedule: Boolean
         """
         current_room = game_state.station_map.get_room_name(*self.location)
-        current_hour = game_state.time_system.hour
+        current_hour = getattr(game_state.time_system, "hour", getattr(game_state, "current_hour", 0))
 
         expected_room = None
         for entry in self.schedule:

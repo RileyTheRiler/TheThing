@@ -60,6 +60,36 @@ class MockStationMap:
     def add_item_to_room(self, item, x, y, turn):
         pass
 
+    def project_toward(self, start, target, min_distance=3, max_distance=5):
+        sx, sy = start
+        tx, ty = target
+        dx = tx - sx
+        dy = ty - sy
+        step_x = 0 if dx == 0 else (1 if dx > 0 else -1)
+        step_y = 0 if dy == 0 else (1 if dy > 0 else -1)
+        if step_x == 0 and step_y == 0:
+            return None
+        path = []
+        x, y = sx, sy
+        for _ in range(max_distance):
+            x += step_x
+            y += step_y
+            if not self.is_walkable(x, y):
+                break
+            path.append((x, y))
+        if not path:
+            return None
+        if len(path) >= min_distance:
+            return path[min_distance - 1]
+        return path[-1]
+
+    def get_room_center(self, room_name):
+        bounds = self.rooms.get(room_name)
+        if not bounds:
+            return None
+        x1, y1, x2, y2 = bounds
+        return ((x1 + x2) // 2, (y1 + y2) // 2)
+
 
 class MockGameState:
     """Mock game state for testing."""
@@ -94,7 +124,7 @@ def test_throw_item_basic():
     item = MockItem("Empty Can", throwable=True, noise_level=4)
     game_state.player.inventory.append(item)
 
-    success, message = system.throw_item(game_state.player, item, "N", game_state)
+    success, message = system.throw_toward(game_state.player, item, (5, 1), game_state)
 
     assert success == True
     assert "Empty Can" in message
@@ -114,7 +144,7 @@ def test_throw_non_throwable_item():
     item = MockItem("Scalpel", throwable=False)
     game_state.player.inventory.append(item)
 
-    success, message = system.throw_item(game_state.player, item, "N", game_state)
+    success, message = system.throw_toward(game_state.player, item, (5, 1), game_state)
 
     assert success == False
     assert "can't throw" in message
@@ -124,7 +154,7 @@ def test_throw_non_throwable_item():
 
 
 def test_throw_invalid_direction():
-    """Test that invalid directions are rejected."""
+    """Test that throws with no valid landing fail."""
     from systems.distraction import DistractionSystem
 
     game_state = MockGameState()
@@ -133,23 +163,22 @@ def test_throw_invalid_direction():
     item = MockItem("Rock", throwable=True)
     game_state.player.inventory.append(item)
 
-    success, message = system.throw_item(game_state.player, item, "INVALID", game_state)
+    success, message = system.throw_toward(game_state.player, item, (5, 5), game_state)
 
     assert success == False
-    assert "Invalid direction" in message
+    assert "nowhere" in message
 
     system.cleanup()
-    print("[PASS] Invalid directions rejected")
+    print("[PASS] Invalid landing rejected")
 
 
 def test_throw_all_directions():
-    """Test throwing in all valid directions."""
+    """Test throwing toward multiple targets succeeds."""
     from systems.distraction import DistractionSystem
 
-    directions = ["N", "S", "E", "W", "NE", "NW", "SE", "SW",
-                  "NORTH", "SOUTH", "EAST", "WEST"]
+    targets = [(5, 1), (5, 15), (15, 5), (15, 15)]
 
-    for direction in directions:
+    for target in targets:
         game_state = MockGameState()
         game_state.player.location = (10, 10)  # Center of map
         system = DistractionSystem()
@@ -157,12 +186,12 @@ def test_throw_all_directions():
         item = MockItem("Rock", throwable=True, uses=-1)
         game_state.player.inventory.append(item)
 
-        success, message = system.throw_item(game_state.player, item, direction, game_state)
-        assert success == True, f"Failed for direction {direction}"
+        success, message = system.throw_toward(game_state.player, item, target, game_state)
+        assert success == True, f"Failed for target {target}"
 
         system.cleanup()
 
-    print("[PASS] All directions work correctly")
+    print("[PASS] All targets work correctly")
 
 
 def test_consumable_item_consumed():
@@ -177,7 +206,7 @@ def test_consumable_item_consumed():
 
     assert len(game_state.player.inventory) == 1
 
-    success, message = system.throw_item(game_state.player, item, "N", game_state)
+    success, message = system.throw_toward(game_state.player, item, (5, 1), game_state)
 
     assert success == True
     assert item.uses == 0
@@ -197,7 +226,7 @@ def test_reusable_item_not_removed():
     item = MockItem("Rock", throwable=True, uses=-1)  # Infinite uses
     game_state.player.inventory.append(item)
 
-    success, message = system.throw_item(game_state.player, item, "N", game_state)
+    success, message = system.throw_toward(game_state.player, item, (5, 1), game_state)
 
     assert success == True
     # Item with -1 uses should be dropped on ground (add_item_to_room called)
@@ -221,7 +250,7 @@ def test_npcs_distracted():
     game_state.player.inventory.append(item)
 
     # Player at (5, 5), throw north to (5, 1)
-    success, message = system.throw_item(game_state.player, item, "N", game_state)
+    success, message = system.throw_toward(game_state.player, item, (5, 1), game_state)
 
     assert success == True
     assert npc.investigating == True
@@ -244,7 +273,7 @@ def test_far_npcs_not_distracted():
     item = MockItem("Rock", throwable=True, noise_level=3)  # Low noise
     game_state.player.inventory.append(item)
 
-    success, message = system.throw_item(game_state.player, item, "N", game_state)
+    success, message = system.throw_toward(game_state.player, item, (5, 1), game_state)
 
     assert success == True
     assert far_npc.investigating == False  # Too far to hear
@@ -292,10 +321,10 @@ def test_creates_light_flag():
     flare = MockItem("Flare", throwable=True, noise_level=6, creates_light=True, uses=1)
     game_state.player.inventory.append(flare)
 
-    success, message = system.throw_item(game_state.player, flare, "E", game_state)
+    success, message = system.throw_toward(game_state.player, flare, (7, 5), game_state)
 
     assert success == True
-    assert "bright flash" in message
+    assert "light" in message
 
     system.cleanup()
     print("[PASS] Creates light flag works correctly")

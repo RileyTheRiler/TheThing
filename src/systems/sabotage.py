@@ -17,6 +17,9 @@ class SabotageManager:
         # Operational status of critical systems
         self.radio_operational = True
         self.chopper_operational = True
+        # Legacy compatibility for older attributes referenced in events
+        self.radio_working = True
+        self.helicopter_working = True
         
         # Event tracking
         self.events_triggered = {
@@ -100,6 +103,9 @@ class SabotageManager:
             return None 
         
         self.radio_operational = False
+        self.radio_working = False
+        if game_state:
+            game_state.radio_operational = False
         self.events_triggered[SabotageEvent.RADIO_SMASHING] = True
         return "SABOTAGE: RADIO DESTROYED"
     
@@ -108,6 +114,11 @@ class SabotageManager:
             return None 
         
         self.chopper_operational = False
+        self.helicopter_working = False
+        if game_state:
+            game_state.helicopter_operational = False
+            if getattr(game_state, "helicopter_status", None) != "ESCAPED":
+                game_state.helicopter_status = "BROKEN"
         self.events_triggered[SabotageEvent.CHOPPER_DESTRUCTION] = True
         return "SABOTAGE: HELICOPTER DESTROYED"
     
@@ -126,6 +137,44 @@ class SabotageManager:
             "The blood containers in the Infirmary have been smashed.\n"
             "Serum testing is now impossible."
         )
+
+    def register_security_sabotage(self, device, game_state, saboteur=None, noise_level: int = 4):
+        """Record a sabotage against a security device and emit alerts/noise."""
+        if not device:
+            return
+
+        actor_name = getattr(saboteur, "name", "Unknown")
+        turn = getattr(game_state, "turn", 0)
+        description = f"{device.device_type.replace('_', ' ').title()} in {device.room} sabotaged"
+
+        # Log to shared security log for consoles
+        if hasattr(game_state, "security_log"):
+            game_state.security_log.add_entry(
+                turn,
+                device.device_type,
+                device.room,
+                actor_name,
+                getattr(device, "position", (0, 0)),
+                description
+            )
+
+        # Emit a loud perception ping so nearby NPCs investigate
+        event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, {
+            "source": "sabotage",
+            "noise_level": noise_level,
+            "target_location": getattr(device, "position", None),
+            "room": device.room,
+            "game_state": game_state,
+            "intensity": 2,
+            "priority_override": 2
+        }))
+
+        # Station-wide alert for UI/logging
+        event_bus.emit(GameEvent(EventType.STATION_ALERT, {
+            "text": description,
+            "room": device.room,
+            "turn": turn
+        }))
     
     def get_status(self):
         radio = "OK" if self.radio_operational else "DESTROYED"

@@ -64,6 +64,14 @@ COMMAND_REGISTRY: List[CommandMetadata] = [
         help_text="Reinforce the room to delay entry by enemies."
     ),
     CommandMetadata(
+        name="DEPLOY",
+        aliases=["PLACE", "SET"],
+        description="Deploy a placeable item like a tripwire alarm.",
+        category="COMBAT",
+        usage="DEPLOY <ITEM>",
+        help_text="Place traps or sensors at your current location to create alerts when triggered."
+    ),
+    CommandMetadata(
         name="BREAK",
         aliases=["SMASH"],
         description="Break a barricade.",

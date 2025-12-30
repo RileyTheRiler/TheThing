@@ -2,6 +2,7 @@ from typing import Dict, List, Optional
 from core.design_briefs import DesignBriefRegistry
 from core.event_system import event_bus, EventType, GameEvent
 from core.resolution import Attribute, ResolutionSystem, Skill
+from core.perception import normalize_perception_payload
 from systems.room_state import RoomState
 from entities.crew_member import StealthPosture
 from systems.dialogue import DialogueSystem
@@ -127,12 +128,16 @@ class StealthSystem:
         mods = None
         if room_states:
             mods = room_states.get_resolution_modifiers(room)
-            detection_chance = max(0.0, detection_chance + mods.stealth_detection)
+            stealth_mod = getattr(mods, "stealth_detection", 0.0) if mods else 0.0
+            detection_chance = max(0.0, detection_chance + float(stealth_mod))
 
         roll = rng.random_float()
         if roll > detection_chance:
+            noise_level = player.get_noise_level() if hasattr(player, "get_noise_level") else 0
             payload = {
                 "room": room,
+                "location": getattr(player, "location", None),
+                "actor": getattr(player, "name", None),
                 "opponent": opponent.name,
                 "opponent_ref": opponent,
                 "player_ref": player,
@@ -141,7 +146,8 @@ class StealthSystem:
                 "player_successes": 0,
                 "opponent_successes": 0,
                 "subject_pool": 0,
-                "observer_pool": 0
+                "observer_pool": 0,
+                "noise_level": noise_level,
             }
             event_bus.emit(GameEvent(EventType.STEALTH_REPORT, payload))
             self.cooldown = self.config.get("cooldown_turns", 1) if self.config else 1
@@ -163,8 +169,12 @@ class StealthSystem:
 
         # Station Alert Bonus (all NPCs more vigilant during alert)
         alert_system = getattr(game_state, 'alert_system', None)
+        alert_bonus = 0
         if alert_system and alert_system.is_active:
-            observer_pool += alert_system.get_observation_bonus()
+            alert_bonus = alert_system.get_observation_bonus()
+        elif getattr(game_state, "alert_status", "").upper() == "ALERT" and getattr(game_state, "alert_turns_remaining", 0) > 0:
+            alert_bonus = 1
+        observer_pool += alert_bonus
 
         # 3. Modifiers (Posture and Environment)
         posture = getattr(player, "stealth_posture", StealthPosture.STANDING)
@@ -193,7 +203,17 @@ class StealthSystem:
         if blocks_los:
             observer_pool = max(1, observer_pool - 1)
         
-        # Enforce minimum pool
+        # Enforce minimum pool (guard against mocked values)
+        try:
+            subject_pool = int(subject_pool)
+        except Exception:
+            subject_pool = 1
+
+        try:
+            observer_pool = int(observer_pool)
+        except Exception:
+            observer_pool = 1
+
         subject_pool = max(1, subject_pool)
         observer_pool = max(1, observer_pool)
 
@@ -221,8 +241,11 @@ class StealthSystem:
             opponent.increase_suspicion(suspicion_delta, turn=current_turn)
             opponent.suspicion_state = getattr(opponent, "suspicion_state", "idle")
         
+        noise_level = player.get_noise_level() if hasattr(player, "get_noise_level") else 0
         payload = {
             "room": room,
+            "location": getattr(player, "location", None),
+            "actor": getattr(player, "name", None),
             "opponent": opponent.name,
             "opponent_ref": opponent,  # Reference to actual NPC object
             "player_ref": player,      # Reference to player object
@@ -234,13 +257,15 @@ class StealthSystem:
             "observer_pool": observer_pool,
             "hiding_spot": hiding_spot,
             "suspicion_delta": suspicion_delta,
-            "suspicion_level": getattr(opponent, "suspicion_level", 0)
+            "suspicion_level": getattr(opponent, "suspicion_level", 0),
+            "noise_level": noise_level,
         }
         event_bus.emit(GameEvent(EventType.STEALTH_REPORT, payload))
-        
+
         # Emit Perception Event
         if hasattr(EventType, 'PERCEPTION_EVENT'):
-             event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, payload))
+             normalized = normalize_perception_payload(payload)
+             event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, normalized))
 
         
         # Check for reverse thermal detection (Thing sensing player heat in darkness)
@@ -268,7 +293,7 @@ class StealthSystem:
 
         self.cooldown = self.config.get("cooldown_turns", 1)
 
-    def evaluate_detection(self, observer, subject, game_state, noise_level=None) -> bool:
+    def evaluate_detection(self, observer, subject, game_state, noise_level=None, alert_bonus: int = 0) -> bool:
         """
         Check if observer detects subject.
         Returns True if detected.
@@ -276,7 +301,7 @@ class StealthSystem:
         if noise_level is None:
             noise_level = subject.get_noise_level()
 
-        ctx = self._prepare_detection_context(observer, subject, game_state, noise_level)
+        ctx = self._prepare_detection_context(observer, subject, game_state, noise_level, alert_bonus)
 
         res = ResolutionSystem()
         subject_result = ResolutionSystem.roll_check(ctx["subject_pool"], game_state.rng)
@@ -291,16 +316,22 @@ class StealthSystem:
 
         # Heat-based detection when room is dark and not frozen
         thermal_detected = False
-        if ctx["is_dark"] and not ctx["is_frozen"]:
+        thermal_bonus = 0
+        thermal_context = ctx["env_effects"] or ctx.get("resolution_mods")
+        if thermal_context and getattr(thermal_context, "heat_detection_enabled", False):
+            thermal_bonus = getattr(thermal_context, "thermal_detection_bonus", 0)
+
+        thermal_allowed = ctx["is_dark"] and not ctx["is_frozen"]
+
+        if thermal_allowed:
             # Get observer's thermal detection pool (includes thermal goggles bonus)
             if hasattr(observer, 'get_thermal_detection_pool'):
                 thermal_pool = observer.get_thermal_detection_pool()
             else:
                 thermal_pool = observer.attributes.get(Attribute.THERMAL, 2)
 
-            # Environmental thermal bonus (power off gives equipment bonus)
-            if ctx["env_effects"] and ctx["env_effects"].heat_detection_enabled:
-                thermal_pool += ctx["env_effects"].thermal_detection_bonus
+            # Environmental/room thermal bonus (power off gives equipment bonus)
+            thermal_pool += thermal_bonus
 
             # Subject's thermal signature (Things run hotter)
             if hasattr(subject, 'get_thermal_signature'):
@@ -310,15 +341,16 @@ class StealthSystem:
 
             thermal_pool = max(1, thermal_pool)
             thermal_result = ResolutionSystem.roll_check(thermal_pool, game_state.rng)
-            thermal_detected = thermal_result['success_count'] >= subject_result['success_count']
-            thermal_result = res.roll_check(thermal_pool, game_state.rng)
             # Thermal detection is easier against higher thermal signatures
-            thermal_threshold = max(0, subject_result['success_count'] - (subject_thermal - 2))
+            thermal_threshold = max(0, subject_result['success_count'] - max(0, subject_thermal - 2))
             thermal_detected = thermal_result['success_count'] >= thermal_threshold
+
+        if not (visual_detected or thermal_detected) and getattr(observer, "is_infected", False):
+            thermal_detected = self.check_reverse_thermal_detection(observer, subject, game_state)
 
         return visual_detected or thermal_detected
 
-    def _prepare_detection_context(self, observer, subject, game_state, noise_level: int):
+    def _prepare_detection_context(self, observer, subject, game_state, noise_level: int, alert_bonus: int = 0):
         """Build detection pools and environmental context for repeated calculations."""
         station_map = getattr(game_state, "station_map", None)
         room_states = getattr(game_state, "room_states", None)
@@ -337,8 +369,12 @@ class StealthSystem:
 
         # Station Alert Bonus (all NPCs more vigilant during alert)
         alert_system = getattr(game_state, 'alert_system', None)
-        if alert_system and alert_system.is_active:
-            observer_pool += alert_system.get_observation_bonus()
+        system_bonus = alert_system.get_observation_bonus() if alert_system and alert_system.is_active else 0
+        status_bonus = 0
+        if getattr(game_state, "alert_status", "").upper() == "ALERT" and getattr(game_state, "alert_turns_remaining", 0) > 0:
+            status_bonus = max(status_bonus, 1)
+
+        observer_pool += max(system_bonus, alert_bonus, status_bonus)
 
         prowess = subject.attributes.get(Attribute.PROWESS, 1)
         stealth = subject.skills.get(Skill.STEALTH, 0)
@@ -360,6 +396,9 @@ class StealthSystem:
             env_effects = env.get_current_modifiers(room_name, game_state)
             observer_pool = ResolutionSystem.adjust_pool(observer_pool, env_effects.observation_pool_modifier)
 
+        has_resolution_mods = hasattr(room_states, "get_resolution_modifiers")
+        resolution_mods = room_states.get_resolution_modifiers(room_name) if has_resolution_mods and room_name else None
+
         # Darkness makes visual spotting harder
         if is_dark:
             subject_pool += 2
@@ -368,6 +407,7 @@ class StealthSystem:
         # Noise acts as penalty to subject pool (inverse of stealth) and a boon to observers
         noise_penalty = noise_level // 2
         subject_pool = max(1, subject_pool - noise_penalty)
+        observer_pool = max(1, observer_pool + noise_level)
 
         # Apply hiding spot modifiers when present
         hiding_spot, cover_bonus, blocks_los = self._hiding_spot_modifiers(getattr(game_state, "station_map", None), subject)
@@ -384,23 +424,9 @@ class StealthSystem:
             "is_dark": is_dark,
             "is_frozen": is_frozen,
             "env_effects": env_effects,
+            "resolution_mods": resolution_mods,
             "observer_result_penalty": observer_result_penalty,
             "room_name": room_name
-        }
-
-        # Noise acts as penalty to observer pool as well (harder to spot in loud environments)
-        noise_penalty = noise_level // 3
-        observer_pool = ResolutionSystem.adjust_pool(observer_pool, -noise_penalty)
-
-        return {
-            "observer_pool": max(1, observer_pool),
-            "subject_pool": max(1, subject_pool),
-            "env_effects": env_effects,
-            "is_dark": is_dark,
-            "is_frozen": is_frozen,
-            "room_name": room_name,
-            "cover_bonus": cover_bonus,
-            "blocks_los": blocks_los,
         }
 
     # === VENT MECHANICS CONFIGURATION ===
@@ -455,10 +481,11 @@ class StealthSystem:
 
         # Vent noise is louder due to echoing in metal ducts
         base_noise = self.config.get("vent_base_noise", self.VENT_BASE_NOISE) if self.config else self.VENT_BASE_NOISE
-        noise_level = max(actor.get_noise_level(), base_noise)
+        vent_noise_bonus = self.config.get("vent_noise_bonus", 5) if self.config else 5
+        noise_level = max(actor.get_noise_level() + vent_noise_bonus, base_noise + vent_noise_bonus)
 
         # Broadcast perception event at current location
-        event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, {
+        vent_payload = normalize_perception_payload({
             "source": "vent",
             "room": room,
             "location": destination,
@@ -468,8 +495,14 @@ class StealthSystem:
             "priority_override": 2,
             "linger_turns": 3,
             "threat": "vent_close_quarters",
+            "priority_override": 3,
             "game_state": game_state
         }))
+            "game_state": game_state,
+            "actor_ref": actor,
+            "actor": getattr(actor, "name", None),
+        })
+        event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, vent_payload))
 
         # Sound propagates to adjacent vent nodes (echoing effect)
         adjacent_vents = []
@@ -482,8 +515,10 @@ class StealthSystem:
             adj_x, adj_y = neighbor["coord"]
             adj_room = neighbor["room"]
             # Reduced noise at adjacent nodes (echo falloff)
-            echo_noise = max(noise_level - 3, 5)
+            echo_noise = max(noise_level - 3, base_noise)
             event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, {
+            echo_noise = max(noise_level - 3, 5)
+            echo_payload = normalize_perception_payload({
                 "source": "vent_echo",
                 "room": adj_room,
                 "location": (adj_x, adj_y),
@@ -495,6 +530,11 @@ class StealthSystem:
                 "threat": "vent_close_quarters",
                 "game_state": game_state
             }))
+                "game_state": game_state,
+                "actor_ref": actor,
+                "actor": getattr(actor, "name", None),
+            })
+            event_bus.emit(GameEvent(EventType.PERCEPTION_EVENT, echo_payload))
 
         # Check for Thing encounter in the vents
         encounter_chance = self.config.get("vent_encounter_chance", self.VENT_ENCOUNTER_CHANCE) if self.config else self.VENT_ENCOUNTER_CHANCE
@@ -545,6 +585,8 @@ class StealthSystem:
                 # Emit stealth report for encounter
                 payload = {
                     "room": room,
+                    "location": destination,
+                    "actor": getattr(actor, "name", None),
                     "opponent": opponent.name,
                     "opponent_ref": opponent,
                     "player_ref": actor,
@@ -554,7 +596,8 @@ class StealthSystem:
                     "player_successes": player_result['success_count'],
                     "opponent_successes": thing_result['success_count'],
                     "subject_pool": player_pool,
-                    "observer_pool": thing_pool
+                    "observer_pool": thing_pool,
+                    "noise_level": noise_level,
                 }
                 event_bus.emit(GameEvent(EventType.STEALTH_REPORT, payload))
             else:
@@ -577,8 +620,18 @@ class StealthSystem:
         visual_ratio = ctx["observer_pool"] / (ctx["observer_pool"] + ctx["subject_pool"])
 
         thermal_ratio = 0.0
-        if ctx["env_effects"] and ctx["env_effects"].heat_detection_enabled and not ctx["is_frozen"]:
-            thermal_pool = observer.attributes.get(Attribute.THERMAL, 1) + ctx["env_effects"].thermal_detection_bonus
+        if ctx["is_dark"] and not ctx["is_frozen"]:
+            thermal_bonus = 0
+            thermal_context = ctx["env_effects"] or ctx.get("resolution_mods")
+            if thermal_context and getattr(thermal_context, "heat_detection_enabled", False):
+                thermal_bonus = getattr(thermal_context, "thermal_detection_bonus", 0)
+
+            if hasattr(observer, 'get_thermal_detection_pool'):
+                thermal_pool = observer.get_thermal_detection_pool()
+            else:
+                thermal_pool = observer.attributes.get(Attribute.THERMAL, 1)
+
+            thermal_pool += thermal_bonus
             thermal_ratio = thermal_pool / (thermal_pool + ctx["subject_pool"])
 
         # Combine independent visual and thermal chances
@@ -627,7 +680,17 @@ class StealthSystem:
             return False
 
         # The Thing has enhanced thermal senses (+2 base, +3 from infection)
-        thing_thermal_pool = 5  # Enhanced Thing senses
+        if hasattr(infected_npc, "get_thermal_detection_pool"):
+            thing_thermal_pool = infected_npc.get_thermal_detection_pool()
+        else:
+            thing_thermal_pool = max(5, infected_npc.attributes.get(Attribute.THERMAL, 2))
+
+        thermal_bonus = 0
+        if room_states and hasattr(room_states, "get_resolution_modifiers"):
+            mods = room_states.get_resolution_modifiers(room_name)
+            if getattr(mods, "heat_detection_enabled", False):
+                thermal_bonus = getattr(mods, "thermal_detection_bonus", 0)
+        thing_thermal_pool += thermal_bonus
 
         # Check if player has thermal blanket equipped/in inventory
         thermal_blanket_penalty = self._get_thermal_blanket_bonus(player)

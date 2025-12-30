@@ -255,10 +255,16 @@ class RandomEventSystem:
                 target = effect.get("target")
                 if target == "radio" and hasattr(game_state, 'sabotage'):
                     game_state.sabotage.radio_working = False
-                    
+                    game_state.sabotage.radio_operational = False
+                    if hasattr(game_state, "radio_operational"):
+                        game_state.radio_operational = False
+            
             elif eff_type == "sabotage_helicopter":
                 if hasattr(game_state, 'sabotage'):
                     game_state.sabotage.helicopter_working = False
+                    game_state.sabotage.chopper_operational = False
+                    if hasattr(game_state, "helicopter_operational"):
+                        game_state.helicopter_operational = False
 
             elif eff_type == "emit_event":
                 evt_type_str = effect.get("event_type")
