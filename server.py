@@ -196,7 +196,7 @@ def serialize_game_state(game):
         'room_icons': room_icons,
         'room_description': room_desc,
         'weather': weather_status,
-        'sabotage_status': game.sabotage.get_status() if not game.sabotage.radio_operational or not game.sabotage.chopper_operational else None,
+        'sabotage_status': game.sabotage.get_status() if not game.radio_operational or not game.helicopter_operational else None,
         'items': item_list,
         'crew': crew_status,
         'inventory': inventory,

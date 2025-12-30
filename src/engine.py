@@ -260,27 +260,34 @@ class GameState:
             else:
                 base_dialogue += " [NO VAPOR]"
         return base_dialogue
-        if previous_value is None:
-            self._paranoia_bucket = bucket_for_thresholds(clamped, self.social_thresholds.paranoia_thresholds)
-            return
-
-        new_bucket = bucket_for_thresholds(clamped, self.social_thresholds.paranoia_thresholds)
-        previous_bucket = getattr(self, "_paranoia_bucket", new_bucket)
-        if new_bucket != previous_bucket:
-            self._paranoia_bucket = new_bucket
-            direction = "UP" if clamped > previous_value else "DOWN"
-            event_bus.emit(GameEvent(EventType.PARANOIA_THRESHOLD_CROSSED, {
-                "value": clamped,
-                "previous_value": previous_value,
-                "bucket": bucket_label(new_bucket),
-                "thresholds": list(self.social_thresholds.paranoia_thresholds),
-                "direction": direction,
-                "threshold": self.social_thresholds.paranoia_thresholds[new_bucket-1] if direction == "UP" else self.social_thresholds.paranoia_thresholds[new_bucket]
-            }))
 
     @property
     def temperature(self):
         return self.time_system.temperature if hasattr(self, "time_system") else -40.0
+
+    @property
+    def radio_operational(self):
+        if hasattr(self, "sabotage") and hasattr(self.sabotage, "radio_operational"):
+            return self.sabotage.radio_operational
+        return getattr(self, "_radio_operational", True)
+
+    @radio_operational.setter
+    def radio_operational(self, value: bool):
+        self._radio_operational = bool(value)
+        if hasattr(self, "sabotage"):
+            self.sabotage.radio_operational = bool(value)
+
+    @property
+    def helicopter_operational(self):
+        if hasattr(self, "sabotage") and hasattr(self.sabotage, "helicopter_operational"):
+            return self.sabotage.helicopter_operational
+        return getattr(self, "_helicopter_operational", True)
+
+    @helicopter_operational.setter
+    def helicopter_operational(self, value: bool):
+        self._helicopter_operational = bool(value)
+        if hasattr(self, "sabotage"):
+            self.sabotage.helicopter_operational = bool(value)
 
     def __init__(self, seed=None, difficulty=Difficulty.NORMAL, characters_path=None, start_hour=None, thresholds: SocialThresholds = None):
         # 1. Pre-initialization of essential attributes to avoid AttributeErrors in setters/listeners
@@ -291,6 +298,8 @@ class GameState:
         self._paranoia_level = 0
         self.design_registry = DesignBriefRegistry()
         self.action_cooldowns = {}
+        self._radio_operational = True
+        self._helicopter_operational = True
         
         # 2. Basic Configuration
         self.characters_config_path = characters_path or os.path.join("config", "characters.json")
@@ -357,6 +366,8 @@ class GameState:
         self.turn = 1
         self.running = True
         self.game_over = False
+        self.last_ending_payload = None
+        self._last_action_successful = False
         self.turn_behavior_inventory = {"weather": 0, "sabotage": 0, "ai": 0, "random_events": 0}
 
         # 9. Narrative/Persistence
@@ -478,6 +489,15 @@ class GameState:
         # TimeSystem and others react to TURN_ADVANCE event
         turn_inventory = {"weather": 0, "sabotage": 0, "ai": 0, "random_events": 0, "random_event_triggered": None}
 
+        if self.rescue_signal_active and self.rescue_turns_remaining is not None:
+            self.rescue_turns_remaining -= 1
+            if self.rescue_turns_remaining == 5:
+                event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "Rescue ETA updated: 5 hours out."}))
+            elif self.rescue_turns_remaining == 1:
+                event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "Rescue team landing imminent!"}))
+            if self.rescue_turns_remaining <= 0:
+                self.rescue_turns_remaining = 0
+
         event_bus.emit(GameEvent(EventType.TURN_ADVANCE, {
             "game_state": self,
             "rng": self.rng,
@@ -557,6 +577,120 @@ class GameState:
             "turn": self.turn
         }))
 
+    def _has_item(self, keyword: str):
+        return next((i for i in self.player.inventory if keyword.upper() in i.name.upper()), None)
+
+    def attempt_repair_radio(self):
+        """Repair the radio if the player has the right tools and access."""
+        self._last_action_successful = False
+        player_room = self.station_map.get_room_name(*self.player.location)
+
+        if player_room != "Radio Room":
+            msg = "You must be in the Radio Room to repair the radio."
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": msg}))
+            return msg
+
+        if self.radio_operational:
+            msg = "The radio is already operational."
+            event_bus.emit(GameEvent(EventType.MESSAGE, {"text": msg}))
+            return msg
+
+        tools = self._has_item("TOOLS")
+        parts = self._has_item("REPLACEMENT") or self._has_item("WIRE")
+        if not tools or not parts:
+            msg = "You need Tools and spare wiring to repair the radio."
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": msg}))
+            return msg
+
+        self.radio_operational = True
+        self._last_action_successful = True
+        msg = "You patch the radio back together. It hums with static, ready to broadcast."
+        event_bus.emit(GameEvent(EventType.MESSAGE, {"text": msg}))
+        return msg
+
+    def attempt_repair_helicopter(self):
+        """Attempt to repair the helicopter using available parts."""
+        self._last_action_successful = False
+        player_room = self.station_map.get_room_name(*self.player.location)
+
+        if player_room != "Hangar":
+            msg = "You must be in the Hangar to repair the helicopter."
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": msg}))
+            return msg
+
+        if self.helicopter_status == "FIXED" and self.helicopter_operational:
+            msg = "The helicopter is already fixed."
+            event_bus.emit(GameEvent(EventType.MESSAGE, {"text": msg}))
+            return msg
+
+        tools = self._has_item("TOOLS")
+        parts = (
+            self._has_item("REPLACEMENT")
+            or self._has_item("FUEL")
+            or self._has_item("WIRE")
+        )
+
+        if not tools or not parts:
+            msg = "You need Tools and replacement parts to fix the helicopter."
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": msg}))
+            return msg
+
+        self.helicopter_operational = True
+        event_bus.emit(GameEvent(EventType.HELICOPTER_REPAIRED, {"game_state": self}))
+        self._last_action_successful = True
+        return "You rebuild the damaged assemblies. The helicopter whines back to life."
+
+    def attempt_radio_signal(self):
+        """Broadcast an SOS if the radio can reach the outside world."""
+        self._last_action_successful = False
+        player_room = self.station_map.get_room_name(*self.player.location)
+
+        if player_room != "Radio Room":
+            msg = "You must be in the Radio Room to send an SOS."
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": msg}))
+            return msg
+
+        if not self.radio_operational:
+            msg = "The radio is damaged. Repair it before broadcasting."
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": msg}))
+            return msg
+
+        if self.rescue_signal_active:
+            msg = "The SOS signal is already broadcasting."
+            event_bus.emit(GameEvent(EventType.MESSAGE, {"text": msg}))
+            return msg
+
+        self.rescue_signal_active = True
+        # 20-turn default window; turn advance will immediately tick this down.
+        self.rescue_turns_remaining = 20
+        self._last_action_successful = True
+        event_bus.emit(GameEvent(EventType.SOS_EMITTED, {"game_state": self}))
+        return "You key the microphone and broadcast a desperate SOS across every channel."
+
+    def attempt_escape(self):
+        """Attempt to fly out using the repaired helicopter."""
+        self._last_action_successful = False
+        player_room = self.station_map.get_room_name(*self.player.location)
+
+        if player_room != "Hangar":
+            msg = "You must be in the Hangar to fly the helicopter."
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": msg}))
+            return msg
+
+        if not self.helicopter_operational or self.helicopter_status != "FIXED":
+            msg = "The helicopter is not operational. It needs repairs."
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": msg}))
+            return msg
+
+        if not self.radio_operational:
+            msg = "The radio is dead—you can't coordinate a safe escape route through the storm."
+            event_bus.emit(GameEvent(EventType.WARNING, {"text": msg}))
+            return msg
+
+        event_bus.emit(GameEvent(EventType.MESSAGE, {"text": "You climb into the pilot's seat and engage the rotors..."}))
+        event_bus.emit(GameEvent(EventType.ESCAPE_SUCCESS, {"game_state": self}))
+        self._last_action_successful = True
+        return "You yank the collective and lift off, skimming above the outpost toward the endless white."
     def attempt_repair_radio(self):
         player_room = self.station_map.get_room_name(*self.player.location)
         if player_room != "Radio Room":
@@ -682,12 +816,27 @@ class GameState:
             self.reporter.cleanup()
 
     def check_win_condition(self):
+        if self.last_ending_payload:
+            return self.last_ending_payload.get("result") == "win", self.last_ending_payload.get("message")
+
         if not self.player or not self.player.is_alive:
             return False, None
         if self.player.is_infected and self.player.is_revealed:
             return False, None
 
+        def msg(key, fallback):
+            try:
+                return self.endgame.states.get(key, {}).get("message", fallback)
+            except Exception:
+                return fallback
+
         if self.helicopter_status == "ESCAPED":
+            return True, msg("ESCAPE", "You pilot the chopper through the storm, leaving the nightmare of Outpost 31 behind.")
+
+        if self.rescue_signal_active and self.rescue_turns_remaining is not None and self.rescue_turns_remaining <= 0:
+            if not self.power_on and getattr(self.sabotage, "power_sabotaged", False):
+                return True, msg("PYRRHIC", "You flee into the ice as Outpost 31 dies behind you.")
+            return True, msg("RESCUE", "Lights cut through the storm. The rescue team has arrived to extract you.")
             if self.escape_route == "overland":
                 return True, "With the generators dead and the station ruined, you vanish into the whiteout."
             return True, "You pilot the chopper through the storm, leaving the nightmare of Outpost 31 behind."
@@ -702,12 +851,12 @@ class GameState:
         living_infected = [m for m in living_crew if m.is_infected and m != self.player]
 
         if len(living_crew) == 1 and living_crew[0] == self.player:
-            return True, "Silence falls over the station. You are the only one left alive. The threat is gone... you hope."
+            return True, msg("SOLE_SURVIVOR", "Silence falls over the station. You are the only one left alive. The threat is gone... you hope.")
 
         if not living_infected and self.crew:
             total_infected = [m for m in self.crew if m.is_infected]
             if total_infected and all(not m.is_alive for m in total_infected):
-                 return True, "All Things have been eliminated. Humanity survives... for now."
+                 return True, msg("EXTERMINATION", "All Things have been eliminated. Humanity survives... for now.")
 
         return False, None
 
@@ -725,6 +874,10 @@ class GameState:
 
     def check_game_over(self):
         """Check for game over conditions. Returns (game_over, won, message)."""
+        if self.last_ending_payload:
+            payload = self.last_ending_payload
+            return True, payload.get("result") == "win", payload.get("message")
+
         # Check lose conditions first
         lost, lose_message = self.check_lose_condition()
         if lost:
@@ -801,6 +954,8 @@ class GameState:
             game.mode = GameMode.INVESTIGATIVE
 
         game.helicopter_status = data.get("helicopter_status", "BROKEN")
+        game.helicopter_operational = data.get("helicopter_operational", True)
+        game.radio_operational = data.get("radio_operational", True)
         game.helicopter_operational = data.get("helicopter_operational", game.helicopter_operational)
         game.radio_operational = data.get("radio_operational", game.radio_operational)
         game.escape_route = data.get("escape_route")

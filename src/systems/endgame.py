@@ -42,6 +42,7 @@ class EndgameSystem:
         if not game_state:
             return
 
+        self._check_escape_routes(game_state)
         if getattr(game_state, "escape_route", None) == "overland" and getattr(game_state, "overland_escape_turns", 1) == 0:
             self._resolve_ending("PYRRHIC_VICTORY", game_state, ending_id="pyrrhic_victory")
             return
@@ -67,6 +68,7 @@ class EndgameSystem:
         # Check if it was the player
         victim_name = event.payload.get("name")
         if victim_name == "MacReady":
+            self._resolve_ending("DEATH", game_state, ending_id="death")
             self._resolve_ending("DEATH", game_state, ending_id="macready_death")
             return
 
@@ -112,6 +114,8 @@ class EndgameSystem:
         
         game_state = event.payload.get("game_state")
         if game_state:
+            game_state.helicopter_status = "ESCAPED"
+            self._resolve_escape(game_state)
             # Check if player is infected?
             if game_state.player.is_infected:
                  # It's a win for the Thing, but technically an "Escape" ending structure
@@ -157,18 +161,50 @@ class EndgameSystem:
             # Only win if at least one human is left (checked above)
             self._resolve_ending("EXTERMINATION", game_state, ending_id="extermination")
 
+    def _check_escape_routes(self, game_state):
+        """Check helicopter and rescue timers for win/loss outcomes."""
+        if getattr(game_state, "helicopter_status", None) == "ESCAPED":
+            self._resolve_escape(game_state)
+            return
+
+        if getattr(game_state, "rescue_signal_active", False) and getattr(game_state, "rescue_turns_remaining", None) is not None:
+            if game_state.rescue_turns_remaining <= 0:
+                self._resolve_rescue(game_state)
+
+    def _resolve_escape(self, game_state):
+        pyro = self._is_pyrrhic(game_state)
+        key = "PYRRHIC" if pyro else "ESCAPE"
+        ending_id = "pyrrhic_victory" if pyro else "helicopter_escape"
+        self._resolve_ending(key, game_state, ending_id=ending_id)
+
+    def _resolve_rescue(self, game_state):
+        pyro = self._is_pyrrhic(game_state)
+        key = "PYRRHIC" if pyro else "RESCUE"
+        ending_id = "pyrrhic_victory" if pyro else "radio_rescue"
+        self._resolve_ending(key, game_state, ending_id=ending_id)
+
+    def _is_pyrrhic(self, game_state) -> bool:
+        """Determine if the station is effectively lost while you escape."""
+        power_ruined = not getattr(game_state, "power_on", True) and getattr(getattr(game_state, "sabotage", None), "power_sabotaged", False)
+        return bool(power_ruined)
+
     def _resolve_ending(self, ending_key: str, game_state, ending_id: Optional[str] = None):
         """Emit the ending report and mark as resolved."""
         state_data = self.states.get(ending_key, {})
         ending_meta = self.ending_definitions.get(ending_id)
         
         payload = {
+            "result": "win" if ending_key in ["ESCAPE", "RESCUE", "EXTERMINATION", "SOLE_SURVIVOR", "PYRRHIC"] else "loss",
             "result": "win" if ending_key in ["ESCAPE", "RESCUE", "EXTERMINATION", "SOLE_SURVIVOR", "PYRRHIC_VICTORY"] else "loss",
             "ending_type": ending_key,
             "ending_id": ending_id or ending_key.lower(),
             "name": state_data.get("name", ending_key),
             "message": (ending_meta.get("message") if ending_meta else None) or state_data.get("message", "Game Over"),
             "turn": getattr(game_state, "turn", None),
+            "ending_id": ending_id or state_data.get("id") or ending_key.lower(),
         }
         event_bus.emit(GameEvent(EventType.ENDING_REPORT, payload))
+        if hasattr(game_state, "game_over"):
+            game_state.game_over = True
+            game_state.last_ending_payload = payload
         self.resolved = True

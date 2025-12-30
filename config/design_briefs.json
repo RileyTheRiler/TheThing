@@ -78,6 +78,11 @@
                 "condition": "All humans are gone or the player is infected and revealed.",
                 "message": "There are no humans left. The Thing has won."
             },
+            "PYRRHIC": {
+                "name": "Pyrrhic Victory",
+                "condition": "Escape succeeds but the station is destroyed by sabotage.",
+                "message": "You flee into the storm as Outpost 31 dies behind you. Survival came at a terrible cost."
+            },
             "DEATH": {
                 "name": "MacReady Deceased",
                 "condition": "The player character has died.",
@@ -108,6 +113,8 @@
             {
                 "id": "pyrrhic_victory",
                 "result": "win",
+                "trigger": "sabotage_escape",
+                "message": "You flee into the storm as Outpost 31 dies behind you. Survival came at a terrible cost."
                 "trigger": "escape_success",
                 "message": "With the generators silent and the base burning behind you, you disappear into the endless ice."
             }

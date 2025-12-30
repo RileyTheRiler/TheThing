@@ -1215,9 +1215,11 @@ class RepairCommand(Command):
             return
 
         target_type = args[0].upper()
-        player_room = game_state.station_map.get_room_name(*game_state.player.location)
 
         if target_type == "RADIO":
+            game_state.attempt_repair_radio()
+        elif target_type in ["HELICOPTER", "CHOPPER"]:
+            game_state.attempt_repair_helicopter()
             success, message, evt_type = game_state.attempt_repair_radio()
             event_bus.emit(GameEvent(evt_type, {"text": message}))
             if success:
@@ -1230,6 +1232,10 @@ class RepairCommand(Command):
                 game_state.advance_turn()
         else:
             event_bus.emit(GameEvent(EventType.ERROR, {"text": f"You can't repair '{target_type}'."}))
+            return
+
+        if getattr(game_state, "_last_action_successful", False):
+            game_state.advance_turn()
 
 class FlyCommand(Command):
     name = "FLY"
@@ -1238,6 +1244,8 @@ class FlyCommand(Command):
 
     def execute(self, context: GameContext, args: List[str]) -> None:
         game_state = context.game
+        game_state.attempt_escape()
+        if getattr(game_state, "_last_action_successful", False):
         success, message, evt_type = game_state.attempt_escape()
         event_bus.emit(GameEvent(evt_type, {"text": message}))
         if success:
@@ -1250,6 +1258,8 @@ class SOSCommand(Command):
 
     def execute(self, context: GameContext, args: List[str]) -> None:
         game_state = context.game
+        game_state.attempt_radio_signal()
+        if getattr(game_state, "_last_action_successful", False):
         success, message, evt_type = game_state.attempt_radio_signal()
         event_bus.emit(GameEvent(evt_type, {"text": message}))
         if success:

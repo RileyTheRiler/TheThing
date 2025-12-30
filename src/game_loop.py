@@ -383,6 +383,9 @@ def main():
 
 def _handle_game_over(game, won, message):
     """Display game over screen with final statistics."""
+    ending_payload = getattr(game, "last_ending_payload", None)
+    if ending_payload:
+        message = ending_payload.get("message", message)
     # Determine outcome for statistics
     if won:
         outcome = "victory"
@@ -404,6 +407,17 @@ def _handle_game_over(game, won, message):
         game.crt.output("*** GAME OVER ***", crawl=True)
         game.audio.trigger_event('alert')
     game.crt.output(message, crawl=True)
+    if ending_payload:
+        ending_id = ending_payload.get("ending_id")
+        bespoke = {
+            "helicopter_escape": "Rotors bite into the freezing air as Outpost 31 shrinks beneath you.",
+            "radio_rescue": "Searchlights carve through the blizzard before strong arms pull you aboard.",
+            "sole_survivor": "No voices answer back. Only the wind keeps you company in the ruins.",
+            "pyrrhic_victory": "Flames gutter and wires spark behind you. You survived, but the station is dead."
+        }
+        extra = bespoke.get(ending_id)
+        if extra:
+            game.crt.output(extra, crawl=True)
     game.crt.output("=" * 50)
 
     # Session statistics
@@ -444,8 +458,12 @@ def _render_game_state(game):
     game.crt.output(f"[LOC: {player_room}] {room_icons}")
     game.crt.output(f"[{weather_status}]")
 
-    # Sabotage status
-    if not game.sabotage.radio_operational or not game.sabotage.chopper_operational:
+    # Sabotage status and escape routes
+    heli_state = "READY" if game.helicopter_status == "FIXED" and game.helicopter_operational else "DOWN"
+    radio_state = "ONLINE" if game.radio_operational else "OFFLINE"
+    rescue_eta = f"{game.rescue_turns_remaining}h" if game.rescue_signal_active and game.rescue_turns_remaining is not None else "--"
+    game.crt.output(f"[ESCAPE] Helicopter: {heli_state} | Radio: {radio_state} | Rescue ETA: {rescue_eta}")
+    if not game.radio_operational or not game.helicopter_operational:
         game.crt.warning(game.sabotage.get_status())
 
     # Room modifiers
@@ -969,6 +987,20 @@ def _execute_command(game, cmd):
 
     # --- ALTERNATIVE ENDINGS (Tier 6.3) ---
     elif action == "REPAIR":
+        target_text = " ".join(cmd[1:]).upper()
+        if "RADIO" in target_text:
+            print(game.attempt_repair_radio())
+        elif cmd[1:] and "HELICOPTER" in target_text:
+            print(game.attempt_repair_helicopter())
+        else:
+            # Default behavior if specific object not mentioned, try to infer context or fail
+            print(game.attempt_repair_helicopter())
+        if getattr(game, "_last_action_successful", False):
+            game.advance_turn()
+
+    elif action == "SIGNAL":
+        print(game.attempt_radio_signal())
+        if getattr(game, "_last_action_successful", False):
         target_text = " ".join(cmd[1:]).upper() if cmd[1:] else ""
         if "RADIO" in target_text:
             success, message, evt_type = game.attempt_repair_radio()
@@ -998,6 +1030,7 @@ def _execute_command(game, cmd):
         else:
             print(message)
         # The win condition check in main loop will catch the status change
+        if getattr(game, "_last_action_successful", False):
         if success:
             game.advance_turn()
 
