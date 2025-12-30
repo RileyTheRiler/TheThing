@@ -74,13 +74,15 @@ class AlertSystem:
             return
 
         # Trigger station alert
-        self._trigger_alert(observer_ref, payload.get("game_state"))
+        self._trigger_alert(observer_ref, payload.get("game_state") or self.game_state)
 
     def _trigger_alert(self, observer, game_state: Optional['GameState']):
         """Activate station-wide alert."""
+        gs = game_state or self.game_state
         self._alert_active = True
         self._alert_turns_remaining = self.DEFAULT_ALERT_DURATION
         self._triggering_observer = observer.name if observer else "Unknown"
+        self._sync_game_state(gs, status="alert")
 
         # Emit warning to player
         event_bus.emit(GameEvent(EventType.WARNING, {
@@ -92,13 +94,13 @@ class AlertSystem:
             "triggered_by": self._triggering_observer,
             "duration": self._alert_turns_remaining,
             "active": True,
-            "game_state": game_state
+            "game_state": gs
         }))
 
         # Log to game journal if available
-        if game_state and hasattr(game_state, 'journal'):
+        if gs and hasattr(gs, 'journal'):
             game_state.journal.append(
-                f"[Turn {getattr(game_state, 'turn', '?')}] STATION ALERT triggered by {self._triggering_observer}"
+                f"[Turn {getattr(gs, 'turn', '?')}] STATION ALERT triggered by {self._triggering_observer}"
             )
 
     def on_turn_advance(self, event: GameEvent):
@@ -106,9 +108,10 @@ class AlertSystem:
         if not self._alert_active:
             return
 
-        self._alert_turns_remaining -= 1
+        self._alert_turns_remaining = max(0, self._alert_turns_remaining - 1)
 
-        game_state = event.payload.get("game_state")
+        game_state = event.payload.get("game_state") or self.game_state
+        self._sync_game_state(game_state)
 
         if self._alert_turns_remaining <= 0:
             self._deactivate_alert(game_state)
@@ -127,6 +130,7 @@ class AlertSystem:
         """End the station alert."""
         self._alert_active = False
         self._alert_turns_remaining = 0
+        self._sync_game_state(game_state or self.game_state, status="calm")
 
         event_bus.emit(GameEvent(EventType.MESSAGE, {
             "text": "Station alert has ended. Crew returning to normal routines."
@@ -146,7 +150,15 @@ class AlertSystem:
         This should be added to all NPC observation checks while alert is active.
         """
         if self.is_active:
-            return self.OBSERVATION_BONUS
+            # Scale bonus slightly as alert winds down
+            decay_ratio = self._alert_turns_remaining / self.DEFAULT_ALERT_DURATION
+            return max(1, int(self.OBSERVATION_BONUS * max(0.5, decay_ratio)))
+        return 0
+
+    def get_speed_bonus(self) -> int:
+        """Provide extra movement steps for AI pathfinding during alert."""
+        if self.is_active:
+            return 1  # One extra step while alert is active
         return 0
 
     def force_trigger(self, duration: int = None):
@@ -154,6 +166,7 @@ class AlertSystem:
         self._alert_active = True
         self._alert_turns_remaining = duration or self.DEFAULT_ALERT_DURATION
         self._triggering_observer = "Emergency"
+        self._sync_game_state(self.game_state, status="alert")
 
         event_bus.emit(GameEvent(EventType.WARNING, {
             "text": "EMERGENCY ALERT: All crew are now on high alert!"
@@ -175,4 +188,13 @@ class AlertSystem:
             system._alert_active = data.get("alert_active", False)
             system._alert_turns_remaining = data.get("alert_turns_remaining", 0)
             system._triggering_observer = data.get("triggering_observer")
+            system._sync_game_state(game_state)
         return system
+
+    def _sync_game_state(self, game_state: Optional['GameState'], status: Optional[str] = None):
+        """Mirror alert status/turns to the owning GameState for UI/save visibility."""
+        if not game_state:
+            return
+        self.game_state = game_state
+        game_state.alert_status = status or ("alert" if self._alert_active else "calm")
+        game_state.alert_turns_remaining = self._alert_turns_remaining

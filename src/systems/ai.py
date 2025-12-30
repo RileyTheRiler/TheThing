@@ -370,7 +370,7 @@ class AISystem:
             return True
 
         # Move toward target
-        self._pathfind_step(member, target_pos[0], target_pos[1], game_state)
+        self._pathfind_step(member, target_pos[0], target_pos[1], game_state, steps=self._get_alert_steps())
         return True
 
     def _clear_coordination(self, member: 'CrewMember'):
@@ -388,6 +388,10 @@ class AISystem:
         self.budget_limit = 15 + (5 * len(game_state.crew))
         self.budget_spent = 0
         self.exhaustion_count = 0
+        self.alert_speed_bonus = 0
+        alert_system = getattr(game_state, "alert_system", None)
+        if alert_system and alert_system.is_active:
+            self.alert_speed_bonus = alert_system.get_speed_bonus()
         
         for member in game_state.crew:
             if member != game_state.player:
@@ -410,6 +414,10 @@ class AISystem:
         self.exhaustion_count += 1
         return False
 
+    def _get_alert_steps(self) -> int:
+        """Return movement steps NPCs can take this turn, factoring alert state."""
+        return 1 + max(0, self.alert_speed_bonus)
+
     def update_member_ai(self, member: 'CrewMember', game_state: 'GameState'):
         """
         Agent 2/8: NPC AI Logic.
@@ -423,6 +431,9 @@ class AISystem:
             member.decay_suspicion(current_turn)
         if hasattr(member, "suspicion_state"):
             self._update_suspicion_state(member, game_state.player, game_state)
+        alert_system = getattr(game_state, "alert_system", None)
+        if alert_system and not alert_system.is_active:
+            member.alerted_to_player = False
 
         # 0. PRIORITY: Thing AI (Agent 3) - Revealed Things actively hunt
         if getattr(member, 'is_revealed', False):
@@ -464,7 +475,7 @@ class AISystem:
                 }))
             else:
                 # Move toward investigation spot
-                self._pathfind_step(member, target_loc[0], target_loc[1], game_state)
+                self._pathfind_step(member, target_loc[0], target_loc[1], game_state, steps=self._get_alert_steps())
                 return
 
         # 2. PRIORITY: Lynch Mob Hunting (Agent 2)
@@ -476,7 +487,7 @@ class AISystem:
                 member.target_room = game_state.station_map.get_room_name(*target.location)
                 # Move toward the lynch target
                 tx, ty = target.location
-                self._pathfind_step(member, tx, ty, game_state)
+                self._pathfind_step(member, tx, ty, game_state, steps=self._get_alert_steps())
                 return
         else:
             member.in_lynch_mob = False
@@ -510,7 +521,7 @@ class AISystem:
             target_pos = game_state.station_map.rooms.get(destination)
             if target_pos:
                 tx, ty, _, _ = target_pos
-                self._pathfind_step(member, tx, ty, game_state)
+                self._pathfind_step(member, tx, ty, game_state, steps=self._get_alert_steps())
                 return
 
         # 4. Idling / Wandering
@@ -574,7 +585,7 @@ class AISystem:
 
         # Default: Move toward closest human
         tx, ty = closest.location
-        self._pathfind_step(member, tx, ty, game_state)
+        self._pathfind_step(member, tx, ty, game_state, steps=self._get_alert_steps())
 
     def _thing_attack(self, attacker: 'CrewMember', target: 'CrewMember', game_state: 'GameState'):
         """The Thing attacks a human target."""
@@ -641,6 +652,9 @@ class AISystem:
         noise = self.cache.player_noise if self.cache else player.get_noise_level()
         if in_vent:
             noise += 3  # Vents amplify scraping sounds
+        alert_system = getattr(game_state, "alert_system", None)
+        if alert_system and alert_system.is_active:
+            noise += max(0, alert_system.get_observation_bonus() // 2)
         # Use cached visibility modifier if available
         vis_mod = self.cache.get_visibility_modifier(player_room, game_state) if self.cache else None
         
@@ -652,8 +666,8 @@ class AISystem:
             self._enter_search_mode(member, player.location, room, game_state)
         return detected
 
-    def _pathfind_step(self, member: 'CrewMember', target_x: int, target_y: int, game_state: 'GameState'):
-        """Take one step toward target using A* pathfinding with cache and budget."""
+    def _pathfind_step(self, member: 'CrewMember', target_x: int, target_y: int, game_state: 'GameState', steps: int = 1):
+        """Take one or more steps toward target using A* pathfinding with cache and budget."""
         goal = (target_x, target_y)
         station_map = game_state.station_map
         current_turn = game_state.turn
@@ -667,40 +681,45 @@ class AISystem:
 
         cost = self.COST_ASTAR if use_astar else self.COST_PATH_CACHE
         
-        dx, dy = 0, 0
-        if self._request_budget(cost):
-            # Try A* pathfinding
-            dx, dy = pathfinder.get_move_delta(member.location, goal, station_map, current_turn)
-        else:
-            # Budget exhausted - fall back to greedy movement (0 cost)
-            dx = 1 if target_x > member.location[0] else -1 if target_x < member.location[0] else 0
-            dy = 1 if target_y > member.location[1] else -1 if target_y < member.location[1] else 0
+        for _ in range(max(1, steps)):
+            dx, dy = 0, 0
+            if self._request_budget(cost):
+                # Try A* pathfinding
+                dx, dy = pathfinder.get_move_delta(member.location, goal, station_map, current_turn)
+            else:
+                # Budget exhausted - fall back to greedy movement (0 cost)
+                dx = 1 if target_x > member.location[0] else -1 if target_x < member.location[0] else 0
+                dy = 1 if target_y > member.location[1] else -1 if target_y < member.location[1] else 0
 
-        # Check for barricades at destination
-        new_x = member.location[0] + dx
-        new_y = member.location[1] + dy
+            # Check for barricades at destination
+            new_x = member.location[0] + dx
+            new_y = member.location[1] + dy
 
-        if station_map.is_walkable(new_x, new_y):
-            target_room = station_map.get_room_name(new_x, new_y)
-            current_room = station_map.get_room_name(*member.location)
+            if station_map.is_walkable(new_x, new_y):
+                target_room = station_map.get_room_name(new_x, new_y)
+                current_room = station_map.get_room_name(*member.location)
 
-            if hasattr(game_state, 'room_states') and game_state.room_states.is_entry_blocked(target_room) and target_room != current_room:
-                if getattr(member, 'is_revealed', False):
-                    # Revealed Things try to break barricades
-                    success, msg, _ = game_state.room_states.attempt_break_barricade(
-                        target_room, member, game_state.rng, is_thing=True
-                    )
-                    if not success:
-                        return  # Can't move this turn
-                    # else fall through to move
-                else:
-                    # Regular NPCs respect barricades
-                    return
+                if hasattr(game_state, 'room_states') and game_state.room_states.is_entry_blocked(target_room) and target_room != current_room:
+                    if getattr(member, 'is_revealed', False):
+                        # Revealed Things try to break barricades
+                        success, msg, _ = game_state.room_states.attempt_break_barricade(
+                            target_room, member, game_state.rng, is_thing=True
+                        )
+                        if not success:
+                            return  # Can't move this turn
+                        # else fall through to move
+                    else:
+                        # Regular NPCs respect barricades
+                        return
 
-        member.move(dx, dy, station_map)
+            member.move(dx, dy, station_map)
 
-        # Check for tripwire triggers at new location
-        self._check_tripwire_trigger(member, game_state)
+            # Check for tripwire triggers at new location
+            self._check_tripwire_trigger(member, game_state)
+
+            # Early exit if already at goal
+            if member.location == goal:
+                break
 
     def _check_tripwire_trigger(self, member: 'CrewMember', game_state: 'GameState'):
         """Check if NPC stepped on a deployed tripwire and trigger it."""
@@ -749,7 +768,7 @@ class AISystem:
     def _pursue_player(self, member: 'CrewMember', game_state: 'GameState'):
         """Move one step toward the player when detected via perception."""
         player_loc = self.cache.player_location if self.cache else game_state.player.location
-        self._pathfind_step(member, player_loc[0], player_loc[1], game_state)
+        self._pathfind_step(member, player_loc[0], player_loc[1], game_state, steps=self._get_alert_steps())
 
     def _handle_investigation_ping(self, payload: Dict):
         """Handle PERCEPTION_EVENT payloads that mark a noisy distraction."""
@@ -889,7 +908,7 @@ class AISystem:
 
         if member.current_search_target:
             tx, ty = member.current_search_target
-            self._pathfind_step(member, tx, ty, game_state)
+            self._pathfind_step(member, tx, ty, game_state, steps=self._get_alert_steps())
             member.search_turns_remaining -= 1
             if member.search_turns_remaining <= 0:
                 member.search_targets = []
