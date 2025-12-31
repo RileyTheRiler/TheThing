@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import hashlib
 import shutil
 from copy import deepcopy
@@ -236,6 +237,24 @@ class SaveManager:
             except Exception:
                 pass  # Don't interrupt gameplay on save failure
 
+    def _sanitize_slot_name(self, slot_name: str) -> str:
+        """
+        Sanitize slot name to prevent path traversal and ensure valid filenames.
+        Allows only alphanumeric characters, spaces, underscores, and hyphens.
+        """
+        if not slot_name:
+            return "auto"
+
+        # Remove any path separators and unsafe characters
+        # Allow alphanumeric, underscore, hyphen, and space
+        clean_name = re.sub(r'[^a-zA-Z0-9_\- ]', '', str(slot_name))
+
+        # Ensure name is not empty after sanitization
+        if not clean_name:
+            return "auto"
+
+        return clean_name
+
             
     def backup_save(self, filepath: str) -> bool:
         """
@@ -291,6 +310,7 @@ class SaveManager:
         Adds version and checksum for validation.
         Creates backup of existing save before overwriting.
         """
+        slot_name = self._sanitize_slot_name(slot_name)
         filename = f"{slot_name}.json"
         filepath = os.path.join(self.save_dir, filename)
 
@@ -327,6 +347,7 @@ class SaveManager:
         Load and validate a saved game.
         Performs checksum verification and version migration if needed.
         """
+        slot_name = self._sanitize_slot_name(slot_name)
         filename = f"{slot_name}.json"
         filepath = os.path.join(self.save_dir, filename)
 
@@ -487,6 +508,7 @@ class SaveManager:
         Returns:
             Dictionary with slot metadata or None if slot is empty
         """
+        slot_name = self._sanitize_slot_name(slot_name)
         filename = f"{slot_name}.json"
         filepath = os.path.join(self.save_dir, filename)
         
