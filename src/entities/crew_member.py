@@ -13,6 +13,8 @@ class StealthPosture(Enum):
     CROUCHING = auto()
     CRAWLING = auto()
     HIDING = auto()
+    HIDDEN = auto()  # Fully concealed state
+    EXPOSED = auto() # Vulnerable state
 
 
 class CrewMember:
