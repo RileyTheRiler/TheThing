@@ -1,0 +1,50 @@
+/app/src/ui/crt_effects.py:361: SyntaxWarning: invalid escape sequence '\ '
+  "|__   __| |  | |  ____| |__   __| |  | |_   _| \ | |/ ____|",
+/app/src/ui/crt_effects.py:362: SyntaxWarning: invalid escape sequence '\|'
+  "   | |  | |__| | |__       | |  | |__| | | | |  \| | |  __ ",
+/app/src/ui/crt_effects.py:364: SyntaxWarning: invalid escape sequence '\ '
+  "   | |  | |  | | |____     | |  | |  | |_| |_| |\  | |__| |",
+/app/src/ui/crt_effects.py:365: SyntaxWarning: invalid escape sequence '\_'
+  "   |_|  |_|  |_|______|    |_|  |_|  |_|_____|_| \_|\_____|"
+Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+============================================================
+   THE THING: ANTARCTIC RESEARCH STATION 31
+   Browser Interface Server
+============================================================
+
+Starting server...
+Navigate to: http://127.0.0.1:5000
+
+Press CTRL+C to stop the server
+============================================================
+ * Serving Flask app 'server'
+ * Debug mode: on
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.0.2:5000
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [31/Dec/2025 09:03:23] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [31/Dec/2025 09:03:23] "GET /static/js/game.js HTTP/1.1" 200 -
+127.0.0.1 - - [31/Dec/2025 09:03:23] "GET /static/js/renderer3d.js HTTP/1.1" 200 -
+127.0.0.1 - - [31/Dec/2025 09:03:23] "GET /static/images/logo.png HTTP/1.1" 200 -
+127.0.0.1 - - [31/Dec/2025 09:03:23] "GET /static/css/style.css HTTP/1.1" 200 -
+127.0.0.1 - - [31/Dec/2025 09:03:23] "GET /static/images/menu_bg.png HTTP/1.1" 200 -
+127.0.0.1 - - [31/Dec/2025 09:03:23] "GET /socket.io/?EIO=4&transport=polling&t=PjpfSid HTTP/1.1" 200 -
+127.0.0.1 - - [31/Dec/2025 09:03:23] "POST /socket.io/?EIO=4&transport=polling&t=PjpfSir&sid=DqFeXde26YCcXS1FAAAA HTTP/1.1" 200 -
+127.0.0.1 - - [31/Dec/2025 09:03:23] "GET /socket.io/?EIO=4&transport=polling&t=PjpfSi_&sid=DqFeXde26YCcXS1FAAAA HTTP/1.1" 200 -
+127.0.0.1 - - [31/Dec/2025 09:03:24] "GET /socket.io/?EIO=4&transport=polling&t=PjpfSjm&sid=DqFeXde26YCcXS1FAAAA HTTP/1.1" 200 -
+127.0.0.1 - - [31/Dec/2025 09:03:24] "POST /api/new_game HTTP/1.1" 200 -
+127.0.0.1 - - [31/Dec/2025 09:03:26] "GET /socket.io/?EIO=4&transport=websocket&sid=DqFeXde26YCcXS1FAAAA HTTP/1.1" 200 -
+127.0.0.1 - - [31/Dec/2025 09:06:21] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [31/Dec/2025 09:06:21] "GET /static/images/logo.png HTTP/1.1" 200 -
+127.0.0.1 - - [31/Dec/2025 09:06:21] "GET /static/css/style.css HTTP/1.1" 200 -
+127.0.0.1 - - [31/Dec/2025 09:06:21] "GET /static/js/renderer3d.js HTTP/1.1" 200 -
+127.0.0.1 - - [31/Dec/2025 09:06:21] "GET /static/js/game.js HTTP/1.1" 200 -
+127.0.0.1 - - [31/Dec/2025 09:06:21] "GET /static/images/menu_bg.png HTTP/1.1" 200 -
+127.0.0.1 - - [31/Dec/2025 09:06:22] "GET /socket.io/?EIO=4&transport=polling&t=Pjpg8Bg HTTP/1.1" 200 -
+127.0.0.1 - - [31/Dec/2025 09:06:22] "POST /socket.io/?EIO=4&transport=polling&t=Pjpg8Bz&sid=dQR7RGDtwLcHSHTJAAAC HTTP/1.1" 200 -
+127.0.0.1 - - [31/Dec/2025 09:06:22] "GET /socket.io/?EIO=4&transport=polling&t=Pjpg8C5&sid=dQR7RGDtwLcHSHTJAAAC HTTP/1.1" 200 -
+127.0.0.1 - - [31/Dec/2025 09:06:22] "GET /socket.io/?EIO=4&transport=polling&t=Pjpg8CQ&sid=dQR7RGDtwLcHSHTJAAAC HTTP/1.1" 200 -
+127.0.0.1 - - [31/Dec/2025 09:06:22] "POST /api/new_game HTTP/1.1" 200 -
+127.0.0.1 - - [31/Dec/2025 09:06:25] "GET /socket.io/?EIO=4&transport=websocket&sid=dQR7RGDtwLcHSHTJAAAC HTTP/1.1" 200 -
