@@ -11,12 +11,24 @@ class MockGameState:
         self.turn = 1
 
     def to_dict(self):
-        return {"name": self.name, "turn": self.turn}
+        # Return a dict that satisfies REQUIRED_FIELDS in validate_save_data
+        return {
+            "name": self.name,
+            "turn": self.turn,
+            "difficulty": "NORMAL",
+            "rng": {},
+            "time_system": {},
+            "station_map": {},
+            "crew": [],
+            "player_location": [0, 0], # List, as it's JSON serializable
+            "save_version": 2,
+            "checksum": "dummy" # Will be recomputed
+        }
 
     @classmethod
     def from_dict(cls, data):
-        g = cls(data["name"])
-        g.turn = data["turn"]
+        g = cls(data.get("name", "Unknown"))
+        g.turn = data.get("turn", 1)
         return g
 
 class TestPersistence(unittest.TestCase):
@@ -57,6 +69,26 @@ class TestPersistence(unittest.TestCase):
         self.assertIsInstance(loaded_game, MockGameState)
         self.assertEqual(loaded_game.name, "FactoryData")
         self.assertEqual(loaded_game.turn, 5)
+
+    def test_security_sanitization(self):
+        """Test that save slot names are sanitized."""
+        manager = SaveManager(save_dir=self.save_dir)
+        game = MockGameState("SecurityData")
+
+        # Attack vector: Path traversal
+        dirty_slot = "../../etc/passwd"
+
+        self.assertTrue(manager.save_game(game, dirty_slot))
+
+        # Expected sanitized name: "etcpasswd" or similar depending on regex
+        # My regex: re.sub(r'[^a-zA-Z0-9_\- ]', '', str(slot_name))
+        # so "../../etc/passwd" -> "etcpasswd"
+
+        sanitized_name = "etcpasswd.json"
+        expected_path = os.path.join(self.save_dir, sanitized_name)
+
+        self.assertTrue(os.path.exists(expected_path), f"File should exist at {expected_path}")
+        self.assertFalse(os.path.exists("etc/passwd"), "File should NOT exist at etc/passwd")
 
 if __name__ == '__main__':
     unittest.main()
