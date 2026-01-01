@@ -7,3 +7,7 @@
 # Palette Journal
 
 _No critical UX or accessibility learnings recorded yet._
+
+## 2024-05-24 - Semantic Labels for Command Inputs
+**Learning:** In terminal-style interfaces, the primary interaction point (the input field) often lacks a visible label for aesthetic reasons. This creates a critical barrier for screen reader users who see an unlabeled edit field.
+**Action:** Always ensure terminal input fields have an `aria-label` (e.g., "Enter command") even if the visual design relies on a prompt symbol like `CMD>`.
