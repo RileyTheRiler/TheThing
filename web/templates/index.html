@@ -131,13 +131,13 @@
                         <div id="game-canvas" class="map-display interactive-map-3d"></div>
                         <div id="map-legend" class="map-legend"></div>
                         <div class="nav-controls">
-                            <button class="nav-btn" data-dir="north" title="Go North (Arrow Up)">▲</button>
+                            <button class="nav-btn" data-dir="north" title="Go North (Arrow Up)" aria-label="Move North"><span aria-hidden="true">▲</span></button>
                             <div class="nav-row">
-                                <button class="nav-btn" data-dir="west" title="Go West (Arrow Left)">◄</button>
-                                <button class="nav-btn nav-center" disabled>●</button>
-                                <button class="nav-btn" data-dir="east" title="Go East (Arrow Right)">►</button>
+                                <button class="nav-btn" data-dir="west" title="Go West (Arrow Left)" aria-label="Move West"><span aria-hidden="true">◄</span></button>
+                                <button class="nav-btn nav-center" disabled aria-hidden="true">●</button>
+                                <button class="nav-btn" data-dir="east" title="Go East (Arrow Right)" aria-label="Move East"><span aria-hidden="true">►</span></button>
                             </div>
-                            <button class="nav-btn" data-dir="south" title="Go South (Arrow Down)">▼</button>
+                            <button class="nav-btn" data-dir="south" title="Go South (Arrow Down)" aria-label="Move South"><span aria-hidden="true">▼</span></button>
                         </div>
                     </div>
 
@@ -163,11 +163,11 @@
 
                     <div class="command-container">
                         <div class="command-prompt">
-                            <span class="prompt-symbol">CMD&gt;</span>
+                            <span class="prompt-symbol" aria-hidden="true">CMD&gt;</span>
                             <div class="input-wrapper">
                                 <input type="text" id="command-input" class="command-input"
-                                    placeholder="Enter command..." autocomplete="off">
-                                <span id="autocomplete-hint" class="autocomplete-hint"></span>
+                                    placeholder="Enter command..." aria-label="Enter command" autocomplete="off">
+                                <span id="autocomplete-hint" class="autocomplete-hint" aria-hidden="true"></span>
                             </div>
                         </div>
                         <div class="quick-commands" id="context-actions">
