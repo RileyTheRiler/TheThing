@@ -2,6 +2,7 @@ import json
 import os
 import hashlib
 import shutil
+import re
 from copy import deepcopy
 from datetime import datetime
 from core.event_system import event_bus, EventType, GameEvent
@@ -221,6 +222,15 @@ class SaveManager:
 
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
 
+    def _sanitize_slot_name(self, slot_name: str) -> str:
+        """
+        Sanitize slot name to prevent path traversal and ensure valid filenames.
+        Allows alphanumeric, underscores, and hyphens.
+        """
+        # Remove any path separators or null bytes
+        clean_name = re.sub(r'[^\w\-]', '_', str(slot_name))
+        return clean_name
+
     def cleanup(self):
         event_bus.unsubscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
         
@@ -291,7 +301,8 @@ class SaveManager:
         Adds version and checksum for validation.
         Creates backup of existing save before overwriting.
         """
-        filename = f"{slot_name}.json"
+        safe_slot = self._sanitize_slot_name(slot_name)
+        filename = f"{safe_slot}.json"
         filepath = os.path.join(self.save_dir, filename)
 
         try:
@@ -327,7 +338,8 @@ class SaveManager:
         Load and validate a saved game.
         Performs checksum verification and version migration if needed.
         """
-        filename = f"{slot_name}.json"
+        safe_slot = self._sanitize_slot_name(slot_name)
+        filename = f"{safe_slot}.json"
         filepath = os.path.join(self.save_dir, filename)
 
         if not os.path.exists(filepath):
