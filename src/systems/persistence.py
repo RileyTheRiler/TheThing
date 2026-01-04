@@ -236,7 +236,24 @@ class SaveManager:
             except Exception:
                 pass  # Don't interrupt gameplay on save failure
 
+    def _sanitize_slot_name(self, slot_name: str) -> str:
+        """
+        Sanitize save slot name to prevent path traversal.
+        Allows alphanumeric, underscores, and hyphens.
+        """
+        # Remove any path separators
+        clean_name = os.path.basename(slot_name)
+
+        # Filter characters
+        safe_chars = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-')
+        clean_name = ''.join(c for c in clean_name if c in safe_chars)
+
+        # Ensure it's not empty and reasonable length
+        if not clean_name:
+            return "unknown_slot"
             
+        return clean_name[:64]  # Limit length
+
     def backup_save(self, filepath: str) -> bool:
         """
         Create a backup of an existing save file before overwriting.
@@ -291,6 +308,9 @@ class SaveManager:
         Adds version and checksum for validation.
         Creates backup of existing save before overwriting.
         """
+        # SECURITY: Sanitize slot name to prevent path traversal
+        slot_name = self._sanitize_slot_name(slot_name)
+
         filename = f"{slot_name}.json"
         filepath = os.path.join(self.save_dir, filename)
 
@@ -327,6 +347,9 @@ class SaveManager:
         Load and validate a saved game.
         Performs checksum verification and version migration if needed.
         """
+        # SECURITY: Sanitize slot name to prevent path traversal
+        slot_name = self._sanitize_slot_name(slot_name)
+
         filename = f"{slot_name}.json"
         filepath = os.path.join(self.save_dir, filename)
 
@@ -487,6 +510,9 @@ class SaveManager:
         Returns:
             Dictionary with slot metadata or None if slot is empty
         """
+        # SECURITY: Sanitize slot name
+        slot_name = self._sanitize_slot_name(slot_name)
+
         filename = f"{slot_name}.json"
         filepath = os.path.join(self.save_dir, filename)
         
