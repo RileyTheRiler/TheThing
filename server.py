@@ -748,4 +748,4 @@ if __name__ == '__main__':
     print("\nPress CTRL+C to stop the server")
     print("=" * 60)
     # allow_unsafe_werkzeug=True is required to run without debug mode when not using a WSGI server
-    socketio.run(app, host='0.0.0.0', port=port, debug=True, use_reloader=False, allow_unsafe_werkzeug=True)
+    socketio.run(app, host=host, port=port, debug=debug_mode, use_reloader=debug_mode, allow_unsafe_werkzeug=True)
