@@ -1,9 +1,3 @@
-## 2024-05-22 - [Terminal UI Onboarding]
-**Learning:** In a terminal-based interface with complex commands, "Unknown command" on the first screen is a high-friction barrier. Users expect immediate guidance.
-**Action:** Always provide a "Situation Report" or "Quick Start" hint on the initial boot screen for CLI apps, listing at least one valid command (like 'HELP').
-## 2024-05-23 - Smart Legends for ASCII Maps
-**Learning:** In ASCII interfaces where symbols are reused (like '*'), users struggle to identify specific objects without tedious "look" commands.
-**Action:** Implement context-aware legends that dynamically list the specific names of visible entities (e.g., `[*=Shotgun, Key]`) based on the viewport, rather than a static key.
-# Palette Journal
-
-_No critical UX or accessibility learnings recorded yet._
+## 2024-05-23 - Accessibility of Icon-only Buttons
+**Learning:** This application heavily uses icon-only buttons (navigation arrows, close 'X', etc.) without `aria-label` attributes. While some use `title` for mouse users, screen readers are left with unhelpful announcements like "multiplication sign" for '✕' or generic button announcements.
+**Action:** Always couple visual icons with `aria-label` for action descriptions. For purely decorative elements (like the center nav dot), use `aria-hidden="true"` to remove noise.
