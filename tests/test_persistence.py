@@ -9,14 +9,29 @@ class MockGameState:
     def __init__(self, name="Test"):
         self.name = name
         self.turn = 1
+        self.player_location = (0, 0)
+        self.crew = []
+        self.difficulty = "NORMAL"
+        self.rng = {}
+        self.time_system = {}
+        self.station_map = {}
 
     def to_dict(self):
-        return {"name": self.name, "turn": self.turn}
+        return {
+            "name": self.name,
+            "turn": self.turn,
+            "player_location": list(self.player_location),
+            "crew": self.crew,
+            "difficulty": self.difficulty,
+            "rng": self.rng,
+            "time_system": self.time_system,
+            "station_map": self.station_map
+        }
 
     @classmethod
     def from_dict(cls, data):
-        g = cls(data["name"])
-        g.turn = data["turn"]
+        g = cls(data.get("name", "Test"))
+        g.turn = data.get("turn", 1)
         return g
 
 class TestPersistence(unittest.TestCase):
@@ -57,6 +72,25 @@ class TestPersistence(unittest.TestCase):
         self.assertIsInstance(loaded_game, MockGameState)
         self.assertEqual(loaded_game.name, "FactoryData")
         self.assertEqual(loaded_game.turn, 5)
+
+    def test_path_traversal_prevention(self):
+        """Test that path traversal attempts are sanitized."""
+        manager = SaveManager(save_dir=self.save_dir)
+        game = MockGameState("SecurityTest")
+
+        # Attempt to save to a traversal path
+        traversal_attempt = "../outside_save_dir"
+        manager.save_game(game, traversal_attempt)
+
+        # Check that file was NOT created outside
+        outside_path = os.path.join(self.save_dir, "..", "outside_save_dir.json")
+        self.assertFalse(os.path.exists(outside_path))
+
+        # Check that it was saved to a sanitized name inside the dir
+        # The sanitizer allows underscores, so `outside_save_dir` is expected
+        sanitized_name = "outside_save_dir"
+        expected_path = os.path.join(self.save_dir, f"{sanitized_name}.json")
+        self.assertTrue(os.path.exists(expected_path))
 
 if __name__ == '__main__':
     unittest.main()
