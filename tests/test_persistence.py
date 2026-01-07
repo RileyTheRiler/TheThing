@@ -9,9 +9,10 @@ class MockGameState:
     def __init__(self, name="Test"):
         self.name = name
         self.turn = 1
+        self.player_location = [0, 0]  # Required by SaveManager validation
 
     def to_dict(self):
-        return {"name": self.name, "turn": self.turn}
+        return {"name": self.name, "turn": self.turn, "player_location": self.player_location}
 
     @classmethod
     def from_dict(cls, data):
