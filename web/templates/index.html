@@ -25,9 +25,9 @@
 
                 <div class="menu-options">
                     <button class="menu-btn" onclick="showDifficultySelect()">[ BEGIN SIMULATION ]</button>
-                    <button class="menu-btn" disabled>[ ACCESS RECORDS ]</button>
-                    <button class="menu-btn" disabled>[ SYSTEM CONFIG ]</button>
-                    <button class="menu-btn" disabled>[ TERMINATE ]</button>
+                    <button class="menu-btn" disabled title="Encrypted. Access level insufficient.">[ ACCESS RECORDS ]</button>
+                    <button class="menu-btn" disabled title="System configuration locked by admin.">[ SYSTEM CONFIG ]</button>
+                    <button class="menu-btn" disabled title="Termination sequence unavailable during lockdown.">[ TERMINATE ]</button>
                 </div>
             </div>
 
@@ -134,7 +134,7 @@
                             <button class="nav-btn" data-dir="north" title="Go North (Arrow Up)">▲</button>
                             <div class="nav-row">
                                 <button class="nav-btn" data-dir="west" title="Go West (Arrow Left)">◄</button>
-                                <button class="nav-btn nav-center" disabled>●</button>
+                                <button class="nav-btn nav-center" disabled aria-label="Wait" title="Wait">●</button>
                                 <button class="nav-btn" data-dir="east" title="Go East (Arrow Right)">►</button>
                             </div>
                             <button class="nav-btn" data-dir="south" title="Go South (Arrow Down)">▼</button>
@@ -166,7 +166,7 @@
                             <span class="prompt-symbol">CMD&gt;</span>
                             <div class="input-wrapper">
                                 <input type="text" id="command-input" class="command-input"
-                                    placeholder="Enter command..." autocomplete="off">
+                                    placeholder="Enter command..." autocomplete="off" aria-label="Enter command">
                                 <span id="autocomplete-hint" class="autocomplete-hint"></span>
                             </div>
                         </div>
@@ -303,7 +303,7 @@
                     <button class="modal-close" onclick="closeCommandModal()">✕</button>
                 </div>
                 <div class="modal-search">
-                    <input type="text" id="command-search" placeholder="Search commands..." oninput="filterCommands()">
+                    <input type="text" id="command-search" placeholder="Search commands..." oninput="filterCommands()" aria-label="Search commands">
                 </div>
                 <div class="command-categories">
                     <button class="category-btn active" data-category="all">ALL</button>
