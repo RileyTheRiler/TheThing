@@ -19,6 +19,21 @@ MIGRATIONS = {
 SAVE_SLOTS = ["slot_1", "slot_2", "slot_3", "slot_4", "slot_5"]
 AUTO_SAVE_INTERVAL = 10  # Auto-save every N turns
 
+def _sanitize_slot_name(name: str) -> str:
+    """
+    Sanitize save slot name to prevent path traversal.
+    Only alphanumeric, underscores, and hyphens allowed.
+    """
+    if not name:
+        return "auto"
+
+    # Remove directory separators and dangerous characters
+    safe_name = os.path.basename(name)
+    # Filter to allowed chars only
+    safe_name = "".join(c for c in safe_name if c.isalnum() or c in ('_', '-'))
+
+    return safe_name or "auto"
+
 DEFAULT_REQUIRED_FIELDS = {
     "turn": 1,
     "crew": [],
@@ -291,6 +306,7 @@ class SaveManager:
         Adds version and checksum for validation.
         Creates backup of existing save before overwriting.
         """
+        slot_name = _sanitize_slot_name(slot_name)
         filename = f"{slot_name}.json"
         filepath = os.path.join(self.save_dir, filename)
 
@@ -327,6 +343,7 @@ class SaveManager:
         Load and validate a saved game.
         Performs checksum verification and version migration if needed.
         """
+        slot_name = _sanitize_slot_name(slot_name)
         filename = f"{slot_name}.json"
         filepath = os.path.join(self.save_dir, filename)
 
@@ -487,6 +504,7 @@ class SaveManager:
         Returns:
             Dictionary with slot metadata or None if slot is empty
         """
+        slot_name = _sanitize_slot_name(slot_name)
         filename = f"{slot_name}.json"
         filepath = os.path.join(self.save_dir, filename)
         
