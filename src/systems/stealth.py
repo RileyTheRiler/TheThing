@@ -186,6 +186,8 @@ class StealthSystem:
             subject_pool += 2
         elif posture == StealthPosture.HIDING:
             subject_pool += 4
+        elif posture == StealthPosture.EXPOSED:
+            subject_pool = max(1, subject_pool - 1)
             # Hiding requires skipping turn actions, handled by game loop not here
             # But effectively boosts defense
 
@@ -389,7 +391,7 @@ class StealthSystem:
             subject_pool += 1
         elif posture == StealthPosture.CRAWLING:
             subject_pool += 2
-        elif posture == StealthPosture.HIDING or posture == StealthPosture.HIDDEN:
+        elif posture == StealthPosture.HIDING:
             subject_pool += 4
         elif posture == StealthPosture.EXPOSED:
             subject_pool = max(1, subject_pool - 1)
