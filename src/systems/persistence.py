@@ -2,6 +2,7 @@ import json
 import os
 import hashlib
 import shutil
+import re
 from copy import deepcopy
 from datetime import datetime
 from core.event_system import event_bus, EventType, GameEvent
@@ -285,13 +286,25 @@ class SaveManager:
         except Exception:
             pass  # Cleanup failure is non-critical
 
+    def _sanitize_slot_name(self, slot_name: str) -> str:
+        """
+        Sanitize slot name to prevent path traversal.
+        Only allows alphanumeric characters, underscores, hyphens, and spaces.
+        """
+        # Remove any directory separators and common traversal patterns
+        clean_name = os.path.basename(slot_name)
+        # Allow only alphanumeric, underscore, hyphen, space
+        clean_name = re.sub(r'[^a-zA-Z0-9 _-]', '', clean_name)
+        return clean_name.strip() if clean_name.strip() else "auto"
+
     def save_game(self, game_state, slot_name="auto"):
         """
         Saves the game state using to_dict().
         Adds version and checksum for validation.
         Creates backup of existing save before overwriting.
         """
-        filename = f"{slot_name}.json"
+        safe_slot = self._sanitize_slot_name(slot_name)
+        filename = f"{safe_slot}.json"
         filepath = os.path.join(self.save_dir, filename)
 
         try:
@@ -327,7 +340,8 @@ class SaveManager:
         Load and validate a saved game.
         Performs checksum verification and version migration if needed.
         """
-        filename = f"{slot_name}.json"
+        safe_slot = self._sanitize_slot_name(slot_name)
+        filename = f"{safe_slot}.json"
         filepath = os.path.join(self.save_dir, filename)
 
         if not os.path.exists(filepath):
@@ -487,7 +501,8 @@ class SaveManager:
         Returns:
             Dictionary with slot metadata or None if slot is empty
         """
-        filename = f"{slot_name}.json"
+        safe_slot = self._sanitize_slot_name(slot_name)
+        filename = f"{safe_slot}.json"
         filepath = os.path.join(self.save_dir, filename)
         
         if not os.path.exists(filepath):
