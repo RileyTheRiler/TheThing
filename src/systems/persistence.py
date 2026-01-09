@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import hashlib
 import shutil
 from copy import deepcopy
@@ -285,12 +286,25 @@ class SaveManager:
         except Exception:
             pass  # Cleanup failure is non-critical
 
+    def _sanitize_slot_name(self, slot_name: str) -> str:
+        """
+        Sanitize save slot name to prevent path traversal and invalid characters.
+        Allows alphanumeric, underscore, hyphen, and space.
+        """
+        if not slot_name:
+            return "auto"
+        # Remove any path separators and unsafe characters
+        safe_name = re.sub(r'[^a-zA-Z0-9_\-\s]', '', slot_name)
+        # Ensure it's not empty after sanitization
+        return safe_name if safe_name else "default"
+
     def save_game(self, game_state, slot_name="auto"):
         """
         Saves the game state using to_dict().
         Adds version and checksum for validation.
         Creates backup of existing save before overwriting.
         """
+        slot_name = self._sanitize_slot_name(slot_name)
         filename = f"{slot_name}.json"
         filepath = os.path.join(self.save_dir, filename)
 
@@ -327,6 +341,7 @@ class SaveManager:
         Load and validate a saved game.
         Performs checksum verification and version migration if needed.
         """
+        slot_name = self._sanitize_slot_name(slot_name)
         filename = f"{slot_name}.json"
         filepath = os.path.join(self.save_dir, filename)
 
