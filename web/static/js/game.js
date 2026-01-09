@@ -434,6 +434,14 @@ function hideDifficultySelect() {
 }
 
 function startGame(difficulty) {
+    // Show loading state on difficulty buttons
+    const buttons = document.querySelectorAll('.difficulty-btn');
+    buttons.forEach(btn => {
+        btn.disabled = true;
+        btn.style.opacity = '0.7';
+        btn.style.cursor = 'wait';
+    });
+
     addOutput('Initializing system...');
     addOutput(`Difficulty: ${difficulty}`);
     addOutput('Starting new game...');
