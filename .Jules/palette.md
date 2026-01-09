@@ -4,6 +4,6 @@
 ## 2024-05-23 - Smart Legends for ASCII Maps
 **Learning:** In ASCII interfaces where symbols are reused (like '*'), users struggle to identify specific objects without tedious "look" commands.
 **Action:** Implement context-aware legends that dynamically list the specific names of visible entities (e.g., `[*=Shotgun, Key]`) based on the viewport, rather than a static key.
-# Palette Journal
-
-_No critical UX or accessibility learnings recorded yet._
+## 2024-05-24 - Accessibility in Terminal UIs
+**Learning:** Icon-only buttons (like 'X' for close or arrows for navigation) in "retro" interfaces are often overlooked by screen readers if they rely solely on visual symbols.
+**Action:** Enforce strict ARIA labeling for all icon-only interactive elements, ensuring the "cool retro look" doesn't compromise usability for non-visual users.
