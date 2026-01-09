@@ -4,6 +4,6 @@
 ## 2024-05-23 - Smart Legends for ASCII Maps
 **Learning:** In ASCII interfaces where symbols are reused (like '*'), users struggle to identify specific objects without tedious "look" commands.
 **Action:** Implement context-aware legends that dynamically list the specific names of visible entities (e.g., `[*=Shotgun, Key]`) based on the viewport, rather than a static key.
-# Palette Journal
-
-_No critical UX or accessibility learnings recorded yet._
+## 2024-05-24 - [Semantic Labels in Modals]
+**Learning:** Modal close buttons (typically `X` icons) and search inputs often rely on visual context that is invisible to screen readers, creating "unlabeled button" barriers.
+**Action:** Enforce a strict pattern of adding `aria-label` to all icon-only buttons and form inputs immediately upon creation, specifically "Close [Context]" for modals.
