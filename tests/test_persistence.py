@@ -9,9 +9,25 @@ class MockGameState:
     def __init__(self, name="Test"):
         self.name = name
         self.turn = 1
+        # Required by validation
+        self.crew = []
+        self.player_location = [0, 0]
+        self.difficulty = "Normal"
+        self.rng = {}
+        self.time_system = {}
+        self.station_map = {}
 
     def to_dict(self):
-        return {"name": self.name, "turn": self.turn}
+        return {
+            "name": self.name,
+            "turn": self.turn,
+            "crew": self.crew,
+            "player_location": self.player_location,
+            "difficulty": self.difficulty,
+            "rng": self.rng,
+            "time_system": self.time_system,
+            "station_map": self.station_map
+        }
 
     @classmethod
     def from_dict(cls, data):
