@@ -4,6 +4,6 @@
 ## 2024-05-23 - Smart Legends for ASCII Maps
 **Learning:** In ASCII interfaces where symbols are reused (like '*'), users struggle to identify specific objects without tedious "look" commands.
 **Action:** Implement context-aware legends that dynamically list the specific names of visible entities (e.g., `[*=Shotgun, Key]`) based on the viewport, rather than a static key.
-# Palette Journal
-
-_No critical UX or accessibility learnings recorded yet._
+## 2024-05-24 - [Dynamic Content Accessibility]
+**Learning:** Dynamic UI elements like toast notifications are often invisible to screen readers without explicit accessible names, even if they have visual close icons.
+**Action:** Ensure all dynamically generated interactive elements (via JS) inject `aria-label` attributes at creation time, specifically for icon-only actions.
