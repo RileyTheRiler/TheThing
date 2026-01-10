@@ -1,4 +1,4 @@
-## 2024-05-22 - [Critical] Insecure Deserialization via Pickle
-**Vulnerability:** The `RandomnessEngine` in `src/systems/architect.py` was using `pickle` to serialize and deserialize the Python `random` state. This allowed arbitrary code execution if a save file was tampered with.
-**Learning:** Even standard library features like `random.getstate()` which return complex objects can be dangerous if blindly serialized with `pickle`. It's always safer to decompose complex objects into JSON-primitives (lists/dicts) for storage.
-**Prevention:** Avoid `pickle` entirely. Always manually decompose objects into JSON-serializable structures (`to_dict`/`from_dict`). For `random` state, convert the internal tuple to a list for JSON storage and reconstruct the tuple for restoration.
+## 2024-05-23 - Path Traversal Prevention in SaveManager
+**Vulnerability:** The `SaveManager` class used unsanitized user input (`slot_name`) directly in file path construction via `os.path.join`. This allowed a path traversal attack where a malicious actor could specify a slot name like `../filename` to write files outside the intended `data/saves` directory.
+**Learning:** Even internal-facing APIs (like `save_game`) can become attack vectors when exposed via user interfaces (like the web command parser). Reliance on valid downstream inputs is insufficient; input validation must happen at the boundary where data is handled.
+**Prevention:** Implemented a strict allowlist-based sanitization method `_sanitize_slot_name` that only permits alphanumeric characters, underscores, and hyphens. This strips all path separators (`/`, `\`) and directory traversal sequences (`..`), ensuring that file operations are confined to the designated directory.
