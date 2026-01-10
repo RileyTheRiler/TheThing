@@ -7,3 +7,6 @@
 # Palette Journal
 
 _No critical UX or accessibility learnings recorded yet._
+## 2024-05-23 - Accessibility First: Missing ARIA Labels on Core UI
+**Learning:** Found significant accessibility gaps in the core UI: modal close buttons, navigation controls, and primary inputs were missing 'aria-label' attributes. While 'title' was present on some, it's insufficient for screen readers on icon-only buttons.
+**Action:** Systematically audited 'index.html' and added descriptive 'aria-label' attributes to all icon-only buttons and inputs. Future UI additions must include these by default.
