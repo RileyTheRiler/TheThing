@@ -1179,7 +1179,7 @@ function showToast(message, type = 'info', duration = 4000) {
     toast.innerHTML = `
         <span class="toast-icon">${icons[type] || icons.info}</span>
         <span class="toast-message">${message}</span>
-        <button class="toast-close" onclick="this.parentElement.remove()">✕</button>
+        <button class="toast-close" aria-label="Close notification" onclick="this.parentElement.remove()">✕</button>
     `;
 
     container.appendChild(toast);
