@@ -9,7 +9,7 @@
 </head>
 
 <body>
-    <div class="container">
+    <div class="container" role="main">
 
         <!-- Start Screen -->
         <div id="start-screen" class="screen active">
@@ -69,7 +69,7 @@
             </div>
 
             <!-- Game Status Bar -->
-            <div class="status-bar">
+            <div class="status-bar" role="status" aria-label="Game Status">
                 <div class="status-item" title="Current game turn - each action advances the turn counter">
                     <span class="label">TURN:</span>
                     <span id="turn-counter" class="value">0</span>
@@ -130,14 +130,14 @@
                         <div id="game-map" class="map-display interactive-map hidden">Loading...</div>
                         <div id="game-canvas" class="map-display interactive-map-3d"></div>
                         <div id="map-legend" class="map-legend"></div>
-                        <div class="nav-controls">
-                            <button class="nav-btn" data-dir="north" title="Go North (Arrow Up)">▲</button>
+                        <div class="nav-controls" role="navigation" aria-label="Movement Controls">
+                            <button class="nav-btn" data-dir="north" title="Go North (Arrow Up)" aria-label="Go North">▲</button>
                             <div class="nav-row">
-                                <button class="nav-btn" data-dir="west" title="Go West (Arrow Left)">◄</button>
-                                <button class="nav-btn nav-center" disabled>●</button>
-                                <button class="nav-btn" data-dir="east" title="Go East (Arrow Right)">►</button>
+                                <button class="nav-btn" data-dir="west" title="Go West (Arrow Left)" aria-label="Go West">◄</button>
+                                <button class="nav-btn nav-center" disabled aria-label="Current Location">●</button>
+                                <button class="nav-btn" data-dir="east" title="Go East (Arrow Right)" aria-label="Go East">►</button>
                             </div>
-                            <button class="nav-btn" data-dir="south" title="Go South (Arrow Down)">▼</button>
+                            <button class="nav-btn" data-dir="south" title="Go South (Arrow Down)" aria-label="Go South">▼</button>
                         </div>
                     </div>
 
@@ -157,8 +157,8 @@
                 <!-- Right Panel: Output and Input -->
                 <div class="right-panel">
                     <div class="output-container" id="output-container">
-                        <div id="event-banner" class="event-banner hidden"></div>
-                        <div id="game-output" class="output-text"></div>
+                        <div id="event-banner" class="event-banner hidden" aria-live="assertive"></div>
+                        <div id="game-output" class="output-text" aria-live="polite" aria-atomic="false"></div>
                     </div>
 
                     <div class="command-container">
@@ -166,7 +166,7 @@
                             <span class="prompt-symbol">CMD&gt;</span>
                             <div class="input-wrapper">
                                 <input type="text" id="command-input" class="command-input"
-                                    placeholder="Enter command..." autocomplete="off">
+                                    placeholder="Enter command..." autocomplete="off" aria-label="Enter command" aria-controls="game-output">
                                 <span id="autocomplete-hint" class="autocomplete-hint"></span>
                             </div>
                         </div>
@@ -296,14 +296,14 @@
         </div>
 
         <!-- Command Browser Modal -->
-        <div id="command-modal" class="modal hidden">
+        <div id="command-modal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Command Reference">
             <div class="modal-content">
                 <div class="modal-header">
                     <h3>COMMAND REFERENCE</h3>
-                    <button class="modal-close" onclick="closeCommandModal()">✕</button>
+                    <button class="modal-close" onclick="closeCommandModal()" aria-label="Close">✕</button>
                 </div>
                 <div class="modal-search">
-                    <input type="text" id="command-search" placeholder="Search commands..." oninput="filterCommands()">
+                    <input type="text" id="command-search" placeholder="Search commands..." oninput="filterCommands()" aria-label="Search commands">
                 </div>
                 <div class="command-categories">
                     <button class="category-btn active" data-category="all">ALL</button>
@@ -321,11 +321,11 @@
         </div>
 
         <!-- Terminal Status Modal (Tier 11.2) -->
-        <div id="terminal-modal" class="modal hidden">
+        <div id="terminal-modal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Terminal Status">
             <div class="modal-content terminal-modal-content">
                 <div class="modal-header terminal-header">
                     <h3 id="terminal-room-name">🖥 TERMINAL: [ROOM]</h3>
-                    <button class="modal-close" onclick="closeTerminalModal()">✕</button>
+                    <button class="modal-close" onclick="closeTerminalModal()" aria-label="Close">✕</button>
                 </div>
                 <div class="terminal-status">
                     <div class="terminal-section">
@@ -354,11 +354,11 @@
         <div id="toast-container" class="toast-container"></div>
 
         <!-- Statistics Modal -->
-        <div id="stats-modal" class="modal hidden">
+        <div id="stats-modal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Game Statistics">
             <div class="modal-content stats-modal-content">
                 <div class="modal-header">
                     <h3>📊 GAME STATISTICS</h3>
-                    <button class="modal-close" onclick="closeStatsModal()">✕</button>
+                    <button class="modal-close" onclick="closeStatsModal()" aria-label="Close">✕</button>
                 </div>
                 <div class="stats-content">
                     <div class="stats-section">
@@ -434,11 +434,11 @@
         </div>
 
         <!-- Journal Modal -->
-        <div id="journal-modal" class="modal hidden">
+        <div id="journal-modal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Investigation Journal">
             <div class="modal-content journal-modal-content">
                 <div class="modal-header">
                     <h3>📓 INVESTIGATION JOURNAL</h3>
-                    <button class="modal-close" onclick="closeJournalModal()">✕</button>
+                    <button class="modal-close" onclick="closeJournalModal()" aria-label="Close">✕</button>
                 </div>
                 <div class="journal-filters">
                     <button class="journal-filter-btn active" data-filter="all">ALL</button>
