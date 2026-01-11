@@ -69,9 +69,9 @@ class StealthSystem:
             subject_pool += 1
         elif posture in (StealthPosture.CRAWLING,):
             subject_pool += 2
-        elif posture in (StealthPosture.HIDING, StealthPosture.HIDDEN):
+        elif posture == StealthPosture.HIDING:
             subject_pool += 4
-        elif posture in (StealthPosture.EXPOSED,):
+        elif getattr(StealthPosture, "EXPOSED", None) and posture == getattr(StealthPosture, "EXPOSED", None):
             subject_pool = max(1, subject_pool - 1)
 
         room_name = game_state.station_map.get_room_name(*subject.location)
@@ -389,9 +389,9 @@ class StealthSystem:
             subject_pool += 1
         elif posture == StealthPosture.CRAWLING:
             subject_pool += 2
-        elif posture == StealthPosture.HIDING or posture == StealthPosture.HIDDEN:
+        elif posture == StealthPosture.HIDING:
             subject_pool += 4
-        elif posture == StealthPosture.EXPOSED:
+        elif getattr(StealthPosture, "EXPOSED", None) and posture == getattr(StealthPosture, "EXPOSED", None):
             subject_pool = max(1, subject_pool - 1)
 
         # Environmental modifiers sourced from coordinator (power, weather, room states)
