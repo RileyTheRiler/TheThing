@@ -434,6 +434,28 @@ function hideDifficultySelect() {
 }
 
 function startGame(difficulty) {
+    // UX: Visual feedback during initialization
+    const buttons = document.querySelectorAll('.difficulty-btn');
+    buttons.forEach(btn => {
+        btn.disabled = true;
+        btn.style.cursor = 'wait';
+
+        // Store original text if not already stored
+        const nameSpan = btn.querySelector('.diff-name');
+        if (nameSpan && !btn.dataset.originalText) {
+            btn.dataset.originalText = nameSpan.textContent;
+        }
+
+        // Check if this is the active button by checking its onclick attribute
+        // This is more robust than text content matching
+        const onclick = btn.getAttribute('onclick');
+        if (onclick && onclick.includes(`'${difficulty}'`)) {
+            if (nameSpan) nameSpan.textContent = '[ INITIALIZING... ]';
+        } else {
+            btn.style.opacity = '0.5';
+        }
+    });
+
     addOutput('Initializing system...');
     addOutput(`Difficulty: ${difficulty}`);
     addOutput('Starting new game...');
@@ -451,6 +473,8 @@ function startGame(difficulty) {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
+                // Success: Reset buttons before switching screen so they are ready if user returns
+                resetDifficultyButtons();
                 gameState = data.game_state;
                 switchToGameScreen();
                 updateGameDisplay(gameState);
@@ -458,12 +482,27 @@ function startGame(difficulty) {
                 addOutput('Type HELP for available commands.');
             } else {
                 addOutput('Error starting game: ' + (data.error || 'Unknown error'));
+                resetDifficultyButtons();
             }
         })
         .catch(error => {
             console.error('Error:', error);
             addOutput('Network error: ' + error.message);
+            resetDifficultyButtons();
         });
+}
+
+function resetDifficultyButtons() {
+    const buttons = document.querySelectorAll('.difficulty-btn');
+    buttons.forEach(btn => {
+        btn.disabled = false;
+        btn.style.cursor = '';
+        btn.style.opacity = '';
+        const nameSpan = btn.querySelector('.diff-name');
+        if (nameSpan && btn.dataset.originalText) {
+            nameSpan.textContent = btn.dataset.originalText;
+        }
+    });
 }
 
 function switchToGameScreen() {
