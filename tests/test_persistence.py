@@ -11,7 +11,12 @@ class MockGameState:
         self.turn = 1
 
     def to_dict(self):
-        return {"name": self.name, "turn": self.turn}
+        return {
+            "name": self.name,
+            "turn": self.turn,
+            "crew": [],
+            "player_location": [0, 0]
+        }
 
     @classmethod
     def from_dict(cls, data):
