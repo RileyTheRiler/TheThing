@@ -2,6 +2,7 @@ import json
 import os
 import hashlib
 import shutil
+import re
 from copy import deepcopy
 from datetime import datetime
 from core.event_system import event_bus, EventType, GameEvent
@@ -236,6 +237,26 @@ class SaveManager:
             except Exception:
                 pass  # Don't interrupt gameplay on save failure
 
+    def _sanitize_slot_name(self, slot_name: str) -> str:
+        """
+        Sanitizes the save slot name to prevent path traversal.
+        Allows only alphanumeric characters, underscores, and hyphens.
+        """
+        if not slot_name:
+            return "default"
+
+        # Use basename as a first defense
+        name = os.path.basename(slot_name)
+
+        # Whitelist characters: a-z, A-Z, 0-9, -, _
+        # Remove anything else
+        clean_name = re.sub(r'[^a-zA-Z0-9_\-]', '', name)
+
+        if not clean_name:
+            return "default"
+
+        return clean_name
+
             
     def backup_save(self, filepath: str) -> bool:
         """
@@ -291,7 +312,8 @@ class SaveManager:
         Adds version and checksum for validation.
         Creates backup of existing save before overwriting.
         """
-        filename = f"{slot_name}.json"
+        safe_slot = self._sanitize_slot_name(slot_name)
+        filename = f"{safe_slot}.json"
         filepath = os.path.join(self.save_dir, filename)
 
         try:
@@ -327,7 +349,8 @@ class SaveManager:
         Load and validate a saved game.
         Performs checksum verification and version migration if needed.
         """
-        filename = f"{slot_name}.json"
+        safe_slot = self._sanitize_slot_name(slot_name)
+        filename = f"{safe_slot}.json"
         filepath = os.path.join(self.save_dir, filename)
 
         if not os.path.exists(filepath):
@@ -487,7 +510,8 @@ class SaveManager:
         Returns:
             Dictionary with slot metadata or None if slot is empty
         """
-        filename = f"{slot_name}.json"
+        safe_slot = self._sanitize_slot_name(slot_name)
+        filename = f"{safe_slot}.json"
         filepath = os.path.join(self.save_dir, filename)
         
         if not os.path.exists(filepath):
