@@ -131,13 +131,21 @@
                         <div id="game-canvas" class="map-display interactive-map-3d"></div>
                         <div id="map-legend" class="map-legend"></div>
                         <div class="nav-controls">
-                            <button class="nav-btn" data-dir="north" title="Go North (Arrow Up)">▲</button>
+                        <button class="nav-btn" data-dir="north" title="Go North (Arrow Up)" aria-label="Go North" aria-keyshortcuts="ArrowUp">
+                            <span aria-hidden="true">▲</span>
+                        </button>
                             <div class="nav-row">
-                                <button class="nav-btn" data-dir="west" title="Go West (Arrow Left)">◄</button>
-                                <button class="nav-btn nav-center" disabled>●</button>
-                                <button class="nav-btn" data-dir="east" title="Go East (Arrow Right)">►</button>
+                            <button class="nav-btn" data-dir="west" title="Go West (Arrow Left)" aria-label="Go West" aria-keyshortcuts="ArrowLeft">
+                                <span aria-hidden="true">◄</span>
+                            </button>
+                            <button class="nav-btn nav-center" disabled aria-hidden="true">●</button>
+                            <button class="nav-btn" data-dir="east" title="Go East (Arrow Right)" aria-label="Go East" aria-keyshortcuts="ArrowRight">
+                                <span aria-hidden="true">►</span>
+                            </button>
                             </div>
-                            <button class="nav-btn" data-dir="south" title="Go South (Arrow Down)">▼</button>
+                        <button class="nav-btn" data-dir="south" title="Go South (Arrow Down)" aria-label="Go South" aria-keyshortcuts="ArrowDown">
+                            <span aria-hidden="true">▼</span>
+                        </button>
                         </div>
                     </div>
 
