@@ -29,6 +29,7 @@ class AISystem:
         self.budget_spent = 0
         self.exhaustion_count = 0  # Track how many times budget was denied
         self.alert_context: Dict[str, Any] = {"active": False, "observation_bonus": 0, "speed_multiplier": 1}
+        self.alert_speed_bonus = 0
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
         event_bus.subscribe(EventType.PERCEPTION_EVENT, self.on_perception_event)
         self.security_roles = {"commander", "radio op"}
@@ -306,7 +307,7 @@ class AISystem:
 
         used_positions = set()
         positions: List[Tuple[int, int]] = []
-        for ally in flankers:
+        for ally in allies:
             best_pos = None
             best_len = None
 
@@ -1246,41 +1247,7 @@ class AISystem:
                 use_astar = False
 
             cost = self.COST_ASTAR if use_astar else self.COST_PATH_CACHE
-            
-            dx, dy = 0, 0
-            if not budget_used and self._request_budget(cost):
-                # Try A* pathfinding
-                dx, dy = pathfinder.get_move_delta(member.location, goal, station_map, current_turn)
-                budget_used = True
-            else:
-                # Budget exhausted or already spent - fall back to greedy movement (0 cost)
-                dx = 1 if target_x > member.location[0] else -1 if target_x < member.location[0] else 0
-                dy = 1 if target_y > member.location[1] else -1 if target_y < member.location[1] else 0
 
-            # Check for barricades at destination
-            new_x = member.location[0] + dx
-            new_y = member.location[1] + dy
-
-            if station_map.is_walkable(new_x, new_y):
-                target_room = station_map.get_room_name(new_x, new_y)
-                current_room = station_map.get_room_name(*member.location)
-
-                if hasattr(game_state, 'room_states') and game_state.room_states.is_entry_blocked(target_room) and target_room != current_room:
-                    if getattr(member, 'is_revealed', False):
-                        # Revealed Things try to break barricades
-                        success, msg, _ = game_state.room_states.attempt_break_barricade(
-                            target_room, member, game_state.rng, is_thing=True
-                        )
-                        if not success:
-                            return  # Can't move this turn
-                        # else fall through to move
-                    else:
-                        # Regular NPCs respect barricades
-                        return
-
-        cost = self.COST_ASTAR if use_astar else self.COST_PATH_CACHE
-        
-        for _ in range(max(1, steps)):
             dx, dy = 0, 0
             if self._request_budget(cost):
                 # Try A* pathfinding
