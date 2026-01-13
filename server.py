@@ -392,7 +392,7 @@ def _execute_game_command(game, cmd):
     if action == "HELP":
         output.append(_get_help_text())
 
-    elif action == "ADVANCE":
+    elif action == "ADVANCE" or action == "WAIT":
         game.advance_turn()
         output.append("Time passes...")
 

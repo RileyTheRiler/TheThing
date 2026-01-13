@@ -4,6 +4,6 @@
 ## 2024-05-23 - Smart Legends for ASCII Maps
 **Learning:** In ASCII interfaces where symbols are reused (like '*'), users struggle to identify specific objects without tedious "look" commands.
 **Action:** Implement context-aware legends that dynamically list the specific names of visible entities (e.g., `[*=Shotgun, Key]`) based on the viewport, rather than a static key.
-# Palette Journal
-
-_No critical UX or accessibility learnings recorded yet._
+## 2024-05-24 - Context for Disabled States
+**Learning:** Disabled buttons in narrative interfaces can feel broken if unexplained.
+**Action:** Always add a `title` attribute or tooltip to disabled UI elements explaining the in-world reason (e.g., "Encrypted. Clearance Level 4 required") to turn a frustration into a flavor moment.

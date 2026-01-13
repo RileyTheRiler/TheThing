@@ -233,6 +233,14 @@ function setupEventListeners() {
         });
     });
 
+    // Setup wait button
+    const waitBtn = document.querySelector('.nav-btn.nav-center');
+    if (waitBtn) {
+        waitBtn.addEventListener('click', function () {
+            sendQuickCommand('WAIT');
+        });
+    }
+
     // Setup command category buttons
     document.querySelectorAll('.category-btn').forEach(btn => {
         btn.addEventListener('click', function () {
