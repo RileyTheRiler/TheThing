@@ -69,10 +69,8 @@ class StealthSystem:
             subject_pool += 1
         elif posture in (StealthPosture.CRAWLING,):
             subject_pool += 2
-        elif posture in (StealthPosture.HIDING, StealthPosture.HIDDEN):
+        elif posture in (StealthPosture.HIDING,):
             subject_pool += 4
-        elif posture in (StealthPosture.EXPOSED,):
-            subject_pool = max(1, subject_pool - 1)
 
         room_name = game_state.station_map.get_room_name(*subject.location)
         is_dark = not getattr(game_state, "power_on", True) or (game_state.room_states and game_state.room_states.has_state(room_name, RoomState.DARK))
@@ -218,8 +216,6 @@ class StealthSystem:
         observer_pool = max(1, observer_pool)
 
         # 4. Resolution
-        res = ResolutionSystem()
-        
         subject_result = ResolutionSystem.roll_check(subject_pool, rng)
         observer_result = ResolutionSystem.roll_check(observer_pool, rng)
         
@@ -303,7 +299,6 @@ class StealthSystem:
 
         ctx = self._prepare_detection_context(observer, subject, game_state, noise_level, alert_bonus)
 
-        res = ResolutionSystem()
         subject_result = ResolutionSystem.roll_check(ctx["subject_pool"], game_state.rng)
 
         # Visual detection
@@ -389,10 +384,8 @@ class StealthSystem:
             subject_pool += 1
         elif posture == StealthPosture.CRAWLING:
             subject_pool += 2
-        elif posture == StealthPosture.HIDING or posture == StealthPosture.HIDDEN:
+        elif posture == StealthPosture.HIDING:
             subject_pool += 4
-        elif posture == StealthPosture.EXPOSED:
-            subject_pool = max(1, subject_pool - 1)
 
         # Environmental modifiers sourced from coordinator (power, weather, room states)
         env_effects = None
@@ -551,15 +544,14 @@ class StealthSystem:
                 }))
 
                 # Contested roll: Player tries to escape, Thing tries to grab
-                res = ResolutionSystem()
                 prowess = actor.attributes.get(Attribute.PROWESS, 1) if hasattr(actor, "attributes") else 2
                 player_pool = max(1, prowess - 1)  # Cramped space penalty
 
                 thing_prowess = opponent.attributes.get(Attribute.PROWESS, 3) if hasattr(opponent, "attributes") else 3
                 thing_pool = thing_prowess + 2  # Advantage in confined space
 
-                player_result = res.roll_check(player_pool, rng)
-                thing_result = res.roll_check(thing_pool, rng)
+                player_result = ResolutionSystem.roll_check(player_pool, rng)
+                thing_result = ResolutionSystem.roll_check(thing_pool, rng)
 
                 if player_result['success_count'] > thing_result['success_count']:
                     # Escaped but injured
@@ -702,7 +694,6 @@ class StealthSystem:
             human_thermal = 2
 
         # Roll detection
-        res = ResolutionSystem()
         rng = getattr(game_state, 'rng', None)
         if not rng:
             return False
@@ -712,8 +703,8 @@ class StealthSystem:
         stealth = player.skills.get(Skill.STEALTH, 0) if hasattr(player, 'skills') else 0
         defense_pool = max(1, prowess + stealth)
 
-        thing_result = res.roll_check(thing_thermal_pool, rng)
-        player_result = res.roll_check(defense_pool, rng)
+        thing_result = ResolutionSystem.roll_check(thing_thermal_pool, rng)
+        player_result = ResolutionSystem.roll_check(defense_pool, rng)
 
         # Thing needs more successes to detect by heat
         detected = thing_result['success_count'] > player_result['success_count']
