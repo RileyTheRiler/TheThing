@@ -7,3 +7,7 @@
 # Palette Journal
 
 _No critical UX or accessibility learnings recorded yet._
+
+## 2024-05-24 - [Disabled Button Tooltips]
+**Learning:** Standard HTML `title` tooltips often fail to appear on `disabled` buttons because these elements suppress pointer events in many browsers.
+**Action:** Wrap disabled buttons in a container to hold the tooltip, or use `aria-disabled="true"` with CSS styling instead of the `disabled` attribute for more robust accessibility.
