@@ -7,3 +7,6 @@
 ## 2024-05-24 - [Semantic Input Labels]
 **Learning:** In CLI-style web interfaces, input fields often lack visual labels to maintain the aesthetic, which critically harms accessibility for screen reader users who cannot see the "CMD>" prompt.
 **Action:** Always include an `aria-label` or visually hidden `<label>` for command line inputs in web interfaces, even if the visual design implies the function.
+## 2024-05-24 - [Accessible Icon-Only Buttons in Retro UI]
+**Learning:** Retro interfaces often rely on character glyphs (✕, ▲, ►) as icons. While stylistically consistent, these are invisible or confusing to screen readers without explicit labels.
+**Action:** When using text characters as icons, always wrap them in an accessible container or attach an `aria-label` to the interactive element to describe the action, not the glyph.

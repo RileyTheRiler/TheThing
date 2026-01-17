@@ -27,8 +27,17 @@ app = Flask(__name__,
 # SECURITY: Use environment variable for secret key or generate a secure random one
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', secrets.token_hex(32))
 CORS(app)
+
+# SECURITY: Restrict CORS origins based on environment
+debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
+default_origins = "*" if debug_mode else ["http://127.0.0.1:5000", "http://localhost:5000"]
+if os.environ.get('CORS_ORIGINS'):
+    cors_origins = [origin.strip() for origin in os.environ.get('CORS_ORIGINS').split(',')]
+else:
+    cors_origins = default_origins
+
 # Use threading async_mode for Python 3.14 compatibility (eventlet not supported)
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+socketio = SocketIO(app, cors_allowed_origins=cors_origins, async_mode='threading')
 
 # Global game state
 game_sessions = {}
@@ -741,11 +750,11 @@ if __name__ == '__main__':
     # SECURITY: Configuration from environment variables with secure defaults
     host = os.environ.get('HOST', '127.0.0.1')
     port = int(os.environ.get('PORT', 5000))
-    debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
 
     print("\nStarting server...")
     print(f"Navigate to: http://{host}:{port}")
     print("\nPress CTRL+C to stop the server")
     print("=" * 60)
+
     # allow_unsafe_werkzeug=True is required to run without debug mode when not using a WSGI server
-    socketio.run(app, host='0.0.0.0', port=port, debug=True, use_reloader=False, allow_unsafe_werkzeug=True)
+    socketio.run(app, host=host, port=port, debug=debug_mode, use_reloader=debug_mode, allow_unsafe_werkzeug=True)
