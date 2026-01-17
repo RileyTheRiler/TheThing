@@ -20,10 +20,6 @@ class PathfindingSystem:
     recalculating paths every turn.
     """
 
-    # Pre-allocate neighbor offsets to avoid instantiation in loops
-    ORTHOGONAL_NEIGHBORS = [(-1, 0), (0, -1), (0, 1), (1, 0)]
-    DIAGONAL_NEIGHBORS = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
-
     def __init__(self):
         self._path_cache: Dict[Tuple[Tuple[int, int], Tuple[int, int]], List[Tuple[int, int]]] = {}
         self._cache_turn = -1
