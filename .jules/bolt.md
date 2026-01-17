@@ -5,3 +5,7 @@
 ## 2024-05-23 - Redundant Loop Iteration
 **Learning:** Found a pattern where orthogonal and diagonal neighbors were iterated in separate loops (sometimes with empty bodies) BEFORE a unified loop that handled everything. This caused 1.5x-2x redundant work per node expansion.
 **Action:** Inspect loops in hot paths (like A*) for redundancy. Ensure the loop logic matches the intent and doesn't duplicate work done in subsequent loops.
+
+## 2024-05-24 - Duplicate Logic Blocks
+**Learning:** Discovered a `_pathfind_step` method containing two identical loops. The first loop performed calculations and budget checks but had no side effects (no movement), while the second loop repeated the calculations and executed movement. This doubled the computational cost and budget usage.
+**Action:** When refactoring or merging code, verify that "dry run" loops or duplicate blocks are intentional. Redundant logic blocks are a prime target for deletion to instantly double efficiency.

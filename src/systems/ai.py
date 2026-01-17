@@ -1237,56 +1237,38 @@ class AISystem:
         # 1. Budget check for pathfinding
         # Check cache first to determine cost
         steps = max(1, self.alert_context.get("speed_multiplier", 1) if self.alert_context else 1)
-        budget_used = False
 
-        for _ in range(steps):
-            cache_key = (member.location, goal)
-            use_astar = True
-            if hasattr(pathfinder, '_path_cache') and cache_key in pathfinder._path_cache:
-                use_astar = False
+        path = None
+        current_path_index = 0
 
-            cost = self.COST_ASTAR if use_astar else self.COST_PATH_CACHE
-            
-            dx, dy = 0, 0
-            if not budget_used and self._request_budget(cost):
-                # Try A* pathfinding
-                dx, dy = pathfinder.get_move_delta(member.location, goal, station_map, current_turn)
-                budget_used = True
-            else:
-                # Budget exhausted or already spent - fall back to greedy movement (0 cost)
-                dx = 1 if target_x > member.location[0] else -1 if target_x < member.location[0] else 0
-                dy = 1 if target_y > member.location[1] else -1 if target_y < member.location[1] else 0
-
-            # Check for barricades at destination
-            new_x = member.location[0] + dx
-            new_y = member.location[1] + dy
-
-            if station_map.is_walkable(new_x, new_y):
-                target_room = station_map.get_room_name(new_x, new_y)
-                current_room = station_map.get_room_name(*member.location)
-
-                if hasattr(game_state, 'room_states') and game_state.room_states.is_entry_blocked(target_room) and target_room != current_room:
-                    if getattr(member, 'is_revealed', False):
-                        # Revealed Things try to break barricades
-                        success, msg, _ = game_state.room_states.attempt_break_barricade(
-                            target_room, member, game_state.rng, is_thing=True
-                        )
-                        if not success:
-                            return  # Can't move this turn
-                        # else fall through to move
-                    else:
-                        # Regular NPCs respect barricades
-                        return
+        # Calculate path once if budget allows
+        cache_key = (member.location, goal)
+        use_astar = True
+        if hasattr(pathfinder, '_path_cache') and cache_key in pathfinder._path_cache:
+            use_astar = False
 
         cost = self.COST_ASTAR if use_astar else self.COST_PATH_CACHE
         
-        for _ in range(max(1, steps)):
+        if self._request_budget(cost):
+            path = pathfinder.find_path(member.location, goal, station_map, current_turn)
+
+        for _ in range(steps):
             dx, dy = 0, 0
-            if self._request_budget(cost):
-                # Try A* pathfinding
-                dx, dy = pathfinder.get_move_delta(member.location, goal, station_map, current_turn)
-            else:
-                # Budget exhausted - fall back to greedy movement (0 cost)
+
+            # Use path if available
+            target_next = None
+            if path and len(path) > current_path_index + 1:
+                target_next = path[current_path_index + 1]
+                # Ensure next node is reachable (adjacent)
+                if abs(target_next[0] - member.location[0]) <= 1 and abs(target_next[1] - member.location[1]) <= 1:
+                    dx = target_next[0] - member.location[0]
+                    dy = target_next[1] - member.location[1]
+                else:
+                    # Path desync
+                    path = None
+
+            # Fallback to greedy if no path or path exhausted
+            if dx == 0 and dy == 0:
                 dx = 1 if target_x > member.location[0] else -1 if target_x < member.location[0] else 0
                 dy = 1 if target_y > member.location[1] else -1 if target_y < member.location[1] else 0
 
@@ -1312,6 +1294,13 @@ class AISystem:
                         return
 
             member.move(dx, dy, station_map)
+
+            # If we successfully moved to the target node of the path, advance index
+            if target_next and member.location == target_next:
+                current_path_index += 1
+            elif target_next and member.location != target_next:
+                # Move failed or was redirected
+                path = None
 
             # Check for tripwire triggers at new location
             self._check_tripwire_trigger(member, game_state)
