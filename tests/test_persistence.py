@@ -9,14 +9,23 @@ class MockGameState:
     def __init__(self, name="Test"):
         self.name = name
         self.turn = 1
+        self.crew = []
+        self.player_location = [0, 0]
 
     def to_dict(self):
-        return {"name": self.name, "turn": self.turn}
+        return {
+            "name": self.name,
+            "turn": self.turn,
+            "crew": self.crew,
+            "player_location": self.player_location
+        }
 
     @classmethod
     def from_dict(cls, data):
-        g = cls(data["name"])
-        g.turn = data["turn"]
+        g = cls(data.get("name", "Test"))
+        g.turn = data.get("turn", 1)
+        g.crew = data.get("crew", [])
+        g.player_location = data.get("player_location", [0, 0])
         return g
 
 class TestPersistence(unittest.TestCase):
