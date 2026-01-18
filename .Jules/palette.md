@@ -4,6 +4,9 @@
 ## 2024-05-23 - Smart Legends for ASCII Maps
 **Learning:** In ASCII interfaces where symbols are reused (like '*'), users struggle to identify specific objects without tedious "look" commands.
 **Action:** Implement context-aware legends that dynamically list the specific names of visible entities (e.g., `[*=Shotgun, Key]`) based on the viewport, rather than a static key.
+## 2024-05-24 - Accessible Icon Buttons
+**Learning:** Icon-only buttons (like ✕, ▲) rely on visual context that is lost to screen readers. Relying on `title` attributes alone is insufficient for accessibility.
+**Action:** Always pair icon-only buttons with explicit `aria-label` attributes describing the action (e.g., "Close Modal", "Go North").
 # Palette Journal
 
 _No critical UX or accessibility learnings recorded yet._
