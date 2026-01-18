@@ -28,6 +28,7 @@ class AISystem:
         self.budget_limit = 0
         self.budget_spent = 0
         self.exhaustion_count = 0  # Track how many times budget was denied
+        self.alert_speed_bonus = 0
         self.alert_context: Dict[str, Any] = {"active": False, "observation_bonus": 0, "speed_multiplier": 1}
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
         event_bus.subscribe(EventType.PERCEPTION_EVENT, self.on_perception_event)
@@ -306,7 +307,7 @@ class AISystem:
 
         used_positions = set()
         positions: List[Tuple[int, int]] = []
-        for ally in flankers:
+        for ally in allies:
             best_pos = None
             best_len = None
 
@@ -1249,6 +1250,27 @@ class AISystem:
 
         cost = self.COST_ASTAR if use_astar else self.COST_PATH_CACHE
         
+        path = None
+        path_found = False
+
+        # Optimize: Compute path once, then iterate steps
+        if self._request_budget(cost):
+            path = pathfinder.find_path(member.location, goal, station_map, current_turn)
+            path_found = True
+
+        for i in range(steps):
+            dx, dy = 0, 0
+
+            if path_found:
+                if path and i + 1 < len(path):
+                    next_node = path[i+1]
+                    dx = next_node[0] - member.location[0]
+                    dy = next_node[1] - member.location[1]
+                else:
+                    # Path blocked or ended
+                    break
+            else:
+                # Budget exhausted - fall back to greedy movement (0 cost)
         if self._request_budget(cost):
             path = pathfinder.find_path(member.location, goal, station_map, current_turn)
 
