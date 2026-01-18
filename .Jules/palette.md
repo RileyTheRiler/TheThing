@@ -4,6 +4,9 @@
 ## 2024-05-23 - Smart Legends for ASCII Maps
 **Learning:** In ASCII interfaces where symbols are reused (like '*'), users struggle to identify specific objects without tedious "look" commands.
 **Action:** Implement context-aware legends that dynamically list the specific names of visible entities (e.g., `[*=Shotgun, Key]`) based on the viewport, rather than a static key.
+## 2024-05-24 - Context for Disabled States
+**Learning:** Disabled buttons in narrative interfaces can feel broken if unexplained.
+**Action:** Always add a `title` attribute or tooltip to disabled UI elements explaining the in-world reason (e.g., "Encrypted. Clearance Level 4 required") to turn a frustration into a flavor moment.
 ## 2024-05-24 - Accessibility of Interactive Elements
 **Learning:** Icon-only buttons (like 'X' for close) are invisible to screen readers without explicit labels, and standard `disabled` attributes can be confusing without explanation.
 **Action:** Always include `aria-label` for icon-only buttons and provide `title` tooltips for disabled actions to explain the "why" (e.g., "Clearance Level 4 required").
