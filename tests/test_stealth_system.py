@@ -84,10 +84,10 @@ def test_hidden_posture_reduces_detection():
     game_state = _build_game_state(player, observer, power_on=True)
 
     stealth = StealthSystem()
-    stealth.set_posture(player, StealthPosture.HIDDEN)
+    stealth.set_posture(player, StealthPosture.HIDING)
     hidden = stealth.get_detection_chance(observer, player, game_state, noise_level=0)
 
-    stealth.set_posture(player, StealthPosture.EXPOSED)
+    stealth.set_posture(player, StealthPosture.STANDING)
     exposed = stealth.get_detection_chance(observer, player, game_state, noise_level=0)
 
     stealth.cleanup()

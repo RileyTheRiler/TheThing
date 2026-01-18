@@ -157,12 +157,17 @@ def test_flanking_position_calculation(game_state, ai_system):
     leader_pos = (8, 10)  # Approaching from the left
     flankers = game_state.crew[1:3]
 
+    allies = [game_state.crew[1], game_state.crew[2]]
+
+    positions = ai_system._calculate_flanking_positions(
+        target, leader_pos, allies, game_state.station_map, current_turn=game_state.turn
     positions = ai_system._calculate_flanking_positions(
         target, leader_pos, flankers, game_state.station_map, current_turn=game_state.turn
     )
 
     # Should have positions on opposite side or perpendicular
     assert len(positions) >= 1
+    assert len(positions) <= len(allies)
     assert len(positions) <= len(flankers)
 
     # Positions should not be the same as target
