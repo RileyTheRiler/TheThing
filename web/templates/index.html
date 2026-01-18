@@ -168,7 +168,6 @@
                             <div class="input-wrapper">
                                 <input type="text" id="command-input" class="command-input"
                                     placeholder="Enter command..." autocomplete="off" aria-label="Enter command">
-                                    placeholder="Enter command..." autocomplete="off" aria-label="Command input">
                                 <span id="autocomplete-hint" class="autocomplete-hint"></span>
                             </div>
                         </div>
@@ -303,11 +302,9 @@
                 <div class="modal-header">
                     <h3>COMMAND REFERENCE</h3>
                     <button class="modal-close" onclick="closeCommandModal()" aria-label="Close command reference">✕</button>
-                    <button class="modal-close" onclick="closeCommandModal()" aria-label="Close">✕</button>
-                    <button class="modal-close" onclick="closeCommandModal()" aria-label="Close modal">✕</button>
                 </div>
                 <div class="modal-search">
-                    <input type="text" id="command-search" placeholder="Search commands..." oninput="filterCommands()">
+                    <input type="text" id="command-search" placeholder="Search commands..." aria-label="Search commands" oninput="filterCommands()">
                 </div>
                 <div class="command-categories">
                     <button class="category-btn active" data-category="all">ALL</button>
@@ -330,8 +327,6 @@
                 <div class="modal-header terminal-header">
                     <h3 id="terminal-room-name">🖥 TERMINAL: [ROOM]</h3>
                     <button class="modal-close" onclick="closeTerminalModal()" aria-label="Close terminal">✕</button>
-                    <button class="modal-close" onclick="closeTerminalModal()" aria-label="Close">✕</button>
-                    <button class="modal-close" onclick="closeTerminalModal()" aria-label="Close modal">✕</button>
                 </div>
                 <div class="terminal-status">
                     <div class="terminal-section">
@@ -365,8 +360,6 @@
                 <div class="modal-header">
                     <h3>📊 GAME STATISTICS</h3>
                     <button class="modal-close" onclick="closeStatsModal()" aria-label="Close statistics">✕</button>
-                    <button class="modal-close" onclick="closeStatsModal()" aria-label="Close">✕</button>
-                    <button class="modal-close" onclick="closeStatsModal()" aria-label="Close modal">✕</button>
                 </div>
                 <div class="stats-content">
                     <div class="stats-section">
@@ -447,8 +440,6 @@
                 <div class="modal-header">
                     <h3>📓 INVESTIGATION JOURNAL</h3>
                     <button class="modal-close" onclick="closeJournalModal()" aria-label="Close journal">✕</button>
-                    <button class="modal-close" onclick="closeJournalModal()" aria-label="Close">✕</button>
-                    <button class="modal-close" onclick="closeJournalModal()" aria-label="Close modal">✕</button>
                 </div>
                 <div class="journal-filters">
                     <button class="journal-filter-btn active" data-filter="all">ALL</button>
