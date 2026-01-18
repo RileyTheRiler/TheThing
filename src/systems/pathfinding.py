@@ -102,6 +102,7 @@ class PathfindingSystem:
     def _astar(self, start: Tuple[int, int], goal: Tuple[int, int],
                station_map) -> Optional[List[Tuple[int, int]]]:
         """A* pathfinding algorithm implementation.
+        Optimized to use 1D arrays instead of dictionaries for O(1) access.
 
         Args:
             start: Starting position
@@ -111,44 +112,47 @@ class PathfindingSystem:
         Returns:
             Path as list of positions, or None if unreachable
         """
-        # Priority queue: (f_score, counter, position)
-        # Counter is used as tiebreaker for equal f_scores
-        counter = 0
-        open_set = [(0, counter, start)]
-        # heapq.heapify(open_set) # Not needed for single element
-
-        # Track where we came from
-        came_from: Dict[Tuple[int, int], Tuple[int, int]] = {}
-
-        # g_score: cost from start to current node
-        g_score: Dict[Tuple[int, int], float] = {start: 0}
-
-        # f_score: g_score + heuristic
-        f_score: Dict[Tuple[int, int], float] = {start: self._heuristic(start, goal)}
-
-        # Track what's in open set for O(1) lookup
-        open_set_hash = {start}
-
-        # Cache map dimensions for faster bounds checking
         map_width = station_map.width
         map_height = station_map.height
+        size = map_width * map_height
+
+        start_x, start_y = start
+        goal_x, goal_y = goal
+        start_idx = start_y * map_width + start_x
+
+        # Arrays initialized to default values
+        # g_score: cost from start to node. Inf means not visited/unreachable.
+        g_score = [float('inf')] * size
+        # came_from: parent index. -1 means no parent.
+        came_from = [-1] * size
+        # in_open_set: boolean tracking for O(1) lookup
+        in_open_set = [False] * size
+
+        g_score[start_idx] = 0.0
+
+        # Priority queue: (f_score, counter, x, y)
+        # Counter is used as tiebreaker for equal f_scores
+        counter = 0
+        h_start = self._heuristic(start, goal)
+        open_set = [(h_start, counter, start_x, start_y)]
+        in_open_set[start_idx] = True
+
         # Localize globals for speed in loop
         heappush = heapq.heappush
         heappop = heapq.heappop
         neighbors = NEIGHBORS
         heuristic_weight = HEURISTIC_WEIGHT
-        goal_x, goal_y = goal
 
         while open_set:
             # Get node with lowest f_score
-            _, _, current = heappop(open_set)
-            open_set_hash.discard(current)
+            _, _, cx, cy = heappop(open_set)
+            c_idx = cy * map_width + cx
+            in_open_set[c_idx] = False
 
-            if current == goal:
-                return self._reconstruct_path(came_from, current)
+            if cx == goal_x and cy == goal_y:
+                return self._reconstruct_path_array(came_from, c_idx, map_width)
 
-            cx, cy = current
-            current_g = g_score[current]
+            current_g = g_score[c_idx]
 
             # Process neighbors
             for dx, dy, cost in neighbors:
@@ -158,12 +162,12 @@ class PathfindingSystem:
                 if not (0 <= nx < map_width and 0 <= ny < map_height):
                     continue
 
-                neighbor = (nx, ny)
+                n_idx = ny * map_width + nx
                 tentative_g = current_g + cost
 
-                if neighbor not in g_score or tentative_g < g_score[neighbor]:
-                    came_from[neighbor] = current
-                    g_score[neighbor] = tentative_g
+                if tentative_g < g_score[n_idx]:
+                    came_from[n_idx] = c_idx
+                    g_score[n_idx] = tentative_g
 
                     # Inline heuristic: Octile distance
                     # max(dx, dy) + (sqrt(2) - 1) * min(dx, dy)
@@ -175,12 +179,12 @@ class PathfindingSystem:
                     else:
                         h_val = dy_h + heuristic_weight * dx_h
 
-                    f_score[neighbor] = tentative_g + h_val
+                    f_val = tentative_g + h_val
 
-                    if neighbor not in open_set_hash:
+                    if not in_open_set[n_idx]:
                         counter += 1
-                        heappush(open_set, (f_score[neighbor], counter, neighbor))
-                        open_set_hash.add(neighbor)
+                        in_open_set[n_idx] = True
+                        heappush(open_set, (f_val, counter, nx, ny))
 
         # No path found
         return None
@@ -200,6 +204,26 @@ class PathfindingSystem:
         # Chebyshev distance for 8-directional movement
         return max(dx, dy) + (1.414 - 1) * min(dx, dy)
 
+    def _reconstruct_path_array(self, came_from: List[int], current_idx: int, width: int) -> List[Tuple[int, int]]:
+        """Reconstruct path from came_from array.
+
+        Args:
+            came_from: List mapping each position index to its predecessor index
+            current_idx: End position index
+            width: Map width for coordinate conversion
+
+        Returns:
+            List of positions from start to current
+        """
+        path = []
+        while current_idx != -1:
+            y, x = divmod(current_idx, width)
+            path.append((x, y))
+            current_idx = came_from[current_idx]
+        path.reverse()
+        return path
+
+    # Deprecated but kept for compatibility if referenced elsewhere
     def _reconstruct_path(self, came_from: Dict[Tuple[int, int], Tuple[int, int]],
                           current: Tuple[int, int]) -> List[Tuple[int, int]]:
         """Reconstruct path from came_from map.

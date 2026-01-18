@@ -161,8 +161,6 @@ def test_flanking_position_calculation(game_state, ai_system):
 
     positions = ai_system._calculate_flanking_positions(
         target, leader_pos, allies, game_state.station_map, current_turn=game_state.turn
-    positions = ai_system._calculate_flanking_positions(
-        target, leader_pos, flankers, game_state.station_map, current_turn=game_state.turn
     )
 
     # Should have positions on opposite side or perpendicular
