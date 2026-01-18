@@ -233,6 +233,14 @@ function setupEventListeners() {
         });
     });
 
+    // Setup wait button
+    const waitBtn = document.querySelector('.nav-btn.nav-center');
+    if (waitBtn) {
+        waitBtn.addEventListener('click', function () {
+            sendQuickCommand('WAIT');
+        });
+    }
+
     // Setup command category buttons
     document.querySelectorAll('.category-btn').forEach(btn => {
         btn.addEventListener('click', function () {
@@ -1179,7 +1187,7 @@ function showToast(message, type = 'info', duration = 4000) {
     toast.innerHTML = `
         <span class="toast-icon">${icons[type] || icons.info}</span>
         <span class="toast-message">${message}</span>
-        <button class="toast-close" onclick="this.parentElement.remove()">✕</button>
+        <button class="toast-close" onclick="this.parentElement.remove()" aria-label="Close notification">✕</button>
     `;
 
     container.appendChild(toast);

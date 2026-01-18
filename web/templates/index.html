@@ -24,10 +24,16 @@
                 </div>
 
                 <div class="menu-options">
+                    <button class="menu-btn" onclick="showDifficultySelect()" aria-label="Begin Simulation">[ BEGIN SIMULATION ]</button>
+                    <button class="menu-btn" disabled title="Encrypted. Clearance Level 4 required.">[ ACCESS RECORDS ]</button>
+                    <button class="menu-btn" disabled title="System Configuration Locked">[ SYSTEM CONFIG ]</button>
+                    <button class="menu-btn" disabled title="Termination Sequence Offline">[ TERMINATE ]</button>
                     <button class="menu-btn" onclick="showDifficultySelect()">[ BEGIN SIMULATION ]</button>
-                    <button class="menu-btn" disabled>[ ACCESS RECORDS ]</button>
-                    <button class="menu-btn" disabled>[ SYSTEM CONFIG ]</button>
-                    <button class="menu-btn" disabled>[ TERMINATE ]</button>
+                    <button class="menu-btn" disabled title="Encrypted. Clearance Level 4 required.">[ ACCESS RECORDS ]</button>
+                    <button class="menu-btn" disabled title="System configuration locked by Administrator.">[ SYSTEM CONFIG ]</button>
+                    <button class="menu-btn" disabled title="Termination protocol requires dual-key authorization.">[ TERMINATE ]</button>
+                    <button class="menu-btn" disabled title="System Locked. Administrator Access Only.">[ SYSTEM CONFIG ]</button>
+                    <button class="menu-btn" disabled title="Failsafe Engaged. Cannot terminate simulation.">[ TERMINATE ]</button>
                 </div>
             </div>
 
@@ -131,13 +137,17 @@
                         <div id="game-canvas" class="map-display interactive-map-3d"></div>
                         <div id="map-legend" class="map-legend"></div>
                         <div class="nav-controls">
-                            <button class="nav-btn" data-dir="north" title="Go North (Arrow Up)">▲</button>
+                            <button class="nav-btn" data-dir="north" title="Go North (Arrow Up)" aria-label="Go North">▲</button>
                             <div class="nav-row">
-                                <button class="nav-btn" data-dir="west" title="Go West (Arrow Left)">◄</button>
+                                <button class="nav-btn" data-dir="west" title="Go West (Arrow Left)" aria-label="Go West">◄</button>
+                                <button class="nav-btn nav-center" title="Wait / Hold Position" aria-label="Wait">●</button>
+                                <button class="nav-btn nav-center" disabled aria-hidden="true">●</button>
                                 <button class="nav-btn nav-center" disabled>●</button>
-                                <button class="nav-btn" data-dir="east" title="Go East (Arrow Right)">►</button>
+                                <button class="nav-btn nav-center" disabled aria-hidden="true">●</button>
+                                <button class="nav-btn nav-center" disabled aria-label="Wait">●</button>
+                                <button class="nav-btn" data-dir="east" title="Go East (Arrow Right)" aria-label="Go East">►</button>
                             </div>
-                            <button class="nav-btn" data-dir="south" title="Go South (Arrow Down)">▼</button>
+                            <button class="nav-btn" data-dir="south" title="Go South (Arrow Down)" aria-label="Go South">▼</button>
                         </div>
                     </div>
 
@@ -166,7 +176,9 @@
                             <span class="prompt-symbol">CMD&gt;</span>
                             <div class="input-wrapper">
                                 <input type="text" id="command-input" class="command-input"
-                                    placeholder="Enter command..." autocomplete="off">
+                                    placeholder="Enter command..." autocomplete="off" aria-label="Command Input">
+                                    placeholder="Enter command..." autocomplete="off" aria-label="Command input">
+                                    placeholder="Enter command..." autocomplete="off" aria-label="Enter command">
                                 <span id="autocomplete-hint" class="autocomplete-hint"></span>
                             </div>
                         </div>
@@ -300,10 +312,12 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h3>COMMAND REFERENCE</h3>
-                    <button class="modal-close" onclick="closeCommandModal()">✕</button>
+                    <button class="modal-close" onclick="closeCommandModal()" aria-label="Close">✕</button>
+                    <button class="modal-close" onclick="closeCommandModal()" aria-label="Close command modal">✕</button>
+                    <button class="modal-close" onclick="closeCommandModal()" aria-label="Close command reference">✕</button>
                 </div>
                 <div class="modal-search">
-                    <input type="text" id="command-search" placeholder="Search commands..." oninput="filterCommands()">
+                    <input type="text" id="command-search" placeholder="Search commands..." aria-label="Search commands" oninput="filterCommands()">
                 </div>
                 <div class="command-categories">
                     <button class="category-btn active" data-category="all">ALL</button>
@@ -325,7 +339,9 @@
             <div class="modal-content terminal-modal-content">
                 <div class="modal-header terminal-header">
                     <h3 id="terminal-room-name">🖥 TERMINAL: [ROOM]</h3>
-                    <button class="modal-close" onclick="closeTerminalModal()">✕</button>
+                    <button class="modal-close" onclick="closeTerminalModal()" aria-label="Close">✕</button>
+                    <button class="modal-close" onclick="closeTerminalModal()" aria-label="Close terminal modal">✕</button>
+                    <button class="modal-close" onclick="closeTerminalModal()" aria-label="Close terminal">✕</button>
                 </div>
                 <div class="terminal-status">
                     <div class="terminal-section">
@@ -358,7 +374,9 @@
             <div class="modal-content stats-modal-content">
                 <div class="modal-header">
                     <h3>📊 GAME STATISTICS</h3>
-                    <button class="modal-close" onclick="closeStatsModal()">✕</button>
+                    <button class="modal-close" onclick="closeStatsModal()" aria-label="Close">✕</button>
+                    <button class="modal-close" onclick="closeStatsModal()" aria-label="Close stats modal">✕</button>
+                    <button class="modal-close" onclick="closeStatsModal()" aria-label="Close statistics">✕</button>
                 </div>
                 <div class="stats-content">
                     <div class="stats-section">
@@ -438,7 +456,9 @@
             <div class="modal-content journal-modal-content">
                 <div class="modal-header">
                     <h3>📓 INVESTIGATION JOURNAL</h3>
-                    <button class="modal-close" onclick="closeJournalModal()">✕</button>
+                    <button class="modal-close" onclick="closeJournalModal()" aria-label="Close">✕</button>
+                    <button class="modal-close" onclick="closeJournalModal()" aria-label="Close journal modal">✕</button>
+                    <button class="modal-close" onclick="closeJournalModal()" aria-label="Close journal">✕</button>
                 </div>
                 <div class="journal-filters">
                     <button class="journal-filter-btn active" data-filter="all">ALL</button>
