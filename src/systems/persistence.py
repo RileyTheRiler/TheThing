@@ -291,6 +291,9 @@ class SaveManager:
         Adds version and checksum for validation.
         Creates backup of existing save before overwriting.
         """
+        # Security: Sanitize slot name to prevent path traversal
+        slot_name = os.path.basename(slot_name)
+
         filename = f"{slot_name}.json"
         filepath = os.path.join(self.save_dir, filename)
 
@@ -327,6 +330,9 @@ class SaveManager:
         Load and validate a saved game.
         Performs checksum verification and version migration if needed.
         """
+        # Security: Sanitize slot name to prevent path traversal
+        slot_name = os.path.basename(slot_name)
+
         filename = f"{slot_name}.json"
         filepath = os.path.join(self.save_dir, filename)
 
@@ -487,6 +493,9 @@ class SaveManager:
         Returns:
             Dictionary with slot metadata or None if slot is empty
         """
+        # Security: Sanitize slot name to prevent path traversal
+        slot_name = os.path.basename(slot_name)
+
         filename = f"{slot_name}.json"
         filepath = os.path.join(self.save_dir, filename)
         
