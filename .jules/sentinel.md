@@ -11,3 +11,8 @@
 **Vulnerability:** The `SaveManager` used user-controlled input (`slot_name`) directly in file paths without sanitization. This allowed attackers to write files outside the save directory (Path Traversal) via `../../` sequences, potentially overwriting system files or executing arbitrary code if they could control file extensions or content effectively.
 **Learning:** Never trust file path components coming from user input. Even seemingly harmless "names" or "slots" can be used for traversal attacks.
 **Prevention:** Always sanitize filenames using `os.path.basename()` or strict allow-list validation (e.g., regex `^[a-zA-Z0-9_-]+$`) before using them in file system operations.
+
+## 2026-01-18 - [High] Unintended Server Exposure via Double Bind
+**Vulnerability:** `server.py` contained two `socketio.run` calls. The first one bound the server to `0.0.0.0` (all interfaces) before the correct, configuration-respecting call could execute.
+**Learning:** Redundant code can be dangerous. The first instance of a blocking call (like `run()`) wins. Always verify startup logic and remove "temporary" testing code before committing.
+**Prevention:** Use a single entry point for server startup. Audit entry files for duplicate blocking calls. Verify bind addresses in startup scripts.
