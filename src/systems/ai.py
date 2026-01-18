@@ -1243,8 +1243,6 @@ class AISystem:
         path = None
         current_path_index = 0
 
-            cost = self.COST_ASTAR if use_astar else self.COST_PATH_CACHE
-
         # Calculate path once if budget allows
         cache_key = (member.location, goal)
         use_astar = True
@@ -1260,22 +1258,6 @@ class AISystem:
         if self._request_budget(cost):
             path = pathfinder.find_path(member.location, goal, station_map, current_turn)
             path_found = True
-
-        for i in range(steps):
-            dx, dy = 0, 0
-
-            if path_found:
-                if path and i + 1 < len(path):
-                    next_node = path[i+1]
-                    dx = next_node[0] - member.location[0]
-                    dy = next_node[1] - member.location[1]
-                else:
-                    # Path blocked or ended
-                    break
-            else:
-                # Budget exhausted - fall back to greedy movement (0 cost)
-        if self._request_budget(cost):
-            path = pathfinder.find_path(member.location, goal, station_map, current_turn)
 
         for _ in range(steps):
             dx, dy = 0, 0
