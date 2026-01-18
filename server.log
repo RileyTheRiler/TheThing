@@ -1,0 +1,30 @@
+Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+============================================================
+   THE THING: ANTARCTIC RESEARCH STATION 31
+   Browser Interface Server
+============================================================
+
+Starting server...
+Navigate to: http://127.0.0.1:5000
+
+Press CTRL+C to stop the server
+============================================================
+ * Serving Flask app 'server'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.0.2:5000
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [18/Jan/2026 07:09:30] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Jan/2026 07:12:41] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Jan/2026 07:12:41] "GET /static/css/style.css HTTP/1.1" 200 -
+127.0.0.1 - - [18/Jan/2026 07:12:41] "GET /static/images/logo.png HTTP/1.1" 200 -
+127.0.0.1 - - [18/Jan/2026 07:12:42] "GET /static/js/renderer3d.js HTTP/1.1" 200 -
+127.0.0.1 - - [18/Jan/2026 07:12:42] "GET /static/js/game.js HTTP/1.1" 200 -
+127.0.0.1 - - [18/Jan/2026 07:12:42] "GET /static/images/menu_bg.png HTTP/1.1" 200 -
+127.0.0.1 - - [18/Jan/2026 07:12:42] "GET /socket.io/?EIO=4&transport=polling&t=PlFykpp HTTP/1.1" 200 -
+127.0.0.1 - - [18/Jan/2026 07:12:42] "POST /socket.io/?EIO=4&transport=polling&t=PlFykq0&sid=-M6Bpuf-6r9_PXBOAAAA HTTP/1.1" 200 -
+127.0.0.1 - - [18/Jan/2026 07:12:42] "GET /socket.io/?EIO=4&transport=polling&t=PlFykqA&sid=-M6Bpuf-6r9_PXBOAAAA HTTP/1.1" 200 -
+127.0.0.1 - - [18/Jan/2026 07:12:42] "GET /socket.io/?EIO=4&transport=polling&t=PlFykqS&sid=-M6Bpuf-6r9_PXBOAAAA HTTP/1.1" 200 -
+127.0.0.1 - - [18/Jan/2026 07:12:43] "GET /socket.io/?EIO=4&transport=websocket&sid=-M6Bpuf-6r9_PXBOAAAA HTTP/1.1" 200 -
