@@ -1240,11 +1240,6 @@ class AISystem:
         # Check cache first to determine cost
         steps = max(1, self.alert_context.get("speed_multiplier", 1) if self.alert_context else 1)
 
-        path = None
-        current_path_index = 0
-
-            cost = self.COST_ASTAR if use_astar else self.COST_PATH_CACHE
-
         # Calculate path once if budget allows
         cache_key = (member.location, goal)
         use_astar = True
@@ -1255,6 +1250,7 @@ class AISystem:
         
         path = None
         path_found = False
+        current_path_index = 0
 
         # Optimize: Compute path once, then iterate steps
         if self._request_budget(cost):
@@ -1264,33 +1260,33 @@ class AISystem:
         for i in range(steps):
             dx, dy = 0, 0
 
-            if path_found:
-                if path and i + 1 < len(path):
-                    next_node = path[i+1]
-                    dx = next_node[0] - member.location[0]
-                    dy = next_node[1] - member.location[1]
-                else:
-                    # Path blocked or ended
-                    break
-            else:
-                # Budget exhausted - fall back to greedy movement (0 cost)
-        if self._request_budget(cost):
-            path = pathfinder.find_path(member.location, goal, station_map, current_turn)
-
-        for _ in range(steps):
-            dx, dy = 0, 0
-
             # Use path if available
             target_next = None
-            if path and len(path) > current_path_index + 1:
-                target_next = path[current_path_index + 1]
-                # Ensure next node is reachable (adjacent)
-                if abs(target_next[0] - member.location[0]) <= 1 and abs(target_next[1] - member.location[1]) <= 1:
-                    dx = target_next[0] - member.location[0]
-                    dy = target_next[1] - member.location[1]
-                else:
-                    # Path desync
-                    path = None
+            if path_found and path and i + 1 < len(path):
+                # Recalculate index relative to current position if we moved
+                # Ideally path[0] is start, path[1] is next.
+                # If we moved once, we are at path[1], want path[2].
+                # But 'path' is static from start.
+                # If we are at path[k], next is path[k+1].
+
+                # Find current location in path to sync?
+                # This is O(N) inside the loop, bad.
+                # Instead, assume we follow the path sequentially.
+                # 'path' starts at original member.location.
+
+                # If i=0, we want path[1].
+                # If i=1, we want path[2].
+                if i + 1 < len(path):
+                    target_next = path[i+1]
+
+                    # Ensure next node is reachable (adjacent)
+                    if abs(target_next[0] - member.location[0]) <= 1 and abs(target_next[1] - member.location[1]) <= 1:
+                        dx = target_next[0] - member.location[0]
+                        dy = target_next[1] - member.location[1]
+                    else:
+                        # Path desync or jump
+                        path_found = False
+                        path = None
 
             # Fallback to greedy if no path or path exhausted
             if dx == 0 and dy == 0:
