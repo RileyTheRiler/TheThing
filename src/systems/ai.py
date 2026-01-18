@@ -30,6 +30,7 @@ class AISystem:
         self.exhaustion_count = 0  # Track how many times budget was denied
         self.alert_speed_bonus = 0
         self.alert_context: Dict[str, Any] = {"active": False, "observation_bonus": 0, "speed_multiplier": 1}
+        self.alert_speed_bonus = 0
         event_bus.subscribe(EventType.TURN_ADVANCE, self.on_turn_advance)
         event_bus.subscribe(EventType.PERCEPTION_EVENT, self.on_perception_event)
         self.security_roles = {"commander", "radio op"}
@@ -1241,6 +1242,8 @@ class AISystem:
 
         path = None
         current_path_index = 0
+
+            cost = self.COST_ASTAR if use_astar else self.COST_PATH_CACHE
 
         # Calculate path once if budget allows
         cache_key = (member.location, goal)
