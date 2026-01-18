@@ -161,11 +161,14 @@ def test_flanking_position_calculation(game_state, ai_system):
 
     positions = ai_system._calculate_flanking_positions(
         target, leader_pos, allies, game_state.station_map, current_turn=game_state.turn
+    positions = ai_system._calculate_flanking_positions(
+        target, leader_pos, flankers, game_state.station_map, current_turn=game_state.turn
     )
 
     # Should have positions on opposite side or perpendicular
     assert len(positions) >= 1
     assert len(positions) <= len(allies)
+    assert len(positions) <= len(flankers)
 
     # Positions should not be the same as target
     for pos in positions:
@@ -198,7 +201,7 @@ def test_coordination_expires_after_turns(game_state, ai_system):
     """Test that coordination state expires after the timer runs out."""
     infected2 = game_state.crew[2]  # Blair
 
-    # Set up coordination with 1 turn remaining
+    # Set up coordination state
     infected2.coordinating_ambush = True
     infected2.ambush_target_location = (7, 7)
     infected2.flank_position = (7, 10)

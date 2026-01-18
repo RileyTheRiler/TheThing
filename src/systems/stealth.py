@@ -67,7 +67,7 @@ class StealthSystem:
         posture = getattr(subject, "stealth_posture", StealthPosture.STANDING)
         if posture == StealthPosture.CROUCHING:
             subject_pool += 1
-        elif posture in (StealthPosture.CRAWLING,):
+        elif posture == StealthPosture.CRAWLING:
             subject_pool += 2
         elif posture == StealthPosture.HIDING:
             subject_pool += 4
