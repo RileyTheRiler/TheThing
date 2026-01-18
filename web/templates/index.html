@@ -28,6 +28,10 @@
                     <button class="menu-btn" disabled title="Encrypted. Clearance Level 4 required.">[ ACCESS RECORDS ]</button>
                     <button class="menu-btn" disabled title="System Configuration Locked">[ SYSTEM CONFIG ]</button>
                     <button class="menu-btn" disabled title="Termination Sequence Offline">[ TERMINATE ]</button>
+                    <button class="menu-btn" onclick="showDifficultySelect()">[ BEGIN SIMULATION ]</button>
+                    <button class="menu-btn" disabled title="Encrypted. Clearance Level 4 required.">[ ACCESS RECORDS ]</button>
+                    <button class="menu-btn" disabled title="System Locked. Administrator Access Only.">[ SYSTEM CONFIG ]</button>
+                    <button class="menu-btn" disabled title="Failsafe Engaged. Cannot terminate simulation.">[ TERMINATE ]</button>
                 </div>
             </div>
 
@@ -135,6 +139,7 @@
                             <div class="nav-row">
                                 <button class="nav-btn" data-dir="west" title="Go West (Arrow Left)" aria-label="Go West">◄</button>
                                 <button class="nav-btn nav-center" disabled aria-hidden="true">●</button>
+                                <button class="nav-btn nav-center" disabled aria-label="Wait">●</button>
                                 <button class="nav-btn" data-dir="east" title="Go East (Arrow Right)" aria-label="Go East">►</button>
                             </div>
                             <button class="nav-btn" data-dir="south" title="Go South (Arrow Down)" aria-label="Go South">▼</button>
@@ -166,7 +171,7 @@
                             <span class="prompt-symbol">CMD&gt;</span>
                             <div class="input-wrapper">
                                 <input type="text" id="command-input" class="command-input"
-                                    placeholder="Enter command..." autocomplete="off">
+                                    placeholder="Enter command..." autocomplete="off" aria-label="Enter command">
                                 <span id="autocomplete-hint" class="autocomplete-hint"></span>
                             </div>
                         </div>
