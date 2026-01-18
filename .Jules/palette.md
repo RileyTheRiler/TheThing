@@ -10,3 +10,6 @@
 ## 2024-05-24 - [Accessible Icon-Only Buttons in Retro UI]
 **Learning:** Retro interfaces often rely on character glyphs (✕, ▲, ►) as icons. While stylistically consistent, these are invisible or confusing to screen readers without explicit labels.
 **Action:** When using text characters as icons, always wrap them in an accessible container or attach an `aria-label` to the interactive element to describe the action, not the glyph.
+## 2024-05-24 - [Redundant Modal Actions]
+**Learning:** Legacy codebases often accumulate copy-paste errors in modal templates, resulting in multiple "Close" buttons that clutter the DOM and confuse screen reader navigation.
+**Action:** When auditing modals, specifically check for and consolidate redundant close actions into a single, clearly labeled interactive element.

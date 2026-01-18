@@ -1239,6 +1239,10 @@ class AISystem:
         # Check cache first to determine cost
         steps = max(1, self.alert_context.get("speed_multiplier", 1) if self.alert_context else 1)
 
+        path = None
+        current_path_index = 0
+
+        # Calculate path once if budget allows
         cache_key = (member.location, goal)
         use_astar = True
         if hasattr(pathfinder, '_path_cache') and cache_key in pathfinder._path_cache:
@@ -1267,6 +1271,26 @@ class AISystem:
                     break
             else:
                 # Budget exhausted - fall back to greedy movement (0 cost)
+        if self._request_budget(cost):
+            path = pathfinder.find_path(member.location, goal, station_map, current_turn)
+
+        for _ in range(steps):
+            dx, dy = 0, 0
+
+            # Use path if available
+            target_next = None
+            if path and len(path) > current_path_index + 1:
+                target_next = path[current_path_index + 1]
+                # Ensure next node is reachable (adjacent)
+                if abs(target_next[0] - member.location[0]) <= 1 and abs(target_next[1] - member.location[1]) <= 1:
+                    dx = target_next[0] - member.location[0]
+                    dy = target_next[1] - member.location[1]
+                else:
+                    # Path desync
+                    path = None
+
+            # Fallback to greedy if no path or path exhausted
+            if dx == 0 and dy == 0:
                 dx = 1 if target_x > member.location[0] else -1 if target_x < member.location[0] else 0
                 dy = 1 if target_y > member.location[1] else -1 if target_y < member.location[1] else 0
 
@@ -1292,6 +1316,13 @@ class AISystem:
                         return
 
             member.move(dx, dy, station_map)
+
+            # If we successfully moved to the target node of the path, advance index
+            if target_next and member.location == target_next:
+                current_path_index += 1
+            elif target_next and member.location != target_next:
+                # Move failed or was redirected
+                path = None
 
             # Check for tripwire triggers at new location
             self._check_tripwire_trigger(member, game_state)
