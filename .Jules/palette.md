@@ -7,3 +7,25 @@
 ## 2024-05-24 - Context for Disabled States
 **Learning:** Disabled buttons in narrative interfaces can feel broken if unexplained.
 **Action:** Always add a `title` attribute or tooltip to disabled UI elements explaining the in-world reason (e.g., "Encrypted. Clearance Level 4 required") to turn a frustration into a flavor moment.
+## 2024-05-24 - Accessibility of Interactive Elements
+**Learning:** Icon-only buttons (like 'X' for close) are invisible to screen readers without explicit labels, and standard `disabled` attributes can be confusing without explanation.
+**Action:** Always include `aria-label` for icon-only buttons and provide `title` tooltips for disabled actions to explain the "why" (e.g., "Clearance Level 4 required").
+## 2024-05-24 - Accessible Icon Buttons
+**Learning:** Icon-only buttons (like ✕, ▲) rely on visual context that is lost to screen readers. Relying on `title` attributes alone is insufficient for accessibility.
+**Action:** Always pair icon-only buttons with explicit `aria-label` attributes describing the action (e.g., "Close Modal", "Go North").
+# Palette Journal
+
+_No critical UX or accessibility learnings recorded yet._
+
+## 2024-05-24 - [Disabled Button Tooltips]
+**Learning:** Standard HTML `title` tooltips often fail to appear on `disabled` buttons because these elements suppress pointer events in many browsers.
+**Action:** Wrap disabled buttons in a container to hold the tooltip, or use `aria-disabled="true"` with CSS styling instead of the `disabled` attribute for more robust accessibility.
+## 2024-05-24 - [Semantic Input Labels]
+**Learning:** In CLI-style web interfaces, input fields often lack visual labels to maintain the aesthetic, which critically harms accessibility for screen reader users who cannot see the "CMD>" prompt.
+**Action:** Always include an `aria-label` or visually hidden `<label>` for command line inputs in web interfaces, even if the visual design implies the function.
+## 2024-05-24 - [Accessible Icon-Only Buttons in Retro UI]
+**Learning:** Retro interfaces often rely on character glyphs (✕, ▲, ►) as icons. While stylistically consistent, these are invisible or confusing to screen readers without explicit labels.
+**Action:** When using text characters as icons, always wrap them in an accessible container or attach an `aria-label` to the interactive element to describe the action, not the glyph.
+## 2024-05-24 - [Redundant Modal Actions]
+**Learning:** Legacy codebases often accumulate copy-paste errors in modal templates, resulting in multiple "Close" buttons that clutter the DOM and confuse screen reader navigation.
+**Action:** When auditing modals, specifically check for and consolidate redundant close actions into a single, clearly labeled interactive element.
